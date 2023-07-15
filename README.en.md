@@ -1,8 +1,7 @@
 # QimenIDS
 
 #### Description
-开源、免费、云原生的多云管理及混合云融合系统。
-Open source, free, cloud native multi cloud management and Cloud computing#Hybrid cloud integration system.
+Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system.
 
 #### Software Architecture
 Software architecture description

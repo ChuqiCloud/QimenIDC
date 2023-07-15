@@ -2,7 +2,6 @@
 
 #### 介绍
 开源、免费、云原生的多云管理及混合云融合系统。
-Open source, free, cloud native multi cloud management and Cloud computing#Hybrid cloud integration system.
 
 #### 软件架构
 软件架构说明
