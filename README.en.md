@@ -1,6 +1,5 @@
 # QimenIDC - Cloud-Native Multi-Cloud Management and Hybrid Cloud Integration System
 
-![QimenIDC Logo](https://www.chuqiyun.com/static/images/logo.png)
 
 Welcome to the GitHub page of QimenIDC! This project is an open-source, free, and cloud-native system designed for managing and operating resources in multi-cloud environments, with the aim of improving the efficiency of multi-cloud management. QimenIDS is built using Gradle and requires JDK 17 for execution. The project is primarily hosted on Gitee, and its address is: [https://gitee.com/chuqicloud/QimenIDS](https://gitee.com/chuqicloud/QimenIDS).
 

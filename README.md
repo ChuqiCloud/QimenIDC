@@ -1,8 +1,5 @@
 # QimenIDC - 云原生的多云管理及混合云融合系统
 
-```markdown
-![QimenIDC Logo](https://www.chuqiyun.com/static/images/logo.png)
-```
 
 [简体中文](./README.md) | [English](./README-en.md)
 
