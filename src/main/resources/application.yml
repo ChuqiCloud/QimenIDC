@@ -3,8 +3,7 @@ server:
 
 config:
   admin_path: admin
-  secret: UkingMryunqi434253
-  docs: true
+  secret: 123456
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:
