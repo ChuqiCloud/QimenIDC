@@ -1,0 +1,63 @@
+﻿<!DOCTYPE html>
+<html x-data="main" class :class="[$store.app.mode]">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Premium Tailwind CSS Admin & Dashboard Template" />
+    <meta name="author" content="SRBThemes" />
+    <title>QimenIDC - 登录</title>
+    <link rel="shortcut icon" href="assets/images/favicon.ico" />
+    <link rel="stylesheet" type="text/css" media="screen" href="assets/css/style.css" />
+</head>
+<body x-data="main" class="collapse-menu overflow-x-hidden bg-lightwhite font-public text-base font-normal text-slate-600 antialiased dark:bg-darkblue dark:text-indigo-300" :class="[ $store.app.sidebar ? 'toggle-sidebar' : '', $store.app.fullscreen ? '' : '']">
+    <div>
+        <div class="container">
+            <div class="min-h-screen flex items-center justify-center text-[15px]">
+                <div class="rounded-lg bg-white p-6 shadow-3xl dark:bg-lightblue dark:shadow-black/10 w-full max-w-md my-10 mx-4">
+                    <div class="flex items-center justify-center mb-10">
+                        <div class="block min-h-[1px] shrink-0 grow-0 overflow-hidden leading-none">
+                            <svg width="28" height="35" viewbox="0 0 28 35" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10.4652 34.932C10.4652 34.932 6.42433 35.6543 3.31598 32.3712C3.31598 32.3712 1.0158 30.467 0.083294 25.7394C0.083294 25.7394 -0.351875 24.3605 0.767131 24.2948H10.8711C11.1068 24.3473 11.3207 24.4772 11.4823 24.6659C11.6439 24.8546 11.7448 25.0924 11.7707 25.3454C11.7707 25.3454 13.014 32.3055 18.6091 32.1742C18.6091 32.1742 25.1988 32.4368 25.3853 22.3906L25.3231 2.42948H7.72983V8.40469H18.9199L18.9821 21.6027C18.9821 21.6027 19.1686 27.7749 14.8169 28.8254C14.8169 28.8254 16.3089 26.7899 16.3089 22.0623V10.7685H6.05132C6.05132 10.7685 4.99449 10.8998 5.05665 9.45527V0.722278C5.05665 0.722278 5.30532 0 5.86482 0H27.267C27.267 0 28.0584 0.131323 27.9963 0.984924L28 23.4077C28 23.4077 28.0081 34.3443 18.7371 34.9996C18.7371 34.9996 11.1471 35.1966 9.40647 26.6606L3.12761 26.7262C3.12761 26.7262 3.68898 33.0278 10.4652 34.932Z" fill="url(#paint0_linear_1_4)" />
+                                <defs>
+                                    <lineargradient id="paint0_linear_1_4" x1="14" y1="0" x2="14" y2="35" gradientunits="userSpaceOnUse">
+                                        <stop stop-color="#4F46E5" />
+                                        <stop offset="1" stop-color="#7C3AED" />
+                                    </lineargradient>
+                                </defs>
+                            </svg>
+                        </div>
+                        <p class="ml-2 shrink-0 text-2xl font-bold -tracking-[0.5px] text-slate-600 opacity-100 transition-opacity duration-1000 dark:text-indigo-100">QimenIDC</p>
+                    </div>
+                    <h4 class="mb-2 text-[22px] text-center font-medium text-slate-600 dark:text-indigo-300">欢迎登录 ProxmoxVE-AMS!</h4>
+                    <p class="mb-6 text-gray-400 text-center">请输入后台管理账号</p>
+                    <div class="mb-4">
+                        <label class="text-xs uppercase text-gray-500 dark:text-indigo-300 font-medium mb-2 inline-block">用户名</label>
+                        <input type="tel" class="form-input" placeholder="账号">
+                    </div>
+                    <div class="mb-4">
+                        <label class="text-xs uppercase text-gray-500 dark:text-indigo-300 font-medium mb-2 inline-block">密码</label>
+                        <input type="password" class="form-input" placeholder="********">
+                    </div>
+                    <div class="mb-4 flex items-center justify-between gap-3">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="checkbox" class="form-checkbox text-indigo-600">
+                            <span>记住我</span>
+                        </label>
+                        <a href="#" class="text-sm text-indigo-600 hover:underline">忘记密码?</a>
+                    </div>
+                    <button class="btn w-full mb-4 justify-center border-indigo-600 bg-indigo-600 text-white hover:border-indigo-700 hover:bg-indigo-700">登录</button>
+                    <p class="text-center">
+                        <span>©</span> <a href="#" class="text-indigo-600 hover:underline"><span>武汉极致网络科技有限公司</span></a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/alpine-collaspe.min.js"></script>
+    <script src="assets/js/alpine-persist.min.js"></script>
+    <script src="assets/js/alpine.min.js" defer></script>
+    <script src="assets/js/custom.js"></script>
+</body>
+</html>
