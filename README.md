@@ -1,9 +1,15 @@
 # QimenIDC - 云原生的多云管理及混合云融合系统
 
+```markdown
 ![QimenIDC Logo](https://www.chuqiyun.com/static/images/logo.png)
+```
+
+[简体中文](./README.md) | [English](./README-en.md)
 
 本项目是一个开源、免费、云原生的多云管理及混合云融合系统，它致力于简化多云环境下的资源管理和操作，提高管理多云的效率。
+
 QimenIDS 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
+
 项目主要托管于码云，地址为：[https://gitee.com/chuqicloud/QimenIDS](https://gitee.com/chuqicloud/QimenIDS)。
 
 ## 主要特性
