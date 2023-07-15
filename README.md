@@ -1,7 +1,7 @@
 # QimenIDC - 云原生的多云管理及混合云融合系统
 
 
-[简体中文](./README.md) | [English](./README-en.md)
+[简体中文](./README.md) | [English](./README.en.md)
 
 本项目是一个开源、免费、云原生的多云管理及混合云融合系统，它致力于简化多云环境下的资源管理和操作，提高管理多云的效率。
 
