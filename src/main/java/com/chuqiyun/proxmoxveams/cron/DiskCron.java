@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.jcraft.jsch.JSchException;
 import lombok.extern.slf4j.Slf4j;
@@ -271,7 +272,7 @@ public class DiskCron {
             Master node = masterService.getById(task.getNodeid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
-            ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             JSONObject vmInfo = masterService.getVmInfo(node.getId(),task.getVmid());
             // 如果存在unused0则表示导入成功
@@ -284,7 +285,7 @@ public class DiskCron {
                 //params.put("scsihw", "lsi53c810");
                 params.put("scsi0", vmInfo.getString("unused0"));
                 try {
-                    proxmoxApiService.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
+                    proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
                 } catch (Exception e) {
                     log.error("[Task-ImportSystemDisk] 导入系统盘任务: NodeID:{} VM-ID:{} 失败",task.getNodeid(),task.getVmid());
                     // 修改任务状态为失败
@@ -344,14 +345,14 @@ public class DiskCron {
             // 获取disk信息
             Map<Object,Object> diskMap = task.getParams();
             int size = diskMap.get("size") == null ? 40 : Integer.parseInt(diskMap.get("size").toString());
-            ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String, Object> params = new HashMap<>();
             params.put("disk","scsi0");
             params.put("size",size+"G");
             log.info("[Task-UpdateSystemDisk] 执行修改系统盘大小任务: NodeID:{} VM-ID:{} Size:{}G",node.getId(),task.getVmid(),size);
             try {
-                proxmoxApiService.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/resize", params);
+                proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/resize", params);
             } catch (Exception e) {
                 log.error("[Task-UpdateSystemDisk] 修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 // 修改任务状态为失败
@@ -420,7 +421,7 @@ public class DiskCron {
         // 转换为JSONObject
         JSONObject dataDiskJson = new JSONObject(dataDiskMap);
         HashMap<String,Object> params = new HashMap<>();
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
         int num = 1;
         // 遍历dataDiskJson
@@ -430,7 +431,7 @@ public class DiskCron {
             num++;
         }
         try {
-            proxmoxApiService.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/config", params);
+            proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/config", params);
         } catch (Exception e) {
             log.error("[Task-CreateDataDisk] 创建数据盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
             // 修改任务状态为失败

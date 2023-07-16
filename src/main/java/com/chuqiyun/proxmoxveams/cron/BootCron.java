@@ -6,7 +6,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.ProxmoxApiService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import lombok.extern.slf4j.Slf4j;
@@ -60,10 +60,10 @@ public class BootCron {
                 String boot = params.get("boot").toString();
                 HashMap<String,Object> param = new HashMap<>();
                 param.put("boot",boot);
-                ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+                ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
                 HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
                 try {
-                    proxmoxApiService.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", param);
+                    proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", param);
                 } catch (Exception e) {
                     log.error("[Task-UpdateBoot] 修改启动项失败: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
                     task.setStatus(3);

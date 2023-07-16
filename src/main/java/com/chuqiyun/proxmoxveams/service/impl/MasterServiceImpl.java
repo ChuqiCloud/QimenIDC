@@ -9,7 +9,7 @@ import com.chuqiyun.proxmoxveams.dao.MasterDao;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.VmParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.ProxmoxApiService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import org.springframework.stereotype.Service;
 
@@ -83,9 +83,9 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         Master master = this.getById(id);
         // 获取cookie
         HashMap<String, String> cookieMap = this.getMasterCookieMap(id);
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 查询vm列表 {"data":[{'vmid':100,'name':'test'},{'vmid':101,'name':'test2'}]}
-        JSONObject vmJson = proxmoxApiService.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
+        JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
         JSONArray jsonArray = vmJson.getJSONArray("data");
         // 判断是否为空
         if (jsonArray == null || jsonArray.size() == 0) {
@@ -115,8 +115,8 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         Master master = this.getById(id);
         // 获取cookie
         HashMap<String, String> cookieMap = this.getMasterCookieMap(id);
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
-        JSONObject vmJson = proxmoxApiService.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/storage",new HashMap<>());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/storage",new HashMap<>());
         JSONArray jsonArray = vmJson.getJSONArray("data");
         ArrayList<JSONObject> diskList = new ArrayList<>();
         // 将jsonArray转换为ArrayList<JSONObject>
@@ -133,7 +133,7 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     */
     @Override
     public Integer createVm(VmParams vmParams){
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = this.getById(vmParams.getNodeid());
         // 创建虚拟机可选参数
         HashMap<String, Object> param = new HashMap<>();
@@ -205,7 +205,7 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         }
         // 获取cookie
         HashMap<String, String> authentications = getMasterCookieMap(vmParams.getNodeid());
-        JSONObject jsonObject =  proxmoxApiService.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);
+        JSONObject jsonObject =  proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);
         if (jsonObject.containsKey("data")){
             return vmId;
         }else {
@@ -220,11 +220,11 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     */
     @Override
     public JSONObject getVmInfo(Integer nodeId, Integer vmid) {
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = this.getById(nodeId);
         // 获取cookie
         HashMap<String, String> authentications = getMasterCookieMap(nodeId);
-        return proxmoxApiService.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/config", new HashMap<>()).getJSONObject("data");
+        return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/config", new HashMap<>()).getJSONObject("data");
     }
 
     /**

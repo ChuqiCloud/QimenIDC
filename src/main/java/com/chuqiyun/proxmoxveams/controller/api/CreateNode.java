@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ResponseResult;
 import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
 import io.swagger.annotations.ApiOperation;
@@ -140,13 +141,13 @@ public class CreateNode {
     @GetMapping("/api/getNode")
     public ResponseResult getNode() throws UnauthorizedException {
         Master node = masterService.getById(5);
-        ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 获取cookie
         HashMap<String, String> authentications = masterService.getMasterCookieMap(5);
         HashMap<String, Object> param = new HashMap<>();
         // 添加一个数据盘
         //param.put("scsi1", "local-lvm:10");
-        JSONObject json = proxmoxApiService.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/storage", param);
+        JSONObject json = proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/storage", param);
         //JSONObject json =  proxmoxApiService.getNodeApi(node,authentications, "/nodes/pve/qemu/101/config", param);
         return ResponseResult.ok(json);
     }

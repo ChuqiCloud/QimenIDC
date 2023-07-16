@@ -6,7 +6,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.ProxmoxApiService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import lombok.extern.slf4j.Slf4j;
@@ -53,11 +53,11 @@ public class StartVmCron {
                 log.info("[Task-StartVm] 执行开机任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
                 // 获取vm信息
                 Vmhost vmhost = vmhostService.getById(task.getHostid());
-                ProxmoxApiService proxmoxApiService = new ProxmoxApiService();
+                ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
                 HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
                 HashMap<String,Object> params = new HashMap<>();
                 try {
-                    proxmoxApiService.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", params);
+                    proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", params);
                 } catch (Exception e) {
                     log.error("[Task-StartVm] 开机任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                     // 修改任务状态为3 3为执行失败

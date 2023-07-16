@@ -1,10 +1,9 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.ProxmoxApiService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -45,7 +44,7 @@ public class CookieUp {
             user.put("username",node.getUsername());
             user.put("password",node.getPassword());
             user.put("realm",node.getRealm());
-            ProxmoxApiService pveApi = new ProxmoxApiService();
+            ProxmoxApiUtil pveApi = new ProxmoxApiUtil();
             HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
             node.setTicket(authentications.get("ticket"));
             node.setCsrfToken(authentications.get("csrfToken"));

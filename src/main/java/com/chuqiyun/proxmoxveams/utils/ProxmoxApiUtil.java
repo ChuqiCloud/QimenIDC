@@ -1,8 +1,7 @@
-package com.chuqiyun.proxmoxveams.service;
+package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.utils.TrustSslUtil;
 import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,7 +14,7 @@ import java.util.HashMap;
  * @author mryunqi
  * @date 2023/6/18
  */
-public class ProxmoxApiService {
+public class ProxmoxApiUtil {
     /**
     * @Author: mryunqi
     * @Description: 获取节点url
