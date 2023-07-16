@@ -3,9 +3,6 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
-import com.chuqiyun.proxmoxveams.annotation.AdminLoginCheck;
-import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
-import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
@@ -18,7 +15,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -39,6 +35,11 @@ public class SysOsController {
     private OsService osService;
     @Resource
     private MasterService masterService;
+    /**
+     * 获取所有在线os
+     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @throws UnauthorizedException
+     */
     @AdminApiCheck
     @GetMapping("/{adminPath}/selectOsByOnline")
     public ResponseResult<JSONObject> selectOsByOnline(@PathVariable("adminPath") String adminPath,
@@ -58,7 +59,7 @@ public class SysOsController {
             // 获取第一个key
             String key = jsonObject.keySet().iterator().next();
             JSONObject value = jsonObject.getJSONObject(key);
-            JSONArray nodeData = selectOsByNameNodes(key);
+            JSONArray nodeData = osService.selectOsByOsName(key);
             value.put("nodeData",nodeData);
             jsonObject.put(key, value);
             // 更新jsonArray
@@ -69,28 +70,4 @@ public class SysOsController {
 
     }
 
-    public JSONArray selectOsByNameNodes(String osName){
-        // 获取所有节点id
-        List<Integer> nodeIdList = masterService.getAllNodeIdList();
-        JSONArray jsonArray = new JSONArray();
-        for (Integer nodeId : nodeIdList){
-            Os os = osService.selectOsByNameAndNodeId(osName, nodeId);
-            if (os!=null){
-                // 已安装
-                JSONObject jsonObject = new JSONObject();
-                jsonObject.put("nodeId",nodeId);
-                jsonObject.put("status",os.getStatus());
-                jsonObject.put("osId",os.getId());
-                jsonObject.put("size",os.getSize());
-                jsonObject.put("path",os.getPath());
-                // 判断是否正在下载
-                if (os.getStatus()==1){
-                    jsonObject.put("schedule",os.getSchedule());
-                }
-                jsonObject.put("createTime",os.getCreateTime());
-                jsonArray.add(jsonObject);
-            }
-        }
-        return jsonArray;
-    }
 }
