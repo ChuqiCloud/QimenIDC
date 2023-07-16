@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+config:
+  admin_path: admin
+  secret: 123456
+  os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
+
+MySQL:
+  host: localhost
+  port: 3306
+  username: root
+  password: 123456
+  database: pve

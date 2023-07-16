@@ -3,6 +3,7 @@ server:
 
 config:
   admin_path: admin
+  # token加密盐
   secret: 123456
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
@@ -14,6 +15,8 @@ MySQL:
   database: pve
 
 spring:
+  profiles:
+    active: prod
   application:
     # 应用名称
     name: ProxmoxVE-AMS
