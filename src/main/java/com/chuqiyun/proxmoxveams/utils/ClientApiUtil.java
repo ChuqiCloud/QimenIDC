@@ -1,9 +1,16 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -32,24 +39,41 @@ public class ClientApiUtil {
     * @Description: 通用GET请求
     * @DateTime: 2023/7/11 17:37
     */
-    public static JSONObject getControllerApi(String url, Map<String, String> params, String token){
+    public static JSONObject getControllerApi(String url, Map<String, Object> params, String token){
         RestTemplate restTemplate = new RestTemplate();
-        // 拼装url参数
+        // 将token放入header
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.AUTHORIZATION, token);
+        // url拼接参数
         StringBuilder urlBuilder = new StringBuilder(url);
         if (params != null && params.size() > 0) {
             urlBuilder.append("?");
             for (String key : params.keySet()) {
-                urlBuilder.append(key).append("=").append(params.get(key)).append("&");
+                urlBuilder.append(key).append("={").append(key).append("}&");
             }
             urlBuilder.deleteCharAt(urlBuilder.length() - 1);
         }
+        HttpEntity<Object> entity = new HttpEntity<>(params,headers);
+        ResponseEntity<JSONObject> result = restTemplate.exchange(urlBuilder.toString(), HttpMethod.GET, entity, JSONObject.class, params);
+        return result.getBody();
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 通用POST请求
+    * @DateTime: 2023/7/16 17:12
+    * @Params: url 请求地址
+     * @Params: params 请求参数
+     * @Params: token 请求token
+    * @Return JSONObject
+    */
+    public static JSONObject postControllerApi(String url,Map<String,Object> params,String token){
+        RestTemplate restTemplate = new RestTemplate();
         // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
-        //请求url获取内容
-        String json = restTemplate.getForObject(urlBuilder.toString(), String.class, headers);
-        //将json转换为JSONObject对象
-        return JSONObject.parseObject(json);
+        headers.add("Content-Type","application/json");
+        HttpEntity<Object> entity = new HttpEntity<>(params, headers);
+        return restTemplate.postForObject(url, entity,JSONObject.class);
     }
 
     /**
@@ -59,13 +83,21 @@ public class ClientApiUtil {
     */
     public static JSONObject getControllerConnectStatus(String ip, String token){
         String url = "http://"+ip+":7600/status";
+        Map<String, Object> paramMap = new HashMap<>();
         RestTemplate restTemplate = new RestTemplate();
         // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
-        //请求url获取内容
-        String json = restTemplate.getForObject(url, String.class, headers);
-        //将json转换为JSONObject对象
-        return JSONObject.parseObject(json);
+        HttpEntity<Object> entity = new HttpEntity<>(paramMap,headers);
+        ResponseEntity<JSONObject> result = restTemplate.exchange(url, HttpMethod.GET, entity, JSONObject.class, paramMap);
+        return result.getBody();
     }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 
+    * @DateTime: 2023/7/16 17:16
+    * @Params: 
+    * @Return 
+    */
 }

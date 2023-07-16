@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,7 +13,8 @@ class ProxmoxVeAmsApplicationTests {
 
     @Test
     void contextLoads() {
-        System.out.println(ClientApiUtil.getNetOs("https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json"));
+        JSONObject context = ClientApiUtil.getControllerConnectStatus("1111111","dbb77f27239249c49bbf743a6b6063e31");
+        System.out.println(context);
     }
 
 }
