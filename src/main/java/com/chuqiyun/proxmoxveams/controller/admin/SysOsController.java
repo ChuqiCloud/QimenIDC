@@ -67,7 +67,6 @@ public class SysOsController {
         }
         osOnlineResult.put("data",jsonArray);
         return ResponseResult.ok(osOnlineResult);
-
     }
 
 }
