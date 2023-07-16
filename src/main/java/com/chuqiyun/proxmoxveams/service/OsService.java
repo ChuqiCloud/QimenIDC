@@ -12,5 +12,7 @@ import com.chuqiyun.proxmoxveams.entity.Os;
 public interface OsService extends IService<Os> {
 
     Os selectOsByName(String name);
+
+    Os selectOsByNameAndNodeId(String name, Integer nodeId);
 }
 

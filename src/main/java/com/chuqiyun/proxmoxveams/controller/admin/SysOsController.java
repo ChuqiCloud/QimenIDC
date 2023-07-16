@@ -41,7 +41,7 @@ public class SysOsController {
     private MasterService masterService;
     @AdminApiCheck
     @GetMapping("/{adminPath}/selectOsByOnline")
-    public ResponseResult selectOsByOnline(@PathVariable("adminPath") String adminPath,
+    public ResponseResult<JSONObject> selectOsByOnline(@PathVariable("adminPath") String adminPath,
                                            @RequestParam(name = "page",defaultValue = "1") Integer page,
                                            @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
         if (!adminPath.equals(ADMIN_PATH)){
@@ -58,15 +58,8 @@ public class SysOsController {
             // 获取第一个key
             String key = jsonObject.keySet().iterator().next();
             JSONObject value = jsonObject.getJSONObject(key);
-            Os osDb = osService.selectOsByName(key);
-            if (osDb!=null){
-                // 已安装
-                value.put("status",1);
-                value.put("osId",osDb.getId());
-            }else {
-                // 未安装
-                value.put("status",0);
-            }
+            JSONArray nodeData = selectOsByNameNodes(key);
+            value.put("nodeData",nodeData);
             jsonObject.put(key, value);
             // 更新jsonArray
             jsonArray.set(i,jsonObject);
@@ -76,9 +69,28 @@ public class SysOsController {
 
     }
 
-    /*public JSONObject selectOsByNameNodes(String osName){
+    public JSONArray selectOsByNameNodes(String osName){
         // 获取所有节点id
         List<Integer> nodeIdList = masterService.getAllNodeIdList();
-
-    }*/
+        JSONArray jsonArray = new JSONArray();
+        for (Integer nodeId : nodeIdList){
+            Os os = osService.selectOsByNameAndNodeId(osName, nodeId);
+            if (os!=null){
+                // 已安装
+                JSONObject jsonObject = new JSONObject();
+                jsonObject.put("nodeId",nodeId);
+                jsonObject.put("status",os.getStatus());
+                jsonObject.put("osId",os.getId());
+                jsonObject.put("size",os.getSize());
+                jsonObject.put("path",os.getPath());
+                // 判断是否正在下载
+                if (os.getStatus()==1){
+                    jsonObject.put("schedule",os.getSchedule());
+                }
+                jsonObject.put("createTime",os.getCreateTime());
+                jsonArray.add(jsonObject);
+            }
+        }
+        return jsonArray;
+    }
 }

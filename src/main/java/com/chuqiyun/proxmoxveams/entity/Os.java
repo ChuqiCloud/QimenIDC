@@ -23,9 +23,16 @@ public class Os extends Model<Os> {
     private Integer nodeId;
     
     private String name;
+    private String downType;
+    private String url;
     private Double schedule;
-    
+    private String size;
+    private String path;
+    /**
+     * 0:未下载 1:下载中 2:已下载
+     */
     private Integer status;
+    private Long createTime;
 
 
     /**

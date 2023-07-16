@@ -28,6 +28,20 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         queryWrapper.eq("name",name);
         return this.getOne(queryWrapper);
     }
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定名称指定nodeId的os
+    * @DateTime: 2023/7/16 11:40
+    * @Params: String name 系统名称 String nodeId 节点id
+    * @Return Os
+    */
+    @Override
+    public Os selectOsByNameAndNodeId(String name, Integer nodeId) {
+        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("name",name);
+        queryWrapper.eq("node_id",nodeId);
+        return this.getOne(queryWrapper);
+    }
 
 }
 
