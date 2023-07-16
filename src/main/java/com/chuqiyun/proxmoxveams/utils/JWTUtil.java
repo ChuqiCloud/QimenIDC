@@ -5,6 +5,7 @@ import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -14,6 +15,7 @@ import java.util.Date;
  * @author mryunqi
  * @date 2023/4/14
  */
+@Slf4j
 public class JWTUtil {
 
     // 过期时间120分钟
