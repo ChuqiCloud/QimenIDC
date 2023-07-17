@@ -1,4 +1,4 @@
-# QimenIDC - 云原生的多云管理及混合云融合系统
+# QimenIDS - 云原生的多云管理及混合云融合系统
 
 
 [简体中文](./README.md) | [English](./README.en.md)
