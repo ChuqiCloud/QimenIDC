@@ -93,6 +93,14 @@ Set interceptor to verify that the token is correct
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     try:  
+        # 放行/docs接口
+        if request.url.path.startswith('/docs'):
+            response = await call_next(request)  
+            return response
+        # 放行/openapi.json接口
+        if request.url.path.startswith('/openapi.json'):
+            response = await call_next(request)  
+            return response
         # 判断是否存在token  
         if 'Authorization' not in request.headers:  
             raise UnicornException(code=CodeEnum.UNAUTHORIZED, msg='Authentication failed!')  
@@ -119,7 +127,7 @@ async def status():
 获取指定目录下的文件列表
 Get the file list under the specified directory
 '''
-@app.get('/pathFile/{path}}')
+@app.get('/pathFile')
 async def pathFile(path:str):
     # 判断路径是否存在
     if not os.path.exists(path):
@@ -137,7 +145,7 @@ async def pathFile(path:str):
 Execute the wget command to download the file to the specified directory
 Repeated url calls will return the download progress
 '''
-@app.get('/wget/{url}/{path}}')
+@app.get('/wget')
 async def wget(url:str,path:str):
     # 判断路径是否存在
     if not os.path.exists(path):
