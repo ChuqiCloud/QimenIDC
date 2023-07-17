@@ -85,4 +85,6 @@ public class VmParams {
      */
     private String password;
     private Map<Object, Object> task;
+    private String status;
+    private Long expirationTime;
 }

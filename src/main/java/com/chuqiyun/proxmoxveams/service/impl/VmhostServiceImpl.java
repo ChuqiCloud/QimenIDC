@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.dao.VmhostDao;
 import com.chuqiyun.proxmoxveams.entity.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -50,6 +51,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setOs(vmParams.getOs());
         vmhost.setBandwidth(vmParams.getBandwidth());
         vmhost.setTask(vmParams.getTask());
+        vmhost.setCreateTime(System.currentTimeMillis());
+        // 判断到期时间是否为空
+        if (vmParams.getExpirationTime() != null) {
+            // 时间设定为99年后到期
+            vmhost.setExpirationTime(System.currentTimeMillis()+315360000000L);
+        }
+        // 判断到期时间是否为10位
+        if (vmParams.getExpirationTime() != null && vmParams.getExpirationTime().toString().length() == 10) {
+            // 将时间转换为13位
+            vmhost.setExpirationTime(TimeUtil.tenToThirteen(vmParams.getExpirationTime()));
+        }
         // 返回id
         return this.save(vmhost) ? vmhost.getId() : null;
     }

@@ -55,6 +55,9 @@ public class Vmhost extends Model<Vmhost> {
     private Map<String, Object>  ipconfig;*/
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> task;
+    private String status;
+    private Long createTime;
+    private Long expirationTime;
 
 
 

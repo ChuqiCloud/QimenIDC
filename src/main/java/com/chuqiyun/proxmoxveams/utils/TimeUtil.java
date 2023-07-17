@@ -24,4 +24,15 @@ public class TimeUtil {
 
         return daysBetween;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将10位时间戳转换为13位时间戳
+    * @DateTime: 2023/7/17 22:37
+    * @Params: long timestamp 10位时间戳
+    * @Return long 13位时间戳
+    */
+    public static long tenToThirteen(long timestamp){
+        return timestamp * 1000;
+    }
 }
