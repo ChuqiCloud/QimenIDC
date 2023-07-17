@@ -59,4 +59,4 @@ QimenIDC is licensed under the [AGPL-3.0 License](https://www.gnu.org/licenses/a
 
 ---
 
-Thank you for your interest and support in QimenIDS! We look forward to your contributions and hope that QimenIDS will provide you with a convenient experience for multi-cloud management and hybrid cloud integration. If you have any questions or need assistance regarding this project, please don't hesitate to contact us.
+Thank you for your interest and support in QimenIDC! We look forward to your contributions and hope that QimenIDC will provide you with a convenient experience for multi-cloud management and hybrid cloud integration. If you have any questions or need assistance regarding this project, please don't hesitate to contact us.
