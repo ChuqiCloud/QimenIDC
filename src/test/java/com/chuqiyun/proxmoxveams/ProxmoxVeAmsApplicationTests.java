@@ -13,8 +13,7 @@ class ProxmoxVeAmsApplicationTests {
 
     @Test
     void contextLoads() {
-        JSONObject context = ClientApiUtil.getControllerConnectStatus("1111111","dbb77f27239249c49bbf743a6b6063e31");
-        System.out.println(context);
+        System.out.println(System.currentTimeMillis()+315360000000L);
     }
 
 }
