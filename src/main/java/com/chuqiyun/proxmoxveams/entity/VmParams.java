@@ -16,6 +16,14 @@ public class VmParams {
      */
     private Integer nodeid;
     /**
+     * 数据库中虚拟机ID
+     */
+    private Integer hostid;
+    /**
+     * 虚拟机id
+     */
+    private Integer vmid;
+    /**
      * 虚拟机名称
      */
     private String hostname;

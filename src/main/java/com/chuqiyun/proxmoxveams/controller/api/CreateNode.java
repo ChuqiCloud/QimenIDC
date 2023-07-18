@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
@@ -39,7 +40,8 @@ public class CreateNode {
     @ApiOperation(value = "创建虚拟机", notes = "创建虚拟机")
     @PublicSysApiCheck
     @PostMapping("/api/cerateVM")
-    public ResponseResult<String> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
+    public ResponseResult<ArrayList<VmParams>> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
+        ArrayList<VmParams> result = new ArrayList<>();
         int nodeId = vmParams.getNodeid();
         Master node = masterService.getById(nodeId);
         // 判断实体类是否为空
@@ -118,7 +120,7 @@ public class CreateNode {
         } catch (IllegalAccessException e) {
             log.warn("[API] 创建虚拟机任务参数转换失败");
             e.printStackTrace();
-            return ResponseResult.ok("创建虚拟机失败");
+            return ResponseResult.fail("创建虚拟机失败");
         }
         log.info("[API] 创建基础虚拟机任务: NodeID="+nodeId+",OsType="+vmParams.getOsType()+
                 ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory());
@@ -131,10 +133,29 @@ public class CreateNode {
         if (taskService.insertTask(task)){
             log.info("[API] 创建虚拟机任务: NodeID="+nodeId+",OsType="+vmParams.getOsType()+
                     ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory()+" 完成");
-            return ResponseResult.ok("创建虚拟机成功");
+            // 循环查询任务状态
+            int count = 0;
+            while (count <= 5) {
+                // 超时判断
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                Task task1 = taskService.getById(task.getId());
+                if (task1.getStatus() == 2) {
+                    // 任务完成
+                    vmParams.setHostid(task1.getHostid());
+                    vmParams.setVmid(task1.getVmid());
+                    result.add(vmParams);
+                    return ResponseResult.ok(result);
+                }
+                count++;
+            }
+            return ResponseResult.ok(result);
         }
         log.warn("[API 创建基础虚拟机任务失败");
-        return ResponseResult.ok("创建虚拟机失败");
+        return ResponseResult.fail("创建虚拟机失败");
     }
 
     @PublicSysApiCheck

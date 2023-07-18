@@ -39,7 +39,7 @@ public class CreateVmCron {
      * 创建虚拟机
      */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 500)
     public void createVm() {
         // 获取TaskType为CREATE_VM的任务列表
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
@@ -104,6 +104,9 @@ public class CreateVmCron {
                 // 结束任务
                 return;
             }
+            // 更新当前任务hostid
+            task.setHostid(vmhostId);
+            taskService.updateById(task);
             // 添加导入操作系统任务
             Task importTask = new Task();
             long time = System.currentTimeMillis();
