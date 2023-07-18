@@ -226,6 +226,21 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         HashMap<String, String> authentications = getMasterCookieMap(nodeId);
         return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/config", new HashMap<>()).getJSONObject("data");
     }
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机当前状态
+    * @DateTime: 2023/7/18 15:44
+    * @Params: Integer nodeId 节点ID, Integer vmid 虚拟机ID
+    * @Return JSONObject 虚拟机当前状态
+    */
+    @Override
+    public JSONObject getVmStatusCurrent(Integer nodeId, Integer vmid) {
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        Master node = this.getById(nodeId);
+        // 获取cookie
+        HashMap<String, String> authentications = getMasterCookieMap(nodeId);
+        return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/status/current", new HashMap<>()).getJSONObject("data");
+    }
 
     /**
     * @Author: mryunqi
