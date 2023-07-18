@@ -56,7 +56,7 @@ public class Vmhost extends Model<Vmhost> {
     private Integer nested;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> task;
-    private String status;
+    private Integer status;
     private Long createTime;
     private Long expirationTime;
 

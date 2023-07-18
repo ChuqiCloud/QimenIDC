@@ -3,14 +3,20 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
+import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.Resource;
 import java.util.HashMap;
-import java.util.Map;
+
+import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
 /**
  * (Vmhost)表服务实现类
@@ -18,9 +24,13 @@ import java.util.Map;
  * @author mryunqi
  * @since 2023-06-21 15:11:18
  */
+@Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
-
+    @Resource
+    private MasterService masterService;
+    @Resource
+    private TaskService taskService;
     /**
     * @Author: mryunqi
     * @Description: 根据虚拟机id获取虚拟机实例信息
@@ -74,6 +84,151 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         // 返回id
         return this.save(vmhost) ? vmhost.getId() : null;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 虚拟机电源管理
+    * @DateTime: 2023/7/18 16:57
+    * @Params: Integer hostId 虚拟机ID, String action 操作类型
+    * @Return HashMap<String,Object> 返回操作结果
+    */
+    @Override
+    public HashMap<String,Object> power(Integer hostId, String action) {
+        HashMap<String,Object> result = new HashMap<>();
+        // 获取虚拟机实例信息
+        Vmhost vmhost = this.getById(hostId);
+        // 获取虚拟机id
+        int vmId = vmhost.getVmid();
+        // 获取节点id
+        int nodeId = vmhost.getNodeid();
+        // 获取虚拟机状态
+        int vmStatus = vmhost.getStatus();
+        // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停
+        // action类型有start=开机、stop=关机、reboot=重启、shutdown=强制关机
+        switch (action) {
+            case "start": {
+                // 判断虚拟机状态是否为已停止
+                if (vmStatus == 0 || vmStatus == 3) {
+                    result.put("status", true);
+                    // 直接返回true
+                    return result;
+                }
+                else {
+                    // 创建开机任务
+                    Task vmStartTask = new Task();
+                    vmStartTask.setNodeid(nodeId);
+                    vmStartTask.setVmid(vmId);
+                    vmStartTask.setHostid(hostId);
+                    vmStartTask.setType(START_VM);
+                    vmStartTask.setStatus(0);
+                    vmStartTask.setCreateDate(System.currentTimeMillis());
+                    // 保存任务
+                    if (taskService.save(vmStartTask)) {
+                        log.info("[Task-StartVm] 开机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", true);
+                        // 直接返回true
+                    }
+                    else {
+                        log.info("[Task-StartVm] 开机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", false);
+                        result.put("msg", "开机任务创建失败");
+                    }
+                    return result;
+                }
+            }
+            case "stop": {
+                if (vmStatus == 1 || vmStatus == 2) {
+                    result.put("status", true);
+                    // 直接返回true
+                    return result;
+                }
+                else {
+                    Task vmStopTask = new Task();
+                    vmStopTask.setNodeid(nodeId);
+                    vmStopTask.setVmid(vmId);
+                    vmStopTask.setHostid(hostId);
+                    vmStopTask.setType(STOP_VM);
+                    vmStopTask.setStatus(0);
+                    vmStopTask.setCreateDate(System.currentTimeMillis());
+                    if (taskService.save(vmStopTask)) {
+                        log.info("[Task-StopVm] 关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", true);
+                        // 直接返回true
+                        return result;
+                    }
+                    else {
+                        log.info("[Task-StopVm] 关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", false);
+                        result.put("msg", "关机任务创建失败");
+                        return result;
+                    }
+                }
+            }
+            case "reboot": {
+                // 判断虚拟机状态是否为暂停
+                if (vmStatus == 4) {
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已暂停，无法重启");
+                    return result;
+                }
+                else {
+                    Task vmRebootTask = new Task();
+                    vmRebootTask.setNodeid(nodeId);
+                    vmRebootTask.setVmid(vmId);
+                    vmRebootTask.setHostid(hostId);
+                    vmRebootTask.setType(REBOOT_VM);
+                    vmRebootTask.setStatus(0);
+                    vmRebootTask.setCreateDate(System.currentTimeMillis());
+                    if (taskService.save(vmRebootTask)) {
+                        log.info("[Task-RebootVm] 重启任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", true);
+                        // 直接返回true
+                        return result;
+                    }
+                    else {
+                        log.info("[Task-RebootVm] 重启任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", false);
+                        result.put("msg", "重启任务创建失败");
+                    }
+                }
+            }
+            case "shutdown":{
+                // 判断虚拟机状态是否为暂停
+                if (vmStatus == 4) {
+                    // 调用节点接口关机
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已暂停，无法关机");
+                    return result;
+                }
+                else {
+                    Task vmShutdownTask = new Task();
+                    vmShutdownTask.setNodeid(nodeId);
+                    vmShutdownTask.setVmid(vmId);
+                    vmShutdownTask.setHostid(hostId);
+                    vmShutdownTask.setType(STOP_VM_FORCE);
+                    vmShutdownTask.setStatus(0);
+                    vmShutdownTask.setCreateDate(System.currentTimeMillis());
+                    if (taskService.save(vmShutdownTask)) {
+                        log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", true);
+                        // 直接返回true
+                        return result;
+                    }
+                    else {
+                        log.info("[Task-ShutdownVm] 强制关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        result.put("status", false);
+                        result.put("msg", "强制关机任务创建失败");
+                        return result;
+                    }
+                }
+            }
+            default: {
+                result.put("status", false);
+                result.put("msg", "未知操作");
+                return result;
+            }
+        }
     }
 }
 
