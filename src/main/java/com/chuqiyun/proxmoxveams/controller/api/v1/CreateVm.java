@@ -1,4 +1,4 @@
-package com.chuqiyun.proxmoxveams.controller.api;
+package com.chuqiyun.proxmoxveams.controller.api.v1;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
@@ -28,7 +28,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
  */
 @Slf4j
 @RestController
-public class CreateNode {
+public class CreateVm {
     @Resource
     private MasterService masterService;
     @Resource
@@ -41,7 +41,7 @@ public class CreateNode {
     private VmhostService vmhostService;
     @ApiOperation(value = "创建虚拟机", notes = "创建虚拟机")
     @PublicSysApiCheck
-    @PostMapping("/api/cerateVM")
+    @PostMapping("/api/v1/cerateVM")
     public ResponseResult<ArrayList<Vmhost>> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
         ArrayList<Vmhost> result = new ArrayList<>();
         int nodeId = vmParams.getNodeid();
@@ -160,18 +160,5 @@ public class CreateNode {
         return ResponseResult.fail("创建虚拟机失败");
     }
 
-    @PublicSysApiCheck
-    @GetMapping("/api/getNode")
-    public ResponseResult getNode() throws UnauthorizedException {
-        Master node = masterService.getById(5);
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        // 获取cookie
-        HashMap<String, String> authentications = masterService.getMasterCookieMap(5);
-        HashMap<String, Object> param = new HashMap<>();
-        // 添加一个数据盘
-        //param.put("scsi1", "local-lvm:10");
-        JSONObject json = proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/storage", param);
-        //JSONObject json =  proxmoxApiService.getNodeApi(node,authentications, "/nodes/pve/qemu/101/config", param);
-        return ResponseResult.ok(json);
-    }
+
 }
