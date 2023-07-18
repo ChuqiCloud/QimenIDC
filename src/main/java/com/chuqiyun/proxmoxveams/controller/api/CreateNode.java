@@ -37,11 +37,13 @@ public class CreateNode {
     private IpstatusService ipstatusService;
     @Resource
     private IppoolService ippoolService;
+    @Resource
+    private VmhostService vmhostService;
     @ApiOperation(value = "创建虚拟机", notes = "创建虚拟机")
     @PublicSysApiCheck
     @PostMapping("/api/cerateVM")
-    public ResponseResult<ArrayList<VmParams>> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
-        ArrayList<VmParams> result = new ArrayList<>();
+    public ResponseResult<ArrayList<Vmhost>> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
+        ArrayList<Vmhost> result = new ArrayList<>();
         int nodeId = vmParams.getNodeid();
         Master node = masterService.getById(nodeId);
         // 判断实体类是否为空
@@ -145,9 +147,9 @@ public class CreateNode {
                 Task task1 = taskService.getById(task.getId());
                 if (task1.getStatus() == 2) {
                     // 任务完成
-                    vmParams.setHostid(task1.getHostid());
-                    vmParams.setVmid(task1.getVmid());
-                    result.add(vmParams);
+                    // 获取虚拟机信息
+                    Vmhost vmHost = vmhostService.getById(task1.getHostid());
+                    result.add(vmHost);
                     return ResponseResult.ok(result);
                 }
                 count++;
