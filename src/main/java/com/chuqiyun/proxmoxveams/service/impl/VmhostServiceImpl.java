@@ -53,7 +53,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setIpConfig(vmParams.getIpConfig());
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
-        } else {
+        }
+        else {
             vmhost.setNested(1);
         }
         vmhost.setTask(vmParams.getTask());
