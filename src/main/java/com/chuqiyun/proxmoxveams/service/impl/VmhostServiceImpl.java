@@ -50,6 +50,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setBridge(vmParams.getBridge());
         vmhost.setOs(vmParams.getOs());
         vmhost.setBandwidth(vmParams.getBandwidth());
+        if (vmParams.getNested() == null || !vmParams.getNested()) {
+            vmhost.setNested(0);
+        } else {
+            vmhost.setNested(1);
+        }
         vmhost.setTask(vmParams.getTask());
         vmhost.setCreateTime(System.currentTimeMillis());
         // 判断到期时间是否为空

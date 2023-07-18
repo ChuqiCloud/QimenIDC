@@ -53,6 +53,7 @@ public class Vmhost extends Model<Vmhost> {
     private String  bridge;
 /*    @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object>  ipconfig;*/
+    private Integer nested;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> task;
     private String status;
