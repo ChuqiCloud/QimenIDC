@@ -31,25 +31,8 @@ public class CookieUp {
     */
     @Async
     @Scheduled(fixedDelay = 1000*60*60)  //每隔60分钟执行一次
-    public void cookieUpCron() throws IOException {
-        QueryWrapper<Master> queryWrap = new QueryWrapper<>();
-        queryWrap.eq("status",0);
-        // 获取所有
-        List<Master> nodeList = masterService.list(queryWrap);
-        // 遍历
-        for (Master node : nodeList) {
-            String url = "https://"+node.getHost()+":"+node.getPort();
-            HashMap<String,String> user = new HashMap<>();
-            user.put("url",url);
-            user.put("username",node.getUsername());
-            user.put("password",node.getPassword());
-            user.put("realm",node.getRealm());
-            ProxmoxApiUtil pveApi = new ProxmoxApiUtil();
-            HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
-            node.setTicket(authentications.get("ticket"));
-            node.setCsrfToken(authentications.get("csrfToken"));
-            masterService.updateById(node);
-        }
+    public void cookieUpCron(){
+        masterService.updateAllNodeCookie();
     }
 
 }
