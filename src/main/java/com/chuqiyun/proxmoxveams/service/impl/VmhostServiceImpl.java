@@ -104,6 +104,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         int nodeId = vmhost.getNodeid();
         // 获取虚拟机状态
         int vmStatus = vmhost.getStatus();
+        long time = System.currentTimeMillis();
         // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停
         // action类型有start=开机、stop=关机、reboot=重启、shutdown=强制关机、suspend=挂起、resume=恢复、pause=暂停、unpause=恢复
         switch (action) {
@@ -126,12 +127,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmStartTask.setHostid(hostId);
                     vmStartTask.setType(START_VM);
                     vmStartTask.setStatus(0);
-                    vmStartTask.setCreateDate(System.currentTimeMillis());
+                    vmStartTask.setCreateDate(time);
                     // 保存任务
                     if (taskService.save(vmStartTask)) {
                         log.info("[Task-StartVm] 开机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmStartTask.getId());
+                        this.updateById(vmhost);
                         result.put("status", true);
-                        // 直接返回true
                     }
                     else {
                         log.info("[Task-StartVm] 开机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -158,11 +161,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmStopTask.setHostid(hostId);
                     vmStopTask.setType(STOP_VM);
                     vmStopTask.setStatus(0);
-                    vmStopTask.setCreateDate(System.currentTimeMillis());
+                    vmStopTask.setCreateDate(time);
                     if (taskService.save(vmStopTask)) {
                         log.info("[Task-StopVm] 关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmStopTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-StopVm] 关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -185,11 +190,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmRebootTask.setHostid(hostId);
                     vmRebootTask.setType(REBOOT_VM);
                     vmRebootTask.setStatus(0);
-                    vmRebootTask.setCreateDate(System.currentTimeMillis());
+                    vmRebootTask.setCreateDate(time);
                     if (taskService.save(vmRebootTask)) {
                         log.info("[Task-RebootVm] 重启任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmRebootTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-RebootVm] 重启任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -213,11 +220,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmShutdownTask.setHostid(hostId);
                     vmShutdownTask.setType(STOP_VM_FORCE);
                     vmShutdownTask.setStatus(0);
-                    vmShutdownTask.setCreateDate(System.currentTimeMillis());
+                    vmShutdownTask.setCreateDate(time);
                     if (taskService.save(vmShutdownTask)) {
                         log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmShutdownTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-ShutdownVm] 强制关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -240,11 +249,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmSuspendTask.setHostid(hostId);
                     vmSuspendTask.setType(SUSPEND_VM);
                     vmSuspendTask.setStatus(0);
-                    vmSuspendTask.setCreateDate(System.currentTimeMillis());
+                    vmSuspendTask.setCreateDate(time);
                     if (taskService.save(vmSuspendTask)) {
                         log.info("[Task-SuspendVm] 挂起任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmSuspendTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-SuspendVm] 挂起任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -267,11 +278,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmResumeTask.setHostid(hostId);
                     vmResumeTask.setType(RESUME_VM);
                     vmResumeTask.setStatus(0);
-                    vmResumeTask.setCreateDate(System.currentTimeMillis());
+                    vmResumeTask.setCreateDate(time);
                     if (taskService.save(vmResumeTask)) {
                         log.info("[Task-ResumeVm] 恢复任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmResumeTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-ResumeVm] 恢复任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -288,11 +301,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 vmPauseTask.setHostid(hostId);
                 vmPauseTask.setType(PAUSE_VM);
                 vmPauseTask.setStatus(0);
-                vmPauseTask.setCreateDate(System.currentTimeMillis());
+                vmPauseTask.setCreateDate(time);
                 if (taskService.save(vmPauseTask)) {
                     log.info("[Task-PauseVm] 暂停任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                     result.put("status", true);
-                    // 直接返回true
+                    // 增加虚拟机task
+                    vmhost.getTask().put(String.valueOf(time),vmPauseTask.getId());
+                    this.updateById(vmhost);
                 }
                 else {
                     log.info("[Task-PauseVm] 暂停任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -314,11 +329,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmUnpauseTask.setHostid(hostId);
                     vmUnpauseTask.setType(UNPAUSE_VM);
                     vmUnpauseTask.setStatus(0);
-                    vmUnpauseTask.setCreateDate(System.currentTimeMillis());
+                    vmUnpauseTask.setCreateDate(time);
                     if (taskService.save(vmUnpauseTask)) {
                         log.info("[Task-UnpauseVm] 恢复任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 直接返回true
+                        // 增加虚拟机task
+                        vmhost.getTask().put(String.valueOf(time),vmUnpauseTask.getId());
+                        this.updateById(vmhost);
                     }
                     else {
                         log.info("[Task-UnpauseVm] 恢复任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
