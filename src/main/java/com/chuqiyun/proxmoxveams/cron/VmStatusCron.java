@@ -1,6 +1,10 @@
 package com.chuqiyun.proxmoxveams.cron;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -16,7 +20,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -396,6 +402,45 @@ public class VmStatusCron {
             taskService.updateById(task);
             log.info("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 监听所有虚拟机状态
+    * @DateTime: 2023/7/19 17:47
+    */
+    @Async
+    @Scheduled(fixedDelay = 1000*5)
+    public void listenVmStatus() {
+        int i = 1;
+        while (true){
+            QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status",0);
+            // 分页获取100行节点实例
+            Page<Master> page = masterService.getMasterList(i,100,queryWrapper);
+            List<Master> nodes = page.getRecords();
+            // 如果为空则跳出循环
+            if (nodes.size() == 0){
+                break;
+            }
+            for (Master master: nodes){
+                int nodeId = master.getId();
+                JSONObject vmJson = masterService.getNodeVmInfoJsonList(nodeId);
+                // 判空
+                if (vmJson == null){
+                    continue;
+                }
+                JSONArray vmList = vmJson.getJSONArray("data");
+                // 执行同步更新
+                vmhostService.syncVmStatus(vmList,nodeId);
+            }
+            // 如果当前页数等于总页数则跳出循环
+            if (i == page.getPages()){
+                break;
+            }
+            i++;
+        }
+
     }
 
 }

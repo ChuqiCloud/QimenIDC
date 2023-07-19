@@ -1,6 +1,9 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
 import com.chuqiyun.proxmoxveams.entity.Task;
@@ -10,6 +13,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
+import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +43,29 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Vmhost getVmhostByVmId(int vmId) {
         return this.getOne(new QueryWrapper<Vmhost>().eq("vmid",vmId));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页查询虚拟机实例信息
+    * @DateTime: 2023/7/19 17:51
+    */
+    @Override
+    public Page<Vmhost> selectPage(Integer page, Integer limit) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 附加条件分页查询虚拟机实例信息
+    * @DateTime: 2023/7/19 17:53
+    * @Params: Integer page 页码，Integer limit 每页数量，QueryWrapper<Vmhost> queryWrapper 附加条件
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPage(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper){
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,queryWrapper);
     }
 
     /**
@@ -236,6 +263,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 }
                 return result;
             }
+            // TODO: 2023/7/20 挂起任务有问题，虚拟机返回的状态依旧为running
             case "suspend": {
                 // 判断虚拟机状态是否为暂停
                 if (vmStatus == 4) {
@@ -351,6 +379,59 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 result.put("msg", "未知操作");
                 return result;
             }
+        }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 同步虚拟机状态
+    * @DateTime: 2023/7/19 20:41
+    * @Params: JSONArray vmHosts pve中虚拟机信息 ，Integer nodeId 节点id
+    */
+    @Override
+    public void syncVmStatus(JSONArray vmHosts, Integer nodeId) {
+        for (int i = 0; i < vmHosts.size(); i++){
+            JSONObject vmHostJson = vmHosts.getJSONObject(i);
+            System.out.println(vmHostJson);
+            // 判空
+            if (vmHostJson == null){
+                continue;
+            }
+            int vmId = vmHostJson.getInteger("vmid");
+            // 获取数据库中虚拟机信息
+            QueryWrapper<Vmhost> vmhostQueryWrapper = new QueryWrapper<>();
+            vmhostQueryWrapper.eq("nodeid",nodeId);
+            vmhostQueryWrapper.eq("vmid",vmId);
+            Vmhost vmhost = this.getOne(vmhostQueryWrapper);
+            // 判空
+            if (vmhost == null){
+                continue;
+            }
+            // pve中虚拟机状态
+            String strStatus = vmHostJson.getString("status");
+            // 转换为int
+            int initStatus = VmUtil.getVmStatusNumByStr(strStatus);
+            // 数据库中虚拟机状态
+            int vmStatus = vmhost.getStatus();
+            // 如果相同则不做处理
+            if (initStatus == vmStatus){
+                continue;
+            }
+            // 判断数据库中的状态是否为6(到期)，且pve中的状态不为1(关机)
+            if (vmStatus == 6 && initStatus != 1){
+                // 强制关机
+                this.power(vmhost.getId(),"shutdown");
+                continue;
+            }
+            // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
+            if (vmStatus == 4 && initStatus != 2){
+                // 暂停pve中的虚拟机
+                this.power(vmhost.getId(),"pause");
+                continue;
+            }
+            // 其他情况，直接更新数据库中的状态
+            vmhost.setStatus(initStatus);
+            this.updateById(vmhost);
         }
     }
 }

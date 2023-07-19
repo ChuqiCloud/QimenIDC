@@ -257,5 +257,71 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         return nodeIds;
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定节点所有虚拟机基础数据
+    * @DateTime: 2023/7/19 21:47
+    * @Params: Integer nodeId 节点ID
+    * @Return JSONObject 虚拟机基础数据
+    */
+    @Override
+    public JSONObject getNodeVmInfoJsonList(Integer nodeId) {
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        Master node = this.getById(nodeId);
+        // 获取cookie
+        HashMap<String, String> authentications = getMasterCookieMap(nodeId);
+        try {
+            return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", new HashMap<>());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 更新所有节点cookie
+    * @DateTime: 2023/7/20 0:51
+    */
+    @Override
+    public void updateAllNodeCookie() {
+        int i = 1;
+        while (true){
+            QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status",0);
+            // 分页获取100行节点实例
+            Page<Master> page = this.getMasterList(i,100,queryWrapper);
+            List<Master> nodes = page.getRecords();
+            // 如果获取到的节点实例为空，则跳出循环
+            if (nodes.size() == 0){
+                break;
+            }
+            // 遍历节点实例，更新cookie
+            for (Master node : nodes) {
+                String url = "https://"+node.getHost()+":"+node.getPort();
+                HashMap<String,String> user = new HashMap<>();
+                user.put("url",url);
+                user.put("username",node.getUsername());
+                user.put("password",node.getPassword());
+                user.put("realm",node.getRealm());
+                ProxmoxApiUtil pveApi = new ProxmoxApiUtil();
+                try {
+                    HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
+                    node.setTicket(authentications.get("ticket"));
+                    node.setCsrfToken(authentications.get("csrfToken"));
+                    this.updateById(node);
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+            // 如果当前页数等于总页数则跳出循环
+            if (i == page.getPages()){
+                break;
+            }
+            i++;
+        }
+    }
+
+
 }
 
