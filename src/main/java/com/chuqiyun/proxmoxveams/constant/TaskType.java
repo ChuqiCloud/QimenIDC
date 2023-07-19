@@ -121,5 +121,13 @@ public class TaskType {
      * 强制停止虚拟机
      */
     public static Integer STOP_VM_FORCE = 29;
+    /**
+     * 暂停虚拟机
+     */
+    public static Integer PAUSE_VM = 30;
+    /**
+     * 恢复虚拟机
+     */
+    public static Integer UNPAUSE_VM = 31;
 
 }

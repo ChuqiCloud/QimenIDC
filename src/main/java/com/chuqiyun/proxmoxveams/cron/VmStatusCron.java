@@ -194,6 +194,8 @@ public class VmStatusCron {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
+            // 强制停止
+            params.put("forceStop",true);
             try {
                 proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/shutdown", params);
             } catch (Exception e) {
@@ -315,7 +317,7 @@ public class VmStatusCron {
     public void pauseVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         // 暂停为挂起操作
-        queryWrap.eq("type", SUSPEND_VM);
+        queryWrap.eq("type", PAUSE_VM);
         queryWrap.eq("status", 0);
         Task task = taskService.getOne(queryWrap);
         if (task != null){
@@ -360,7 +362,7 @@ public class VmStatusCron {
     @Scheduled(fixedDelay = 1000)
     public void unpauseVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
-        queryWrap.eq("type", RESUME_VM);
+        queryWrap.eq("type", UNPAUSE_VM);
         queryWrap.eq("status", 0);
         Task task = taskService.getOne(queryWrap);
         if (task != null){
@@ -386,7 +388,7 @@ public class VmStatusCron {
                 e.printStackTrace();
                 return;
             }
-            // 设置数据库中的vm状态为3 3为挂起
+            // 设置数据库中的vm状态为3 3为恢复中
             vmhost.setStatus(3);
             vmhostService.updateById(vmhost);
             // 设置任务状态为2 2为执行完成

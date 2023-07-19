@@ -30,7 +30,8 @@ public class VmStatus {
             return ResponseResult.fail("虚拟机不存在");
         }
         // 判断action是否合法
-        if (!"start".equals(action) && !"stop".equals(action) && !"shutdown".equals(action) && !"reboot".equals(action)) {
+        if (!"start".equals(action) && !"stop".equals(action) && !"shutdown".equals(action) && !"reboot".equals(action)
+            && !"pause".equals(action) && !"unpause".equals(action) && !"suspend".equals(action) && !"resume".equals(action)) {
             return ResponseResult.fail("action不合法");
         }
         HashMap<String, Object> result = vmhostService.power(hostId, action);
@@ -39,7 +40,7 @@ public class VmStatus {
         }
         Boolean status = (Boolean) result.get("status");
         if (!status) {
-            return ResponseResult.fail(result.get("message").toString());
+            return ResponseResult.fail(result.get("msg").toString());
         }
         return ResponseResult.ok();
     }
