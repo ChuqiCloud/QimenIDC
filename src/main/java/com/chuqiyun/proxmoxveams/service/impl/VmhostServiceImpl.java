@@ -140,6 +140,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 4){
                     result.put("status", false);
                     result.put("msg", "虚拟机已暂停，无法关机");
+                    return result;
                 }
                 // 判断虚拟机状态是否为已停止
                 if (vmStatus == 0 || vmStatus == 3) {
@@ -176,6 +177,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 4){
                     result.put("status", false);
                     result.put("msg", "虚拟机已暂停，无法关机");
+                    return result;
                 }
                 if (vmStatus == 1 || vmStatus == 2) {
                     result.put("status", true);
@@ -209,6 +211,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 4) {
                     result.put("status", false);
                     result.put("msg", "虚拟机已暂停，无法重启");
+                    return result;
                 }
                 else {
                     Task vmRebootTask = new Task();
@@ -239,6 +242,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     // 调用节点接口关机
                     result.put("status", false);
                     result.put("msg", "虚拟机已暂停，无法关机");
+                    return result;
                 }
                 else {
                     Task vmShutdownTask = new Task();
@@ -263,12 +267,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 }
                 return result;
             }
-            // TODO: 2023/7/20 挂起任务有问题，虚拟机返回的状态依旧为running
             case "suspend": {
                 // 判断虚拟机状态是否为暂停
                 if (vmStatus == 4) {
                     result.put("status", false);
                     result.put("msg", "虚拟机已暂停，无法挂起");
+                    return result;
                 }
                 else {
                     Task vmSuspendTask = new Task();
@@ -297,7 +301,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 // 判断虚拟机状态是否为暂停
                 if (vmStatus == 4) {
                     result.put("status", false);
-                    result.put("msg", "虚拟机未暂停，无法恢复");
+                    result.put("msg", "虚拟机已暂停，无法恢复");
+                    return result;
                 }
                 else {
                     Task vmResumeTask = new Task();
@@ -348,7 +353,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 // 判断虚拟机状态是否为暂停
                 if (vmStatus != 4) {
                     result.put("status", false);
-                    result.put("msg", "虚拟机未暂停，无法恢复");
+                    result.put("msg", "虚拟机未暂停");
+                    return result;
                 }
                 else {
                     Task vmUnpauseTask = new Task();
@@ -392,7 +398,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public void syncVmStatus(JSONArray vmHosts, Integer nodeId) {
         for (int i = 0; i < vmHosts.size(); i++){
             JSONObject vmHostJson = vmHosts.getJSONObject(i);
-            System.out.println(vmHostJson);
             // 判空
             if (vmHostJson == null){
                 continue;
@@ -411,10 +416,25 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             String strStatus = vmHostJson.getString("status");
             // 转换为int
             int initStatus = VmUtil.getVmStatusNumByStr(strStatus);
+            // 判断是否存在lock字段
+            if (vmHostJson.containsKey("lock")){
+                // 如果为suspending，则将状态设置为2
+                if ("suspending".equals(vmHostJson.getString("lock"))){
+                    initStatus = 2;
+                }
+                // 如果为suspended，也为2
+                if ("suspended".equals(vmHostJson.getString("lock"))){
+                    initStatus = 2;
+                }
+            }
             // 数据库中虚拟机状态
             int vmStatus = vmhost.getStatus();
             // 如果相同则不做处理
             if (initStatus == vmStatus){
+                continue;
+            }
+            // 先判断数据库中状态为4(暂停)，且pve中的状态为2
+            if (vmStatus == 4 && initStatus == 2){
                 continue;
             }
             // 判断数据库中的状态是否为6(到期)，且pve中的状态不为1(关机)
@@ -424,7 +444,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 continue;
             }
             // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
-            if (vmStatus == 4 && initStatus != 2){
+            if (vmStatus == 4){
                 // 暂停pve中的虚拟机
                 this.power(vmhost.getId(),"pause");
                 continue;

@@ -11,6 +11,7 @@ import com.chuqiyun.proxmoxveams.entity.VmParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
+import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -320,6 +321,37 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
             }
             i++;
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机状态码
+     * 0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停、5=到期、6=未知
+    * @DateTime: 2023/7/20 23:09
+    * @Params: Integer nodeId 节点ID, Integer vmid 虚拟机ID
+    * @Return Integer 虚拟机状态码
+    */
+    @Override
+    public Integer getVmStatusCode(Integer nodeId, Integer vmid) {
+        JSONObject vmStatusCurrent = this.getVmStatusCurrent(nodeId, vmid);
+        if (vmStatusCurrent == null){
+            return 6;
+        }
+        String strStatus = vmStatusCurrent.getString("status");
+        // 转换为int
+        int initStatus = VmUtil.getVmStatusNumByStr(strStatus);
+        // 判断是否存在lock字段
+        if (vmStatusCurrent.containsKey("lock")){
+            // 如果为suspending，则将状态设置为2
+            if ("suspending".equals(vmStatusCurrent.getString("lock"))){
+                initStatus = 2;
+            }
+            // 如果为suspended，也为2
+            if ("suspended".equals(vmStatusCurrent.getString("lock"))){
+                initStatus = 2;
+            }
+        }
+        return initStatus;
     }
 
 
