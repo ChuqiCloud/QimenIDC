@@ -1,20 +1,73 @@
+create table config
+(
+    id    int                      not null
+        primary key,
+    token varchar(255) default '0' not null
+);
+
+create table ippool
+(
+    id          int auto_increment
+        primary key,
+    node_id     int           not null,
+    vm_id       int           null,
+    pool_id     int           null,
+    ip          varchar(15)   not null,
+    subnet_mask varchar(15)   not null,
+    gateway     varchar(15)   not null,
+    dns1        varchar(15)   null,
+    dns2        varchar(15)   null,
+    status      int default 0 not null
+);
+
+create table ipstatus
+(
+    id        int auto_increment
+        primary key,
+    name      varchar(255) not null,
+    gateway   varchar(15)  null,
+    mask      int          null,
+    dns1      varchar(15)  null,
+    dns2      varchar(15)  null,
+    available int          null comment '可用',
+    used      int          null comment '已用',
+    disable   int          null comment '禁用',
+    nodeId    int          null
+);
+
 create table master
 (
-    id           int auto_increment
+    id                int auto_increment
         primary key,
-    host         varchar(255)               not null,
-    port         int          default 8006  not null,
-    username     varchar(255)               not null,
-    password     varchar(255)               not null,
-    realm        varchar(50)  default 'pam' not null,
-    status       int          default 0     not null comment '0正常1停止',
-    csrf_token   varchar(255)               null,
-    ticket       text                       null,
-    node_name    varchar(255) default 'pve' not null,
-    auto_storage varchar(255)               null,
-    ssh_port     int                        null,
-    ssh_username varchar(255)               null,
-    ssh_password varchar(255)               null
+    host              varchar(255)               not null,
+    port              int          default 8006  not null,
+    username          varchar(255)               not null,
+    password          varchar(255)               not null,
+    realm             varchar(50)  default 'pam' not null,
+    status            int          default 0     not null comment '0正常1停止',
+    csrf_token        varchar(255)               null,
+    ticket            text                       null,
+    node_name         varchar(255) default 'pve' not null,
+    auto_storage      varchar(255)               null,
+    ssh_port          int                        null,
+    ssh_username      varchar(255)               null,
+    ssh_password      varchar(255)               null,
+    controller_status int                        null
+);
+
+create table os
+(
+    id          int auto_increment
+        primary key,
+    node_id     int           null,
+    name        varchar(255)  not null,
+    down_type   int default 0 not null comment '0=url下载;1=手动上传',
+    url         varchar(255)  null,
+    schedule    decimal       null,
+    size        mediumtext    null,
+    path        varchar(255)  null,
+    status      int           null,
+    create_time mediumtext    null
 );
 
 create table sysapi
@@ -71,7 +124,12 @@ create table vmhost
     system_disk_size int                                        null,
     data_disk        json                                       null,
     bridge           varchar(255)                               null,
-    task             json                                       null comment '任务流'
+    ip_config        json                                       null,
+    nested           int          default 0                     not null comment '嵌套虚拟化',
+    task             json                                       null comment '任务流',
+    status           int          default 0                     not null,
+    create_time      mediumtext                                 not null comment '创建时间',
+    expiration_time  mediumtext                                 not null comment '到期时间'
 );
 
 
