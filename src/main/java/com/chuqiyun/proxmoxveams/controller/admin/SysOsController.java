@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Os;
+import com.chuqiyun.proxmoxveams.entity.OsParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -67,6 +69,26 @@ public class SysOsController {
         }
         osOnlineResult.put("data",jsonArray);
         return ResponseResult.ok(osOnlineResult);
+    }
+    /**
+     * 插入新的OS
+     * @param adminPath 后台路径 osParams os参数
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @PostMapping("/{adminPath}/insertOs")
+    public ResponseResult<Object> downloadOs(@PathVariable("adminPath") String adminPath,
+                                     @RequestBody OsParams osParams) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        HashMap<String,Object> result = osService.insertOs(osParams);
+        if (result.get("code").equals(0)){
+            return ResponseResult.ok(result.get("msg"));
+        }
+        return ResponseResult.fail((String) result.get("msg"));
+
     }
 
 }

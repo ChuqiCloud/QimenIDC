@@ -6,11 +6,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.OsDao;
 import com.chuqiyun.proxmoxveams.entity.Os;
+import com.chuqiyun.proxmoxveams.entity.OsParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -25,7 +27,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     private MasterService masterService;
     /**
     * @Author: mryunqi
-    * @Description: 查询指定名称os是否存在
+    * @Description: 查询指定名称os
     * @DateTime: 2023/7/14 21:20
     * @Params: String name 系统名称
     * @Return  Os
@@ -35,6 +37,41 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("name",name);
         return this.getOne(queryWrapper);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 查询指定fileName的os
+    * @DateTime: 2023/7/21 23:45
+    * @Params: String fileName 文件名
+    * @Return Os
+    */
+    @Override
+    public Os selectOsByFileName(String fileName) {
+        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("file_name",fileName);
+        return this.getOne(queryWrapper);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 查询指定名称的os是否存在
+    * @DateTime: 2023/7/21 23:40
+    * @Params: String name 系统名称（别称）
+    * @Return boolean
+    */
+    @Override
+    public boolean isExistOsByName(String name){
+        return this.selectOsByName(name)!=null;
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 查询指定fileName的os是否存在
+    * @DateTime: 2023/7/21 23:45
+    * @Params: String fileName 文件名
+    * @Return boolean
+    */
+    @Override
+    public boolean isExistOsByFileName(String fileName){
+        return this.selectOsByFileName(fileName)!=null;
     }
     /**
     * @Author: mryunqi
@@ -81,6 +118,96 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             }
         }
         return jsonArray;
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 插入os
+    * @DateTime: 2023/7/21 23:35
+    * @Params: OsParams osParams 系统参数
+    * @Return HashMap<String,Object> resultMap
+    */
+    @Override
+    public HashMap<String, Object> insertOs(OsParams osParams){
+        HashMap<String,Object> resultMap = new HashMap<>();
+        // 判断name是否已存在
+        String osNameAlias = osParams.getName();
+        if (this.isExistOsByName(osNameAlias)){
+            resultMap.put("code",1);
+            resultMap.put("msg","系统名称已存在");
+            return resultMap;
+        }
+        // 判断fileName是否存在
+        String fileName = osParams.getFileName();
+        if (this.isExistOsByFileName(fileName)){
+            resultMap.put("code",1);
+            resultMap.put("msg","文件名已存在");
+            return resultMap;
+        }
+        // 判断type是否为空
+        String type = osParams.getType();
+        if (type==null|| "".equals(type)){
+            resultMap.put("code", 1);
+            resultMap.put("msg", "OS类型不能为空");
+            return resultMap;
+        }
+        // 如果镜像架构为空，则默认为x86_64
+        String arch = osParams.getArch();
+        if (arch==null|| "".equals(arch)){
+            arch = "x86_64";
+        }
+        // 如果type为linux，镜像操作类型不能为空
+        String osType = osParams.getOsType();
+        if ("linux".equals(type)){
+            if (osType==null|| "".equals(osType)){
+                resultMap.put("code", 1);
+                resultMap.put("msg", "镜像操作类型不能为空");
+                return resultMap;
+            }
+        }
+        // 如果为自动下载，则判断url是否为空
+        int downType = osParams.getDownType();
+        String url = osParams.getUrl();
+        if (downType==0){
+            if (url==null|| "".equals(url)){
+                resultMap.put("code", 1);
+                resultMap.put("msg", "url不能为空");
+                return resultMap;
+            }
+        }
+        // 判断path是否为空或者为default
+        String path = osParams.getPath();
+        if (path==null|| "".equals(path)||"default".equals(path)){
+            path = "/home/images";
+        }
+        // 默认cloud为0
+        int cloud = osParams.getCloud();
+        if (cloud != 0 && cloud != 1){
+            cloud = 0;
+        }
+        // 创建os实体
+        Os os = new Os();
+        os.setName(osNameAlias);
+        os.setFileName(fileName);
+        os.setType(type);
+        os.setArch(arch);
+        os.setOsType(osType);
+        os.setDownType(downType);
+        os.setUrl(url);
+        os.setPath(path);
+        os.setStatus(0);
+        os.setCloud(cloud);
+        os.setCreateTime(System.currentTimeMillis());
+        // 插入数据库
+        boolean result = this.save(os);
+        if (result){
+            resultMap.put("code",0);
+            resultMap.put("msg","添加成功");
+            return resultMap;
+        }else {
+            resultMap.put("code",1);
+            resultMap.put("msg","添加失败");
+            return resultMap;
+        }
     }
 
 }

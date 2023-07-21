@@ -95,9 +95,20 @@ public class ClientApiUtil {
     
     /**
     * @Author: mryunqi
-    * @Description: 
+    * @Description: 下载指定url文件到指定路径
     * @DateTime: 2023/7/16 17:16
-    * @Params: 
-    * @Return 
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: fileUrl 文件url
+     * @Params: path 文件下载路径
+    * @Return Boolean
     */
+    public static Boolean downloadFile(String ip, String token, String fileUrl,String path){
+        String url = "http://"+ip+":7600/wget";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("url",fileUrl);
+        paramMap.put("path",path);
+        JSONObject result = getControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
 }
