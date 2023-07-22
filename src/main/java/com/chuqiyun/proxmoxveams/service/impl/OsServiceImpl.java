@@ -226,8 +226,9 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     * @Return Page<Os> osPage 分页对象
     */
     @Override
-    public Page<Os> selectOsByPage(int page, int limit,QueryWrapper<Os> osQueryWrapper) {
+    public Page<Os> selectOsByPage(int page, int limit, QueryWrapper<Os> osQueryWrapper) {
         Page<Os> osPage = new Page<>(page,limit);
+        osQueryWrapper.orderByDesc("create_time");
         return this.page(osPage,osQueryWrapper);
     }
 
