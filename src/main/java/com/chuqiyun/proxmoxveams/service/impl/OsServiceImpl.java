@@ -3,17 +3,18 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.OsDao;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.OsParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
+import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
-import java.util.List;
 
 /**
  * (Os)表服务实现类
@@ -75,20 +76,6 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     }
     /**
     * @Author: mryunqi
-    * @Description: 获取指定名称指定nodeId的os
-    * @DateTime: 2023/7/16 11:40
-    * @Params: String name 系统名称 String nodeId 节点id
-    * @Return Os
-    */
-    @Override
-    public Os selectOsByNameAndNodeId(String name, Integer nodeId) {
-        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("name",name);
-        queryWrapper.eq("node_id",nodeId);
-        return this.getOne(queryWrapper);
-    }
-    /**
-    * @Author: mryunqi
     * @Description: 获取指定名称的os的所有节点信息
     * @DateTime: 2023/7/16 12:20
     * @Params: String osName 系统名称
@@ -96,26 +83,17 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public JSONArray selectOsByOsName(String osName){
-        // 获取所有节点id
-        List<Integer> nodeIdList = masterService.getAllNodeIdList();
         JSONArray jsonArray = new JSONArray();
-        for (Integer nodeId : nodeIdList){
-            Os os = selectOsByNameAndNodeId(osName, nodeId);
-            if (os!=null){
-                // 已安装
-                JSONObject jsonObject = new JSONObject();
-                jsonObject.put("nodeId",nodeId);
-                jsonObject.put("status",os.getStatus());
-                jsonObject.put("osId",os.getId());
-                jsonObject.put("size",os.getSize());
-                jsonObject.put("path",os.getPath());
-                // 判断是否正在下载
-                if (os.getStatus()==1){
-                    jsonObject.put("schedule",os.getSchedule());
-                }
-                jsonObject.put("createTime",os.getCreateTime());
-                jsonArray.add(jsonObject);
-            }
+        Os os = selectOsByFileName(osName);
+        if (os!=null){
+            // 已安装
+            JSONObject jsonObject = new JSONObject();
+            jsonObject.put("status",os.getStatus());
+            jsonObject.put("osId",os.getId());
+            jsonObject.put("size",os.getSize());
+            jsonObject.put("path",os.getPath());
+            jsonObject.put("createTime",os.getCreateTime());
+            jsonArray.add(jsonObject);
         }
         return jsonArray;
     }
@@ -155,6 +133,12 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         if (arch==null|| "".equals(arch)){
             arch = "x86_64";
         }
+        // 判断镜像架构是否为x86_64,aarch64
+        if (!"x86_64".equals(arch)&&!"aarch64".equals(arch)){
+            resultMap.put("code", 1);
+            resultMap.put("msg", "镜像架构参数错误");
+            return resultMap;
+        }
         // 如果type为linux，镜像操作类型不能为空
         String osType = osParams.getOsType();
         if ("linux".equals(type)){
@@ -166,13 +150,22 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         }
         // 如果为自动下载，则判断url是否为空
         int downType = osParams.getDownType();
+        // 先判断是否为0或者1
+        if (downType != 0 && downType != 1){
+            resultMap.put("code", 1);
+            resultMap.put("msg", "下载类型错误");
+            return resultMap;
+        }
         String url = osParams.getUrl();
+        String size = "0MB";
         if (downType==0){
             if (url==null|| "".equals(url)){
                 resultMap.put("code", 1);
                 resultMap.put("msg", "url不能为空");
                 return resultMap;
             }
+            // 获取文件大小
+            size = ModUtil.formatFileSize(ModUtil.getUrlFileSize(url));
         }
         // 判断path是否为空或者为default
         String path = osParams.getPath();
@@ -193,6 +186,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         os.setOsType(osType);
         os.setDownType(downType);
         os.setUrl(url);
+        os.setSize(size);
         os.setPath(path);
         os.setStatus(0);
         os.setCloud(cloud);
@@ -208,6 +202,33 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             resultMap.put("msg","添加失败");
             return resultMap;
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页查询os
+    * @DateTime: 2023/7/22 21:32
+    * @Params: int page 页码 int limit 每页数量
+    * @Return Page<Os> osPage 分页对象
+    */
+    @Override
+    public Page<Os> selectOsByPage(int page, int limit){
+        Page<Os> osPage = new Page<>(page,limit);
+        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
+        queryWrapper.orderByDesc("create_time");
+        return this.page(osPage,queryWrapper);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 分页查询os附加条件
+    * @DateTime: 2023/7/22 21:35
+    * @Params: int page 页码 int limit 每页数量 QueryWrapper<Os> osQueryWrapper 条件构造器
+    * @Return Page<Os> osPage 分页对象
+    */
+    @Override
+    public Page<Os> selectOsByPage(int page, int limit,QueryWrapper<Os> osQueryWrapper) {
+        Page<Os> osPage = new Page<>(page,limit);
+        return this.page(osPage,osQueryWrapper);
     }
 
 }

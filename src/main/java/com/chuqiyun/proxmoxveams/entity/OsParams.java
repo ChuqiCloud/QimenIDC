@@ -23,7 +23,7 @@ public class OsParams {
     private String type;
     /**
      * 镜像架构
-     * x86_64,arm64,arm64,armhf,ppc64el,riscv64,s390x,aarch64,armv7l
+     * x86_64,aarch64
      */
     private String arch;
     /**

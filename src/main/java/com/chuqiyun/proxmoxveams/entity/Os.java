@@ -1,7 +1,11 @@
 package com.chuqiyun.proxmoxveams.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -18,10 +22,9 @@ import java.util.Map;
 @EqualsAndHashCode(callSuper = true)
 @TableName(value = "os",autoResultMap = true)
 public class Os extends Model<Os> {
-    
+    @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
-    
-    private Integer nodeId;
+
     /**
      * 系统名称（别称）
      */
@@ -48,13 +51,13 @@ public class Os extends Model<Os> {
     /**
      * 已安装镜像的节点
      */
+    @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String,Object> nodeStatus;
     /**
      * 0=url下载;1=手动上传
      */
     private Integer downType;
     private String url;
-    private Double schedule;
     private String size;
     private String path;
     /**

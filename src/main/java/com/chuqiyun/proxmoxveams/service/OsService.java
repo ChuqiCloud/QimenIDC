@@ -1,6 +1,8 @@
 package com.chuqiyun.proxmoxveams.service;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.OsParams;
@@ -23,10 +25,12 @@ public interface OsService extends IService<Os> {
 
     boolean isExistOsByFileName(String fileName);
 
-    Os selectOsByNameAndNodeId(String name, Integer nodeId);
-
     JSONArray selectOsByOsName(String osName);
 
     HashMap<String, Object> insertOs(OsParams osParams);
+
+    Page<Os> selectOsByPage(int page, int limit);
+
+    Page<Os> selectOsByPage(int page, int limit, QueryWrapper<Os> osQueryWrapper);
 }
 

@@ -12,6 +12,9 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
 
+import static com.chuqiyun.proxmoxveams.utils.ModUtil.formatFileSize;
+import static com.chuqiyun.proxmoxveams.utils.ModUtil.getUrlFileSize;
+
 @SpringBootTest
 class ProxmoxVeAmsApplicationTests {
     @Resource
@@ -19,12 +22,8 @@ class ProxmoxVeAmsApplicationTests {
 
     @Test
     void contextLoads() {
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        Master node = masterService.getById(1);
-        // 获取cookie
-        HashMap<String, String> authentications = masterService.getMasterCookieMap(1);
-        JSONObject data = proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/", new HashMap<>());
-        System.out.println(data);
+        long size = getUrlFileSize("http://oa.chuqiyun.com:8877/Cloud/Ubuntu/Ubuntu-22.04-x64.qcow2");
+        System.out.println(formatFileSize(size));
     }
 
 }

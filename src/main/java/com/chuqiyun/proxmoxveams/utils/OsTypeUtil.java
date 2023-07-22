@@ -5,6 +5,13 @@ package com.chuqiyun.proxmoxveams.utils;
  * @date 2023/6/29
  */
 public class OsTypeUtil {
+    /**
+    * @Author: mryunqi
+    * @Description: 模糊匹配操作系统类型
+    * @DateTime: 2023/7/22 21:55
+    * @Params: String os 操作系统 String type 操作类型
+    * @Return String 操作系统类型
+    */
     public static String getOsType(String os,String type) {
         if ("win".equals(type)) {
             // 模糊匹配os是否为Windows XP
@@ -63,5 +70,27 @@ public class OsTypeUtil {
             return "l26";
         }
         return "other";
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 匹配os实体类参数对应数据库字段
+    * @DateTime: 2023/7/22 21:56
+    * @Params: String param os实体类参数
+    * @Return String 数据库字段
+    */
+    public static String getOsEntityDbName(String param){
+        return switch (param) {
+            case "name" -> "name";
+            case "fileName" -> "file_name";
+            case "type" -> "type";
+            case "arch" -> "arch";
+            case "osType" -> "os_type";
+            case "downType" -> "down_type";
+            case "url" -> "url";
+            case "path" -> "path";
+            case "cloud" -> "cloud";
+            default -> null;
+        };
     }
 }

@@ -2,6 +2,8 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.OsParams;
@@ -9,6 +11,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
+import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ResponseResult;
 import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
@@ -89,6 +92,46 @@ public class SysOsController {
         }
         return ResponseResult.fail((String) result.get("msg"));
 
+    }
+
+    /**
+     * 分页获取已添加os
+     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/selectOsByPage")
+    public ResponseResult<Object> selectOsByPage(@PathVariable("adminPath") String adminPath,
+                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+                                           @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Page<Os> osPage = osService.selectOsByPage(page,size);
+        return ResponseResult.ok(osPage);
+    }
+    /**
+     * 分页带条件获取已添加os
+     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/selectOsByPageAndCondition")
+    public ResponseResult<Object> selectOsByPageAndCondition(@PathVariable("adminPath") String adminPath,
+                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+                                           @RequestParam(name = "size", defaultValue = "20") Integer size,
+                                           @RequestParam(name = "param") String param,
+                                           @RequestParam(name = "value") String value) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
+        param = OsTypeUtil.getOsEntityDbName(param);
+        queryWrapper.like(param,value);
+        Page<Os> osPage = osService.selectOsByPage(page,size,queryWrapper);
+        return ResponseResult.ok(osPage);
     }
 
 }

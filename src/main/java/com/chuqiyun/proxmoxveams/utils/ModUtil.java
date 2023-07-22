@@ -89,4 +89,46 @@ public class ModUtil {
         newJsonObject.put("data",data);
         return newJsonObject;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据下载url获取文件大小
+    * @DateTime: 2023/7/22 17:12
+    * @Params: String url 下载url
+    * @Return Long fileSize 文件大小
+    */
+    public static Long getUrlFileSize(String url){
+        long fileSize = 0L;
+        try {
+            java.net.URL urlFile = new java.net.URL(url);
+            java.net.HttpURLConnection httpUrl = (java.net.HttpURLConnection) urlFile.openConnection();
+            httpUrl.connect();
+            fileSize = httpUrl.getContentLengthLong();
+            httpUrl.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return fileSize;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将文件大小转换为可读性更好的格式
+    * @DateTime: 2023/7/22 17:17
+    * @Params: Long fileSize 文件大小
+    * @Return String fileSizeString 可读性更好的文件大小
+    */
+    public static String formatFileSize(Long fileSize){
+        String fileSizeString;
+        if (fileSize < 1024) {
+            fileSizeString = fileSize + "B";
+        } else if (fileSize < 1048576) {
+            fileSizeString = fileSize / 1024 + "KB";
+        } else if (fileSize < 1073741824) {
+            fileSizeString = fileSize / 1048576 + "MB";
+        } else {
+            fileSizeString = fileSize / 1073741824 + "GB";
+        }
+        return fileSizeString;
+    }
 }
