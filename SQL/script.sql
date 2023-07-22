@@ -59,7 +59,6 @@ create table os
 (
     id          int auto_increment
         primary key,
-    node_id     int           null,
     name        varchar(255)  not null,
     file_name   varchar(255)  null comment '文件全名',
     type        varchar(255)  null comment '镜像类型',
@@ -68,7 +67,6 @@ create table os
     node_status json          null,
     down_type   int default 0 not null comment '0=url下载;1=手动上传',
     url         varchar(255)  null,
-    schedule    decimal       null,
     size        mediumtext    null,
     path        varchar(255)  null,
     cloud       int default 0 null comment 'cloud-init(0=未开启 1=开启)',
