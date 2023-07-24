@@ -63,4 +63,25 @@ public class SysNodeMasterController {
         }
         return ResponseResult.ok(masterPage);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 修改节点信息
+    * @DateTime: 2023/7/24 22:45
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/updateNodeInfo",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<String> updateNodeInfo(@PathVariable("adminPath") String adminPath,
+                                                 @RequestBody Master master) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        // 将master信息存入数据库
+        if (masterService.updateById(master)) {
+            return ResponseResult.ok("修改成功！");
+        } else {
+            return ResponseResult.fail("修改失败！");
+        }
+    }
 }

@@ -354,6 +354,5 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         return initStatus;
     }
 
-
 }
 
