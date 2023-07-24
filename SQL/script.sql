@@ -76,10 +76,12 @@ create table os
 
 create table sysapi
 (
-    id     int auto_increment
+    id          int auto_increment
         primary key,
-    appid  varchar(255) not null,
-    appkey varchar(255) not null
+    appid       varchar(255) not null,
+    appkey      varchar(255) not null,
+    info        varchar(255) null comment '备注',
+    create_date mediumtext   null
 );
 
 create table sysuser
