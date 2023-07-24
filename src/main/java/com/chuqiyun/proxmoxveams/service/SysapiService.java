@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.entity.Sysapi;
 
@@ -12,5 +13,9 @@ import com.chuqiyun.proxmoxveams.entity.Sysapi;
 public interface SysapiService extends IService<Sysapi> {
 
     Sysapi getSysapi(String appId);
+
+    Page<Sysapi> selectSysapiPage(int page, int limit);
+
+    boolean deleteSysapiById(Integer id);
 }
 
