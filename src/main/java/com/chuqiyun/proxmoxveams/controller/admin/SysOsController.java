@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.OsParams;
 import com.chuqiyun.proxmoxveams.service.MasterService;
@@ -132,6 +133,37 @@ public class SysOsController {
         queryWrapper.like(param,value);
         Page<Os> osPage = osService.selectOsByPage(page,size,queryWrapper);
         return ResponseResult.ok(osPage);
+    }
+
+    /**
+     * 下载os到节点
+     * @param adminPath 后台路径 osId osId
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @PostMapping("/{adminPath}/downloadOs")
+    public ResponseResult<Object> downloadOs(@PathVariable("adminPath") String adminPath,
+                                             @RequestBody JSONObject params) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Integer osId = params.getInteger("osId");
+        Integer nodeId = params.getInteger("nodeId");
+        Os os = osService.getById(osId);
+        if (os == null){
+            return ResponseResult.fail("os不存在");
+        }
+        Master node = masterService.getById(nodeId);
+        if (node == null){
+            return ResponseResult.fail("节点不存在");
+        }
+        boolean result = osService.downloadOs(osId,nodeId);
+        if (result){
+            return ResponseResult.ok("开始下载");
+        }
+        return ResponseResult.fail("下载失败");
+
     }
 
 }

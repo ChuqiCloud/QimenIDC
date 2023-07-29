@@ -6,10 +6,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.OsDao;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.OsParams;
+import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +29,8 @@ import java.util.HashMap;
 public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     @Resource
     private MasterService masterService;
+    @Resource
+    private ConfigService configService;
     /**
     * @Author: mryunqi
     * @Description: 查询指定名称os
@@ -230,6 +235,27 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         Page<Os> osPage = new Page<>(page,limit);
         osQueryWrapper.orderByDesc("create_time");
         return this.page(osPage,osQueryWrapper);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 下载os到节点
+    * @DateTime: 2023/7/29 22:23
+    * @Params: Integer osId 镜像id ，Integer nodeId 节点id
+    * @Return boolean result 下载结果
+    */
+    @Override
+    public boolean downloadOs(Integer osId,Integer nodeId){
+        Os os = this.getById(osId);
+        Master node = masterService.getById(nodeId);
+        if (os==null||node==null){
+            return false;
+        }
+        String osUrl = os.getUrl();
+        String osPath = os.getPath();
+        String ip = node.getHost();
+        String token = configService.getToken();
+        return ClientApiUtil.downloadFile(ip,token,osUrl,osPath);
     }
 
 }

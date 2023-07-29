@@ -11,5 +11,6 @@ import com.chuqiyun.proxmoxveams.entity.Config;
  */
 public interface ConfigService extends IService<Config> {
 
+    String getToken();
 }
 

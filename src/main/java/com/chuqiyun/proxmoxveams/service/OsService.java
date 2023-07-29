@@ -32,5 +32,7 @@ public interface OsService extends IService<Os> {
     Page<Os> selectOsByPage(int page, int limit);
 
     Page<Os> selectOsByPage(int page, int limit, QueryWrapper<Os> osQueryWrapper);
+
+    boolean downloadOs(Integer osId, Integer nodeId);
 }
 
