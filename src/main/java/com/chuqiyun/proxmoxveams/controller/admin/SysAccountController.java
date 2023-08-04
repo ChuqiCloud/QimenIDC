@@ -8,6 +8,7 @@ import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
 import com.chuqiyun.proxmoxveams.utils.JWTUtil;
 import com.chuqiyun.proxmoxveams.utils.ResponseResult;
 import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,12 +48,24 @@ public class SysAccountController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        Sysuser sysuserPhone = sysuserService.getSysuser(param.getString("phone"));
-        // 如果为用户名登录
-        Sysuser sysuserName = sysuserService.getSysuser(param.getString("username"));
-
-        // 判断哪个字段不为空，则赋值给sysuser
-        Sysuser sysuser = Objects.isNull(sysuserPhone) ? sysuserName : sysuserPhone;
+        // 判断phone与username是否同时为空
+        if (StringUtils.isBlank(param.getString("phone")) && StringUtils.isBlank(param.getString("username"))){
+            return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
+        }
+        // 判断password是否为空
+        if (StringUtils.isBlank(param.getString("password"))){
+            return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
+        }
+        Sysuser sysuser;
+        String jwtUsername;
+        // 如果手机号不为空
+        if (StringUtils.isNotBlank(param.getString("phone"))){
+            sysuser = sysuserService.getSysuser(param.getString("phone"));
+            jwtUsername = param.getString("phone");
+        }else {
+            sysuser = sysuserService.getSysuser(param.getString("username"));
+            jwtUsername = param.getString("username");
+        }
 
         if (Objects.isNull(sysuser)){
             //判断用户是否存在
@@ -64,7 +77,7 @@ public class SysAccountController {
         Long nowDate = System.currentTimeMillis();
         sysuser.setLogindate(nowDate);
         sysuser.updateById();
-        String jwtToken = JWTUtil.sign(param.getString("phone"),secret);
+        String jwtToken = JWTUtil.sign(jwtUsername,secret);
         Cookie cookie = new Cookie("token", jwtToken);
         // 120秒失效
         cookie.setMaxAge(7200);

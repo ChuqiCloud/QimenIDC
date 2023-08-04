@@ -28,6 +28,12 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
     public Sysuser getSysuser(String phone) {
         QueryWrapper<Sysuser> sysuserQueryWrapper = new QueryWrapper<>();
         sysuserQueryWrapper.eq("phone", phone);
+        // 判断是否存在该用户
+        if (this.count(sysuserQueryWrapper) == 0) {
+            // 将条件phone改为username
+            sysuserQueryWrapper.clear();
+            sysuserQueryWrapper.eq("username", phone);
+        }
         return this.getOne(sysuserQueryWrapper);
     }
 
