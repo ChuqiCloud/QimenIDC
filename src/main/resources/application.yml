@@ -2,6 +2,7 @@ server:
   port: 8080
 
 config:
+  profiles: prod
   admin_path: admin
   # token加密盐
   secret: 123456
@@ -16,7 +17,7 @@ MySQL:
 
 spring:
   profiles:
-    active: prod
+    active: ${config.profiles}
   application:
     # 应用名称
     name: ProxmoxVE-AMS
@@ -49,4 +50,23 @@ mybatis-plus:
 springfox:
   documentation:
     swagger-ui:
+      enabled: true
+
+#health: http://localhost:8081/actuator/health 监控检查
+#info: http://localhost:8081/actuator/info 项目信息
+info:
+  application:
+    name: "@project.name@"
+    description: "@project.description@"
+    version: "@project.version@"
+
+management:
+  server: # 指定监听端口，不指定则与server端口一直
+    port: 8081
+  endpoints: # 启动所有监控点
+    web:
+      exposure:
+        include: "*"
+  info:
+    env:
       enabled: true
