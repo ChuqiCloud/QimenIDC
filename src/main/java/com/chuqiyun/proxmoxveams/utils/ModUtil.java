@@ -131,4 +131,22 @@ public class ModUtil {
         }
         return fileSizeString;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 随机生成8位字母数字组合密码
+    * @DateTime: 2023/8/4 23:38
+    * @Return String password 随机生成的密码
+    */
+    public static String randomPassword(){
+        StringBuilder password = new StringBuilder();
+        String[] str = {"0","1","2","3","4","5","6","7","8","9",
+                "a","b","c","d","e","f","g","h","i","j","k","l","m",
+                "n","o","p","q","r","s","t","u","v","w","x","y","z"};
+        for (int i=0;i<8;i++){
+            int index = (int)(Math.random()*str.length);
+            password.append(str[index]);
+        }
+        return password.toString();
+    }
 }

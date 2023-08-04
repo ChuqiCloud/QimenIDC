@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.SysuserDao;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
+import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
+import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,5 +42,28 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
     public int insertSysuser(Sysuser sysuser) {
         return this.baseMapper.insertSysuser(sysuser);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 创建初始管理员账号
+    * @DateTime: 2023/8/4 23:29
+    * @Return Sysuser 返回账号密码
+    */
+    @Override
+    public Sysuser insertInitSysuser() {
+        Sysuser user = new Sysuser();
+        String randomPassword = ModUtil.randomPassword();
+        // 设置账号为admin
+        user.setUsername("admin");
+        // 密码随机生成
+        user.setPassword(EncryptUtil.md5(randomPassword));
+        // 存入数据库
+        this.save(user);
+        // 将密码覆盖
+        user.setPassword(randomPassword);
+        // 返回账号密码
+        return user;
+    }
+
 }
 

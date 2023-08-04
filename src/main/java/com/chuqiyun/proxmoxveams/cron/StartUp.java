@@ -1,8 +1,10 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.chuqiyun.proxmoxveams.entity.Config;
+import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -22,8 +24,16 @@ public class StartUp {
     private ConfigService configService;
     @Resource
     private MasterService masterService;
+    @Resource
+    private SysuserService sysuserService;
     @PostConstruct
     public void init() {
+        // 判断是否没有管理员账号
+        if (sysuserService.count() == 0){
+            log.info("[System] 检测到没有管理员账号，正在初始化");
+            Sysuser user = sysuserService.insertInitSysuser();
+            log.info("[System] 初始化管理员账号成功: username: {}, password: {}", user.getUsername(), user.getPassword());
+        }
         // 初始化受控端token
         Config config = configService.getById(1);
         String token = UUIDUtil.getUUIDByThread();

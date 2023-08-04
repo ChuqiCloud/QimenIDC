@@ -14,5 +14,7 @@ public interface SysuserService extends IService<Sysuser> {
     Sysuser getSysuser(String phone);
 
     int insertSysuser(Sysuser sysuser);
+
+    Sysuser insertInitSysuser();
 }
 
