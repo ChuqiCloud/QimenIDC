@@ -72,6 +72,8 @@ public interface MasterService extends IService<Master> {
 
     void updateAllNodeCookie();
 
+    void updateNodeCookie(Integer nodeId);
+
     Integer getVmStatusCode(Integer nodeId, Integer vmid);
 }
 

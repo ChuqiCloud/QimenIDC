@@ -33,6 +33,8 @@ public class SysNodeMasterController {
         }
         // 将master信息存入数据库
         if (masterService.save(master)) {
+            // 更新该master的csrfToken与ticket
+            masterService.updateNodeCookie(master.getId());
             return ResponseResult.ok("添加成功！");
         } else {
             return ResponseResult.fail("添加失败！");

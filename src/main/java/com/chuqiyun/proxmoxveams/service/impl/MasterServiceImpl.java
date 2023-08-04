@@ -299,27 +299,44 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
             }
             // 遍历节点实例，更新cookie
             for (Master node : nodes) {
-                String url = "https://"+node.getHost()+":"+node.getPort();
-                HashMap<String,String> user = new HashMap<>();
-                user.put("url",url);
-                user.put("username",node.getUsername());
-                user.put("password",node.getPassword());
-                user.put("realm",node.getRealm());
-                ProxmoxApiUtil pveApi = new ProxmoxApiUtil();
-                try {
-                    HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
-                    node.setTicket(authentications.get("ticket"));
-                    node.setCsrfToken(authentications.get("csrfToken"));
-                    this.updateById(node);
-                }catch (Exception e){
-                    e.printStackTrace();
-                }
+                updateCookie(node);
             }
             // 如果当前页数等于总页数则跳出循环
             if (i == page.getPages()){
                 break;
             }
             i++;
+        }
+    }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 更新指定节点cookie
+    * @DateTime: 2023/8/4 22:08
+    * @Params: Integer nodeId 节点ID
+    * @Return void
+    */
+    @Override
+    public void updateNodeCookie(Integer nodeId) {
+        Master node = this.getById(nodeId);
+        updateCookie(node);
+    }
+
+    private void updateCookie(Master node) {
+        String url = "https://"+node.getHost()+":"+node.getPort();
+        HashMap<String,String> user = new HashMap<>();
+        user.put("url",url);
+        user.put("username",node.getUsername());
+        user.put("password",node.getPassword());
+        user.put("realm",node.getRealm());
+        ProxmoxApiUtil pveApi = new ProxmoxApiUtil();
+        try {
+            HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
+            node.setTicket(authentications.get("ticket"));
+            node.setCsrfToken(authentications.get("csrfToken"));
+            this.updateById(node);
+        }catch (Exception e){
+            e.printStackTrace();
         }
     }
 
