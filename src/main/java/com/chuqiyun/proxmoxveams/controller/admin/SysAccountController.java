@@ -47,7 +47,12 @@ public class SysAccountController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        Sysuser sysuser = sysuserService.getSysuser(param.getString("phone"));
+        Sysuser sysuserPhone = sysuserService.getSysuser(param.getString("phone"));
+        // 如果为用户名登录
+        Sysuser sysuserName = sysuserService.getSysuser(param.getString("username"));
+
+        // 判断哪个字段不为空，则赋值给sysuser
+        Sysuser sysuser = Objects.isNull(sysuserPhone) ? sysuserName : sysuserPhone;
 
         if (Objects.isNull(sysuser)){
             //判断用户是否存在
