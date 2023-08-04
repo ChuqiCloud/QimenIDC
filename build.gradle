@@ -33,7 +33,6 @@ dependencies {
     implementation 'org.apache.shiro:shiro-spring:1.10.0'
     implementation 'org.apache.httpcomponents:httpclient'
     implementation 'io.springfox:springfox-boot-starter:3.0.0'
-    implementation 'com.github.xiaoymin:knife4j-spring-boot-starter:3.0.3'
     implementation 'com.github.xiaoymin:swagger-bootstrap-ui:1.8.5'
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
