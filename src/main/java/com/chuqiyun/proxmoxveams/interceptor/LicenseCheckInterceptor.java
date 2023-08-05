@@ -76,7 +76,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                         response.sendRedirect("/"+ADMIN_PATH+"/login");
                         return false;
                     }
-                    Sysuser sysuser = sysuserService.getSysuser(members.getPhone());
+                    Sysuser sysuser = sysuserService.getSysuserByUuid(members.getUuid());
                     if (Objects.isNull(sysuser)){
                         response.sendRedirect("/"+ADMIN_PATH+"/login");
                         return false;
@@ -106,7 +106,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     if (null == members){
                         return authError(response);
                     }
-                    Sysuser sysuser = sysuserService.getSysuser(members.getPhone());
+                    Sysuser sysuser = sysuserService.getSysuserByUuid(members.getUuid());
                     if (Objects.isNull(sysuser)){
                         return authError(response);
                     }

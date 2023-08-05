@@ -1,19 +1,18 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
 import com.chuqiyun.proxmoxveams.utils.JWTUtil;
 import com.chuqiyun.proxmoxveams.utils.ResponseResult;
+import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.Cookie;
@@ -48,24 +47,16 @@ public class SysAccountController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        // 判断phone与username是否同时为空
-        if (StringUtils.isBlank(param.getString("phone")) && StringUtils.isBlank(param.getString("username"))){
+        // 判断username是否同时为空
+        if (StringUtils.isBlank(param.getString("username"))){
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
         }
         // 判断password是否为空
         if (StringUtils.isBlank(param.getString("password"))){
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
         }
-        Sysuser sysuser;
-        String jwtUsername;
-        // 如果手机号不为空
-        if (StringUtils.isNotBlank(param.getString("phone"))){
-            sysuser = sysuserService.getSysuser(param.getString("phone"));
-            jwtUsername = param.getString("phone");
-        }else {
-            sysuser = sysuserService.getSysuser(param.getString("username"));
-            jwtUsername = param.getString("username");
-        }
+        Sysuser sysuser = sysuserService.getSysuserByUsername(param.getString("username"));
+
 
         if (Objects.isNull(sysuser)){
             //判断用户是否存在
@@ -77,7 +68,7 @@ public class SysAccountController {
         Long nowDate = System.currentTimeMillis();
         sysuser.setLogindate(nowDate);
         sysuser.updateById();
-        String jwtToken = JWTUtil.sign(jwtUsername,secret);
+        String jwtToken = JWTUtil.sign(sysuser.getUuid(),secret);
         Cookie cookie = new Cookie("token", jwtToken);
         // 120秒失效
         cookie.setMaxAge(7200);
@@ -102,7 +93,7 @@ public class SysAccountController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        Sysuser sysuser = sysuserService.getSysuser(param.getString("phone"));
+        Sysuser sysuser = sysuserService.getSysuserByUsername(param.getString("username"));
         if (!Objects.isNull(sysuser)){
             //判断用户是否存在
             return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
@@ -113,10 +104,66 @@ public class SysAccountController {
         sysUser.setEmail(param.getString("email"));
         sysUser.setPhone(param.getString("phone"));
         sysUser.setName(param.getString("name"));
+        sysUser.setUuid(UUIDUtil.getUUIDByThreadString());
         if (sysuserService.save(sysUser)) {
             return ResponseResult.ok("添加管理账号成功！");
         } else {
             return ResponseResult.fail("添加管理账号失败！");
+        }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 查询超管账号接口
+    * @DateTime: 2023/8/5 9:28
+    * @Params: adminPath 自定义后台路径 page 页码 size 每页数量
+    */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/getSysuser")
+    public ResponseResult<Page<Sysuser>> getSysuser(@PathVariable("adminPath") String adminPath,
+                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+                                           @RequestParam(name = "size",defaultValue = "20") Integer size)
+            throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        return ResponseResult.ok(sysuserService.selectUserPage(page,size));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 修改超管账号接口
+    * @DateTime: 2023/8/5 10:33
+    * @Params: adminPath 自定义后台路径 param JSONObject
+    * @Return  ResponseResult<String>
+    */
+    @AdminApiCheck
+    @PostMapping("/{adminPath}/updateSysuser")
+    public ResponseResult<String> updateSysuser(@PathVariable("adminPath") String adminPath,
+                                                @RequestBody JSONObject param)
+            throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Sysuser sysuser = sysuserService.getById(param.getLong("id"));
+        if (Objects.isNull(sysuser)){
+            //判断用户是否存在
+            return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
+        }
+        // 判断密码是否为空
+        if (StringUtils.isNotBlank(param.getString("password"))){
+            sysuser.setPassword(EncryptUtil.md5(param.getString("password")));
+        }
+        sysuser.setUsername(param.getString("username"));
+        sysuser.setEmail(param.getString("email"));
+        sysuser.setPhone(param.getString("phone"));
+        sysuser.setName(param.getString("name"));
+        if (sysuserService.updateById(sysuser)) {
+            return ResponseResult.ok("修改管理账号成功！");
+        } else {
+            return ResponseResult.fail("修改管理账号失败！");
         }
     }
 }

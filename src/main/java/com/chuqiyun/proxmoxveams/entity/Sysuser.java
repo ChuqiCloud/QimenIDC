@@ -21,6 +21,7 @@ import java.io.Serializable;
 public class Sysuser extends Model<Sysuser> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
+    private String uuid;
     
     private String username;
     

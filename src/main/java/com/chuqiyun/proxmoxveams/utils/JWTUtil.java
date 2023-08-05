@@ -26,11 +26,11 @@ public class JWTUtil {
      * @param token 密钥
      * @return 是否正确
      */
-    public static boolean verify(String token, String phone,String secret) {
+    public static boolean verify(String token, String uuid,String secret) {
         try {
             Algorithm algorithm = Algorithm.HMAC256(getSecretKey(secret));
             JWTVerifier verifier = JWT.require(algorithm)
-                    .withClaim("phone", phone)
+                    .withClaim("uuid", uuid)
                     .build();
             DecodedJWT jwt = verifier.verify(token);
             return true;
@@ -46,11 +46,11 @@ public class JWTUtil {
     public static String getUsername(String token,String secret) {
         try {
             DecodedJWT jwt = JWT.decode(token);
-            boolean verify = verify(token,jwt.getClaim("phone").asString(),secret);
+            boolean verify = verify(token,jwt.getClaim("uuid").asString(),secret);
             if (!verify){
                 return null;
             }
-            return jwt.getClaim("phone").asString();
+            return jwt.getClaim("uuid").asString();
         } catch (JWTDecodeException e) {
             return null;
         }
@@ -60,7 +60,7 @@ public class JWTUtil {
     public static Long getTokenData(String token,String secret){
         try {
             DecodedJWT jwt = JWT.decode(token);
-            boolean verify = verify(token,jwt.getClaim("phone").asString(),secret);
+            boolean verify = verify(token,jwt.getClaim("uuid").asString(),secret);
             if (!verify){
                 return null;
             }
@@ -75,15 +75,15 @@ public class JWTUtil {
 
     /**
      * 生成签名
-     * @param phone 用户名
+     * @param uuid 用户唯一uuid
      * @return 加密的token
      */
-    public static String sign(String phone,String secret) {
+    public static String sign(String uuid,String secret) {
         Date date = new Date(System.currentTimeMillis()+EXPIRE_TIME);
         Algorithm algorithm = Algorithm.HMAC256(getSecretKey(secret));
         // 附带username信息
         return JWT.create()
-                .withClaim("phone", phone)
+                .withClaim("uuid", uuid)
                 .withClaim("secret",getSecretDate(secret))
                 .withExpiresAt(date)
                 .sign(algorithm);

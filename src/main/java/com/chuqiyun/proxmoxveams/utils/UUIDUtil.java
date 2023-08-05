@@ -49,4 +49,11 @@ public class UUIDUtil {
     public static String getUUIDByThread(){
         return UUID.randomUUID().toString().replace("-", "") + Thread.currentThread().getId();
     }
+
+    /**
+     * 生成不重复的UUID，多线程下保证不重复,不删除"-"
+     */
+    public static String getUUIDByThreadString() {
+        return UUID.randomUUID().toString() + Thread.currentThread().getId();
+    }
 }

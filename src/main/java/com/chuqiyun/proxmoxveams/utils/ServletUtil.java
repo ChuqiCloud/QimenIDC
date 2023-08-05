@@ -25,12 +25,12 @@ public class ServletUtil {
         if (null == token) {
             return null;
         }
-        String phone = getUsername(token,secret);
-        if (phone == null){
+        String uuid = getUsername(token,secret);
+        if (uuid == null){
             return null;
         }
         Sysuser member = new Sysuser();
-        member.setPhone(phone);
+        member.setUuid(uuid);
         return member;
     }
 
