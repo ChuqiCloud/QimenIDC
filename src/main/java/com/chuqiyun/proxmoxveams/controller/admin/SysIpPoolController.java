@@ -9,8 +9,8 @@ import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.utils.IpUtil;
-import com.chuqiyun.proxmoxveams.utils.ResponseResult;
-import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 

@@ -3,8 +3,8 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Sysapi;
 import com.chuqiyun.proxmoxveams.service.SysapiService;
-import com.chuqiyun.proxmoxveams.utils.ResponseResult;
-import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 

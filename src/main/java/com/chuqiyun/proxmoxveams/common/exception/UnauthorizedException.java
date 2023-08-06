@@ -1,4 +1,4 @@
-package com.chuqiyun.proxmoxveams.utils.exception;
+package com.chuqiyun.proxmoxveams.common.exception;
 
 /**
  * @author mryunqi

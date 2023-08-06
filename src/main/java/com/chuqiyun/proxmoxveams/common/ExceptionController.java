@@ -1,7 +1,7 @@
-package com.chuqiyun.proxmoxveams.controller;
+package com.chuqiyun.proxmoxveams.common;
 
-import com.chuqiyun.proxmoxveams.utils.ResponseResult;
-import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.apache.shiro.ShiroException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;

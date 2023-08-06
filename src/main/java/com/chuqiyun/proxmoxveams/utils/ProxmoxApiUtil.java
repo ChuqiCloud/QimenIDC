@@ -2,7 +2,7 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;

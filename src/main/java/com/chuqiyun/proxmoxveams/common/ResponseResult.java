@@ -1,8 +1,9 @@
-package com.chuqiyun.proxmoxveams.utils;
+package com.chuqiyun.proxmoxveams.common;
 
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.io.Serial;
 import java.io.Serializable;
 
 /**
@@ -14,6 +15,7 @@ import java.io.Serializable;
 @Accessors(chain = true)
 public class ResponseResult<T> implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = -1L;
 
     private Integer code;

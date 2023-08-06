@@ -2,8 +2,8 @@ package com.chuqiyun.proxmoxveams.controller.api.v1;
 
 import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
-import com.chuqiyun.proxmoxveams.utils.ResponseResult;
-import com.chuqiyun.proxmoxveams.utils.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;

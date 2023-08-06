@@ -44,6 +44,10 @@ public class VmParams {
      */
     private Boolean nested;
     /**
+     * cpu类型
+     */
+    private String cpu;
+    /**
      * 内存大小
      */
     private Integer memory;
@@ -72,6 +76,10 @@ public class VmParams {
      * 操作系统
      */
     private String os;
+    /**
+     * 操作系统id
+     */
+    private Integer osId;
     /**
      * 操作系统类型
      */
