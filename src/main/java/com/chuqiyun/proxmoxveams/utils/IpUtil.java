@@ -1,10 +1,8 @@
 package com.chuqiyun.proxmoxveams.utils;
 
-import com.chuqiyun.proxmoxveams.entity.IpParams;
+import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 

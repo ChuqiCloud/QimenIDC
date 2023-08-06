@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.entity.Os;
-import com.chuqiyun.proxmoxveams.entity.OsParams;
+import com.chuqiyun.proxmoxveams.dto.OsParams;
 
 import java.util.HashMap;
 

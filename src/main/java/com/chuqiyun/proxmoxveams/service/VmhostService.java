@@ -4,11 +4,10 @@ import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.chuqiyun.proxmoxveams.entity.VmParams;
+import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 
 import java.util.HashMap;
-import java.util.List;
 
 /**
  * (Vmhost)表服务接口

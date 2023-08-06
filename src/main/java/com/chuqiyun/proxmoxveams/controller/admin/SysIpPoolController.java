@@ -2,7 +2,7 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
-import com.chuqiyun.proxmoxveams.entity.IpParams;
+import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.service.IppoolService;

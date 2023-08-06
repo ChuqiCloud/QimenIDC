@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.IpstatusDao;
-import com.chuqiyun.proxmoxveams.entity.IpParams;
+import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import org.springframework.stereotype.Service;

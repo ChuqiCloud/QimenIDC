@@ -1,4 +1,4 @@
-package com.chuqiyun.proxmoxveams.entity;
+package com.chuqiyun.proxmoxveams.dto;
 
 import lombok.Data;
 

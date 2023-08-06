@@ -3,7 +3,7 @@ package com.chuqiyun.proxmoxveams.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.chuqiyun.proxmoxveams.entity.IpParams;
+import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 
 import java.util.List;
