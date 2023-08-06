@@ -152,7 +152,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
             }
         }
 
-        return false;
+        return invalidApi(response);
     }
 
     private boolean authError(@NotNull HttpServletResponse response) throws IOException {
@@ -160,6 +160,19 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
         JSONObject obj = new JSONObject();
         obj.put("code", 501002);
         obj.put("message", "API鉴权失败");
+        response.getWriter().print(obj);
+        response.getWriter().flush();
+        return false;
+    }
+
+    /**
+     * 无效接口
+     */
+    private boolean invalidApi(@NotNull HttpServletResponse response) throws IOException {
+        response.setContentType("application/json;charset=utf-8");
+        JSONObject obj = new JSONObject();
+        obj.put("code", 501001);
+        obj.put("message", "无效的API");
         response.getWriter().print(obj);
         response.getWriter().flush();
         return false;
