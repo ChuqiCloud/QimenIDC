@@ -171,4 +171,25 @@ public class ProxmoxApiUtil {
         }
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取单节点状态信息
+    * @DateTime: 2023/8/5 21:27
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息
+    * @Return JSONObject 节点状态信息
+    */
+    public JSONObject getNodeStatusByOne(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/status",new HashMap<>());
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定节点负载信息
+    * @DateTime: 2023/8/6 15:15
+    * @Params:  Master node 节点信息 HashMap<String,String> cookie 登录信息 String timeframe 时间范围 String cf 数据源
+    * @Return JSONObject 节点负载信息
+    */
+    public JSONObject getNodeLoadAvg(Master node, HashMap<String,String> cookie,String timeframe,String cf) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/rrddata?timeframe="+timeframe+"&cf="+cf,new HashMap<>());
+    }
 }
