@@ -25,5 +25,26 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
         return this.getById(1).getToken();
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取全局Linux系统盘大小
+    * @DateTime: 2023/8/7 19:47
+    * @Return Integer linuxSystemDiskSize
+    */
+    @Override
+    public Integer getLinuxSystemDiskSize(){
+        return this.getById(1).getLinuxSystemDiskSize();
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取全局Windows系统盘大小
+    * @DateTime: 2023/8/7 19:48
+    * @Return Integer winSystemDiskSize
+    */
+    @Override
+    public Integer getWinSystemDiskSize(){
+        return this.getById(1).getWinSystemDiskSize();
+    }
 }
 

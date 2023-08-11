@@ -1,8 +1,10 @@
 create table config
 (
-    id    int                      not null
+    id                     int                      not null
         primary key,
-    token varchar(255) default '0' not null
+    token                  varchar(255) default '0' not null,
+    linux_system_disk_size int                      null,
+    win_system_disk_size   int                      null
 );
 
 create table ippool
@@ -88,6 +90,7 @@ create table sysuser
 (
     id        int auto_increment
         primary key,
+    uuid      varchar(255) not null,
     username  varchar(255) not null,
     password  varchar(255) not null,
     name      varchar(255) null,

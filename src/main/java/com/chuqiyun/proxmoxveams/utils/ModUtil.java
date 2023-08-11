@@ -149,4 +149,15 @@ public class ModUtil {
         }
         return password.toString();
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将IP地址的.替换为-
+    * @DateTime: 2023/8/7 16:13
+    * @Params: String ip
+    * @Return String ip
+    */
+    public static String ipReplace(String ip){
+        return ip.replace(".","-");
+    }
 }

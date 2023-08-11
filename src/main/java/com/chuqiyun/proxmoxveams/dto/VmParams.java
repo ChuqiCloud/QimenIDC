@@ -48,9 +48,25 @@ public class VmParams {
      */
     private String cpu;
     /**
+     * cpu限制(单位:百分比)
+     */
+    private Integer cpuUnits;
+    /**
+     * 系统架构(x86_64,arrch64)
+     */
+    private String arch;
+    /**
+     * acpi 默认1 开启
+     */
+    private Integer acpi;
+    /**
      * 内存大小
      */
     private Integer memory;
+    /**
+     * swap大小
+     */
+    private Integer swap;
     /**
      * 存储
      */
@@ -77,10 +93,6 @@ public class VmParams {
      */
     private String os;
     /**
-     * 操作系统id
-     */
-    private Integer osId;
-    /**
      * 操作系统类型
      */
     private String osType;
@@ -88,6 +100,14 @@ public class VmParams {
      * iso镜像
      */
     private String iso;
+    /**
+     * 虚拟机模板
+     */
+    private String template;
+    /**
+     * 是否开机自启
+     */
+    private Integer onBoot;
     /**
      * 网络带宽
      */

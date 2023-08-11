@@ -4,6 +4,7 @@ server:
 config:
   admin_path: admin
   secret: 123456
+  frontend_DomainName: "http://localhost:3003"
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:

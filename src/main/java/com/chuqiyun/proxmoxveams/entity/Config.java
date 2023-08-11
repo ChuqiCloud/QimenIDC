@@ -21,6 +21,10 @@ public class Config extends Model<Config> {
     private Integer id;
     
     private String token;
+    // 全局Linux系统盘大小
+    private Integer linuxSystemDiskSize;
+    // 全局Windows系统盘大小
+    private Integer winSystemDiskSize;
     /**
      * 获取主键值
      *

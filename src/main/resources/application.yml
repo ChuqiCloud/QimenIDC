@@ -2,6 +2,7 @@ server:
   port: 8080
 
 config:
+  frontend_DomainName: "http://localhost:3003"
   profiles: prod
   admin_path: admin
   # token加密盐
@@ -24,6 +25,7 @@ spring:
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
+    dispatch-options-request: true
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver  # 数据库驱动
     url: jdbc:mysql://${MySQL.host}:${MySQL.port}/${MySQL.database}?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&failOverReadOnly=false&useSSL=false&zeroDateTimeBehavior=convertToNull&serverTimezone=GMT%2B8&rewriteBatchedStatements=true

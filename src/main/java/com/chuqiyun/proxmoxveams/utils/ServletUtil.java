@@ -5,6 +5,8 @@ import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 
+import java.util.Arrays;
+
 import static com.chuqiyun.proxmoxveams.utils.JWTUtil.getUsername;
 
 
@@ -44,15 +46,18 @@ public class ServletUtil {
     * @Return String Cookie
     */
     public static String getCookie(HttpServletRequest request, String var) {
-        Cookie[] cookies = request.getCookies();
+        /*Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
                 if (cookie.getName().equals(var)) {
                     return cookie.getValue();
                 }
             }
-        }
-        return null;
+        }*/
+        // 如果还没有则获取Authorization
+        String authorization = request.getHeader("Authorization");
+        return authorization;
     }
+
 
 }

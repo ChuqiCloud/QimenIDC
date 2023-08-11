@@ -92,7 +92,7 @@ public class CreateVm {
             int count = vmParams.getIpConfig().size();
             HashMap<String, String> ipConfigMap = vmParams.getIpConfig();
             for (int i = 1; i <= count; i++) {
-                String ipConfig = ipConfigMap.get(i);
+                String ipConfig = ipConfigMap.get(String.valueOf(i));
                 if (ipConfig == null) {
                     if (ipPool == null) {
                         return ResponseResult.fail("没有可用的IPV4资源");

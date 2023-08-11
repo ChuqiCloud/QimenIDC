@@ -56,6 +56,16 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(@NotNull HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull Object handler) throws Exception {
+        // 自定义headers跨域支持
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", "*");
+        response.setHeader("Access-Control-Allow-Headers", "*");
+        response.setHeader("Access-Control-Max-Age", "3600");
+        // 如果是OPTIONS则结束请求
+        if ("OPTIONS".equals(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            return false;
+        }
         //判断请求的方法上是否有注解
         boolean haveAnnotation = handler.getClass().isAssignableFrom(HandlerMethod.class);
         if (haveAnnotation){

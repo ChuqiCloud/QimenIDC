@@ -70,7 +70,6 @@ public class SysAccountController {
         sysuser.updateById();
         String jwtToken = JWTUtil.sign(sysuser.getUuid(),secret);
         Cookie cookie = new Cookie("token", jwtToken);
-        // 120秒失效
         cookie.setMaxAge(7200);
         response.addCookie(cookie);
         return ResponseResult.ok(jwtToken);
