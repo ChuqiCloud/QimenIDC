@@ -13,6 +13,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UnifiedResultDto<T> {
-    private UnifiedResultCode code;
+    private UnifiedResultCode resultCode;
     private T data;
 }

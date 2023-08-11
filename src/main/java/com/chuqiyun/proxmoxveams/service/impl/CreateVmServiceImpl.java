@@ -1,18 +1,21 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
-import com.chuqiyun.proxmoxveams.entity.Ippool;
-import com.chuqiyun.proxmoxveams.entity.Ipstatus;
-import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+
+import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
 
 /**
  * @author mryunqi
@@ -37,7 +40,7 @@ public class CreateVmServiceImpl implements CreateVmService {
      *
      */
     @Override
-    public UnifiedResultDto<?> createPveVm(VmParams vmParams){
+    public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams){
         // 判断nodeId是否为空
         if (vmParams.getNodeid() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
@@ -112,7 +115,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         else if (!VmUtil.isArchExist(vmParams.getArch())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_ARCHITECTURE_NOT_EXIST, null);
         }
-        // 判断acpi是否为空
+        // 判断acpi是否为空 0:禁用 1:启用
         if (vmParams.getAcpi() == null) {
             vmParams.setAcpi(1);
         }
@@ -127,6 +130,18 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 如果storage为空或为auto，则使用节点的最大剩余磁盘
         if (vmParams.getStorage() == null || "auto".equals(vmParams.getStorage())) {
             vmParams.setStorage(node.getAutoStorage());
+        }
+        // 判断username是否为空
+        if (vmParams.getUsername() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_USERNAME_NOT_NULL, null);
+        }
+        // 判断password是否为空
+        if (vmParams.getPassword() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_PASSWORD_NOT_NULL, null);
+        }
+        // 判断onBoot是否为空
+        if (vmParams.getOnBoot() == null) {
+            vmParams.setOnBoot(0);
         }
         // 获取可用ip最多的ip池
         Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
@@ -193,6 +208,26 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (!VmUtil.isOsTypeExist(vmParams.getOsType())) {
             vmParams.setOsType("other");
         }
-        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+        // 将vmParams转换为HashMap
+        HashMap<Object, Object> vmParamsMap;
+        try {
+            vmParamsMap = EntityHashMapConverterUtil.convertToHashMap(vmParams);
+        } catch (IllegalAccessException e) {
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务参数转换失败");
+            e.printStackTrace();
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+        }
+        // 创建虚拟机任务
+        Task task = new Task();
+        task.setStatus(0);
+        task.setType(CREATE_VM);
+        task.setParams(vmParamsMap);
+        task.setCreateDate(System.currentTimeMillis());
+        if (taskService.insertTask(task)){
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务: NodeID="+nodeId+",OsType="+vmParams.getOsType()+
+                    ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory());
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+        }
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
     }
 }

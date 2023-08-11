@@ -1,6 +1,8 @@
 package com.chuqiyun.proxmoxveams;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
@@ -10,10 +12,12 @@ import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cglib.beans.BeanMap;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.chuqiyun.proxmoxveams.utils.ModUtil.formatFileSize;
 import static com.chuqiyun.proxmoxveams.utils.ModUtil.getUrlFileSize;
@@ -33,10 +37,14 @@ class ProxmoxVeAmsApplicationTests {
 
     @Test
     void testRandomPassword() {
-        String uuid = UUIDUtil.getUUIDByThreadString();
-        String uuid2 = UUIDUtil.getUUIDByThreadString();
-        System.out.println(uuid);
-        System.out.println(uuid2);
+        VmParams vmParams = new VmParams();
+        // 转换为HashMap
+        Map<String, Object> map = new HashMap<>();
+        BeanMap beanMap = BeanMap.create(vmParams);
+        for (Object key : beanMap.keySet()) {
+            map.put(key + "", beanMap.get(key));
+        }
+        System.out.println(map);
     }
     @Test
     void pveApiTests() {

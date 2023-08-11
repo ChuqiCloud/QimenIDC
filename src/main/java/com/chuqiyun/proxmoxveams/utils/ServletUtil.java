@@ -55,8 +55,7 @@ public class ServletUtil {
             }
         }*/
         // 如果还没有则获取Authorization
-        String authorization = request.getHeader("Authorization");
-        return authorization;
+        return request.getHeader("Authorization");
     }
 
 

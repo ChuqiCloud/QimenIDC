@@ -58,6 +58,9 @@ public class ResponseResult<T> implements Serializable {
     public static <T> ResponseResult<T> fail(RespCode respCode, String message) {
         return build(respCode.getCode(), message, null);
     }
+    public static <T> ResponseResult<T> fail(Integer code, String message) {
+        return build(code, message, null);
+    }
 
 
     public enum RespCode {

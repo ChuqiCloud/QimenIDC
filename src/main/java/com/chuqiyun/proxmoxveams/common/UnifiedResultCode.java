@@ -31,6 +31,12 @@ public enum UnifiedResultCode {
     ERROR_ARCHITECTURE_NOT_EXIST(1009, "Architecture does not exist"),
     // cpu类型不支持嵌套虚拟化
     ERROR_CPU_TYPE_NOT_SUPPORT_NESTED(1010, "CPU type does not support nested virtualization"),
+    // 创建虚拟机失败
+    ERROR_CREATE_VM_FAILED(1011, "Failed to create virtual machine"),
+    // 用户名不能为空
+    ERROR_USERNAME_NOT_NULL(1012, "Username cannot be empty"),
+    // 密码不能为空
+    ERROR_PASSWORD_NOT_NULL(1013, "Password cannot be empty"),
 
     /*pve错误码范围：2xxx*/
 

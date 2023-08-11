@@ -69,9 +69,10 @@ public class SysAccountController {
         sysuser.setLogindate(nowDate);
         sysuser.updateById();
         String jwtToken = JWTUtil.sign(sysuser.getUuid(),secret);
-        Cookie cookie = new Cookie("token", jwtToken);
+        /*Cookie cookie = new Cookie("token", jwtToken);
         cookie.setMaxAge(7200);
-        response.addCookie(cookie);
+        response.addCookie(cookie);*/
+        response.addHeader("Authorization", jwtToken);
         return ResponseResult.ok(jwtToken);
     }
 

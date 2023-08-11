@@ -105,11 +105,11 @@ public class VmParams {
      */
     private String template;
     /**
-     * 是否开机自启
+     * 是否开机自启 0:否 1:是
      */
     private Integer onBoot;
     /**
-     * 网络带宽
+     * 网络带宽 单位:MB 0:不限制
      */
     private Integer bandwidth;
     /**

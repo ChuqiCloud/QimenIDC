@@ -8,5 +8,5 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
  * @date 2023/8/6
  */
 public interface CreateVmService {
-    UnifiedResultDto<?> createPveVm(VmParams vmParams);
+    UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams);
 }

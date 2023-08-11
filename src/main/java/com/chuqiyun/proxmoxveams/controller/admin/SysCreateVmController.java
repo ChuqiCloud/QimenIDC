@@ -3,10 +3,8 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
-import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.service.*;
-import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
@@ -28,15 +26,7 @@ public class SysCreateVmController {
     @Value("${config.admin_path}")
     private String ADMIN_PATH;
     @Resource
-    private MasterService masterService;
-    @Resource
-    private TaskService taskService;
-    @Resource
-    private IpstatusService ipstatusService;
-    @Resource
-    private IppoolService ippoolService;
-    @Resource
-    private VmhostService vmhostService;
+    private CreateVmService createVmService;
 
     /**
     * @Author: mryunqi
@@ -51,7 +41,10 @@ public class SysCreateVmController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        log.info("创建虚拟机");
-        return ResponseResult.ok();
+        UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
 }
