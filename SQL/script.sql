@@ -3,8 +3,16 @@ create table config
     id                     int                      not null
         primary key,
     token                  varchar(255) default '0' not null,
-    linux_system_disk_size int                      null,
-    win_system_disk_size   int                      null
+    linux_system_disk_size int          default 40  null,
+    win_system_disk_size   int          default 60  null
+);
+
+create table `group`
+(
+    id    int auto_increment
+        primary key,
+    name  varchar(255)  not null,
+    realm int default 0 not null
 );
 
 create table ippool
@@ -41,6 +49,8 @@ create table master
 (
     id                int auto_increment
         primary key,
+    name              varchar(255)               null,
+    `group`           int                        null,
     host              varchar(255)               not null,
     port              int          default 8006  not null,
     username          varchar(255)               not null,
@@ -73,6 +83,7 @@ create table os
     path        varchar(255)  null,
     cloud       int default 0 null comment 'cloud-init(0=未开启 1=开启)',
     status      int           null,
+    reason      text          null comment '异常原因',
     create_time mediumtext    null
 );
 
