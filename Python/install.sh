@@ -15,7 +15,7 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl
+    apt-get install -y wget curl expect
 }
 # 初始化系统软件目录
 function init_system_dir(){
@@ -50,8 +50,10 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software/Controller
-    wget http://oa.chuqiyun.com:8877/main.py
-    wget http://oa.chuqiyun.com:8877/requirements.txt
+    wget http://mirror.chuqiyun.com/software/controlled/main.py
+    wget http://mirror.chuqiyun.com/software/controlled/requirements.txt
+    wget http://mirror.chuqiyun.com/software/controlled/importdisk.sh
+    wget http://mirror.chuqiyun.com/software/controlled/change_password.sh
 }
 
 # 安装QimenIDC Controller依赖
