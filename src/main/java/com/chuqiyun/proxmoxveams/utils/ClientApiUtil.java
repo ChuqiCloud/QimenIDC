@@ -111,4 +111,22 @@ public class ClientApiUtil {
         JSONObject result = getControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取下载进度
+    * @DateTime: 2023/8/14 16:45
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: fileUrl 文件url
+     * @Params: path 文件下载路径
+    * @Return JSONObject 下载进度
+    */
+    public static JSONObject getDownloadProgress(String ip, String token, String fileUrl,String path){
+        String url = "http://"+ip+":7600/wget";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("url",fileUrl);
+        paramMap.put("path",path);
+        return getControllerApi(url, paramMap, token);
+    }
 }

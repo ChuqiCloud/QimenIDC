@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -34,5 +35,7 @@ public interface OsService extends IService<Os> {
     Page<Os> selectOsByPage(int page, int limit, QueryWrapper<Os> osQueryWrapper);
 
     boolean downloadOs(Integer osId, Integer nodeId);
+
+    JSONObject getDownloadProgress(Integer osId, Integer nodeId);
 }
 

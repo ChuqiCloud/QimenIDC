@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.dto.OsNodeStatus;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.dto.OsParams;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author mryunqi
@@ -135,6 +137,61 @@ public class SysOsController {
     }
 
     /**
+     * 激活在线os
+     * @param adminPath 后台路径 osId osId
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @PostMapping("/{adminPath}/activeOsByOnline")
+    public ResponseResult<Object> activeOsByOnline(@PathVariable("adminPath") String adminPath,
+                                             @RequestBody OsParams params) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        String fileName = params.getFileName();
+        // 获取全部在线os
+        JSONObject osOnlineResult = ClientApiUtil.getNetOs(osUrl);
+        // 判断是否存在该os
+        if (!osOnlineResult.containsKey(fileName)){
+            return ResponseResult.fail("在线列表不存在该OS");
+        }
+        // 判断数据库是否存在该os
+        Os osDb = osService.selectOsByFileName(fileName);
+        if (osDb != null){
+            return ResponseResult.fail("已存在该OS");
+        }
+        // 获取os信息
+        JSONObject osInfo = osOnlineResult.getJSONObject(fileName);
+        String osName = fileName.substring(0,fileName.length()-6);
+        // 获取os类型
+        String type = osInfo.getString("type");
+        String arch = osInfo.getString("arch");
+        String osType = osInfo.getString("osType");
+        String url = osInfo.getString("url");
+        Integer cloud = osInfo.getInteger("cloud-int");
+
+        Os os = new Os();
+        os.setName(osName);
+        os.setFileName(fileName);
+        os.setType(type);
+        os.setArch(arch);
+        os.setOsType(osType);
+        os.setUrl(url);
+        os.setCloud(cloud);
+        os.setDownType(0);
+        os.setPath("/home/images/"+fileName);
+        os.setStatus(0);
+        os.setCreateTime(System.currentTimeMillis());
+
+        boolean result = osService.save(os);
+        if (result){
+            return ResponseResult.ok("添加成功");
+        }
+        return ResponseResult.fail("添加失败");
+    }
+
+    /**
      * 下载os到节点
      * @param adminPath 后台路径 osId osId
      * @throws UnauthorizedException
@@ -157,12 +214,36 @@ public class SysOsController {
         if (node == null){
             return ResponseResult.fail("节点不存在");
         }
+        // 判断节点是否在线
+        if (node.getStatus() != 0){
+            return ResponseResult.fail("节点不在线");
+        }
         boolean result = osService.downloadOs(osId,nodeId);
         if (result){
+            OsNodeStatus osNodeStatus = new OsNodeStatus();
+            osNodeStatus.setNodeId(nodeId);
+            osNodeStatus.setNodeName(node.getNodeName());
+            osNodeStatus.setStatus(1);
+            osNodeStatus.setSchedule(0.00);
+            // 转换为Map
+            /*Map<String,Object> osNodeStatusMap = ModUtil.entityToMap(osNodeStatus);*/
+            // 获取该表中的nodeStatus
+            Map<String,Object> oldNodeStatus = os.getNodeStatus();
+            // 判断是否为空
+            if (oldNodeStatus == null){
+                oldNodeStatus = new HashMap<>();
+                oldNodeStatus.put("0",osNodeStatus);
+            }
+            // 获取最后一个key
+            String lastKey = String.valueOf(oldNodeStatus.size());
+            // 添加到Map中
+            oldNodeStatus.put(lastKey,osNodeStatus);
+            // 更新到数据库
+            os.setNodeStatus(oldNodeStatus);
+            osService.updateById(os);
             return ResponseResult.ok("开始下载");
         }
         return ResponseResult.fail("下载失败");
-
     }
 
 }

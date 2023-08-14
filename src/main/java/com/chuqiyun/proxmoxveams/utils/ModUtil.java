@@ -2,9 +2,13 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.cglib.beans.BeanMap;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author mryunqi
@@ -159,5 +163,21 @@ public class ModUtil {
     */
     public static String ipReplace(String ip){
         return ip.replace(".","-");
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将实体类转换为Map
+    * @DateTime: 2023/8/13 17:55
+    * @Params: Object entity 实体类
+    * @Return Map<String,Object> map
+    */
+    public static Map<String,Object> entityToMap(Object entity){
+        Map<String, Object> map = new HashMap<>();
+        BeanMap beanMap = BeanMap.create(entity);
+        for (Object key : beanMap.keySet()) {
+            map.put(key+"",beanMap.get(key));
+        }
+        return map;
     }
 }

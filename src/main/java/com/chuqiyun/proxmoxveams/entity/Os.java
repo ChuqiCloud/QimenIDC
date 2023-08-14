@@ -35,7 +35,7 @@ public class Os extends Model<Os> {
     private String fileName;
     /**
      * 镜像类型
-     * win，linux
+     * windows，linux
      */
     private String type;
     /**
@@ -66,9 +66,16 @@ public class Os extends Model<Os> {
      */
     private Integer cloud;
     /**
-     * 0:未下载 1:停用
+     * 0:正常 1:停用 2:异常
      */
     private Integer status;
+    /**
+     * 异常原因
+     */
+    private String reason;
+    /**
+     * 创建时间
+     */
     private Long createTime;
 
 

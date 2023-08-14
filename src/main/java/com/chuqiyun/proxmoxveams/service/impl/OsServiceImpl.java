@@ -252,10 +252,31 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             return false;
         }
         String osUrl = os.getUrl();
-        String osPath = os.getPath();
+        String osPath = "/home/images/";
         String ip = node.getHost();
         String token = configService.getToken();
         return ClientApiUtil.downloadFile(ip,token,osUrl,osPath);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取下载进度
+    * @DateTime: 2023/8/14 16:48
+    * @Params:  Integer osId 镜像id ，Integer nodeId 节点id
+    * @Return  JSONObject 下载进度
+    */
+    @Override
+    public JSONObject getDownloadProgress(Integer osId,Integer nodeId){
+        Os os = this.getById(osId);
+        Master node = masterService.getById(nodeId);
+        if (os==null||node==null){
+            return null;
+        }
+        String osUrl = os.getUrl();
+        String osPath = "/home/images/";
+        String ip = node.getHost();
+        String token = configService.getToken();
+        return ClientApiUtil.getDownloadProgress(ip,token,osUrl,osPath).getJSONObject("data");
     }
 
 }
