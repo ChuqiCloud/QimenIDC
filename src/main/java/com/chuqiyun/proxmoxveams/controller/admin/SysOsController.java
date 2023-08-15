@@ -246,4 +246,48 @@ public class SysOsController {
         return ResponseResult.fail("下载失败");
     }
 
+    /**
+     * 删除os
+     * @param adminPath 后台路径 osId osId
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @DeleteMapping("/{adminPath}/deleteOs")
+    public ResponseResult<Object> deleteOs(@PathVariable("adminPath") String adminPath,
+                                           @RequestBody JSONObject params) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Integer osId = params.getInteger("osId");
+        Os os = osService.getById(osId);
+        if (os == null){
+            return ResponseResult.fail("os不存在");
+        }
+        boolean result = osService.deleteOs(osId);
+        if (result){
+            return ResponseResult.ok("删除成功");
+        }
+        return ResponseResult.fail("删除失败,如果存在正在下载节点,请先等待下载完成");
+    }
+
+    /**
+     * 修改os
+     * @param adminPath 后台路径
+     * @throws UnauthorizedException
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/updateOs",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<Object> updateOs(@PathVariable("adminPath") String adminPath,
+                                           @RequestBody Os os) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        boolean result = osService.updateById(os);
+        if (result){
+            return ResponseResult.ok("修改成功");
+        }
+        return ResponseResult.fail("修改失败");
+    }
 }

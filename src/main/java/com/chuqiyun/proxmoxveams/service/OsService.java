@@ -37,5 +37,9 @@ public interface OsService extends IService<Os> {
     boolean downloadOs(Integer osId, Integer nodeId);
 
     JSONObject getDownloadProgress(Integer osId, Integer nodeId);
+
+    boolean deleteNodeOs(String osName, Integer nodeId);
+
+    boolean deleteOs(Integer osId);
 }
 

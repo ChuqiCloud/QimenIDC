@@ -129,4 +129,22 @@ public class ClientApiUtil {
         paramMap.put("path",path);
         return getControllerApi(url, paramMap, token);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除os文件
+    * @DateTime: 2023/8/15 19:48
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: osName os文件名
+    * @Return Boolean 是否删除成功
+    */
+    public static Boolean deleteOsFile(String ip, String token, String osName){
+        String url = "http://"+ip+":7600/deleteFile";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("path","/home/images/");
+        paramMap.put("file",osName);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
 }

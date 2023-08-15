@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.OsDao;
+import com.chuqiyun.proxmoxveams.dto.OsNodeStatus;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.dto.OsParams;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * (Os)表服务实现类
@@ -277,6 +279,57 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         String ip = node.getHost();
         String token = configService.getToken();
         return ClientApiUtil.getDownloadProgress(ip,token,osUrl,osPath).getJSONObject("data");
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除宿主机上的os
+    * @DateTime: 2023/8/15 19:46
+    * @Params: String osName 镜像名称，Integer nodeId 节点id
+    * @Return boolean result 删除结果
+    */
+    @Override
+    public boolean deleteNodeOs(String osName, Integer nodeId){
+        Master node = masterService.getById(nodeId);
+        String ip = node.getHost();
+        String token = configService.getToken();
+        return ClientApiUtil.deleteOsFile(ip,token,osName);
+    }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 删除数据库中的os
+    * @DateTime: 2023/8/15 19:54
+    * @Params: Integer osId 镜像id
+    * @Return boolean result 删除结果
+    */
+    @Override
+    public boolean deleteOs(Integer osId){
+        Os os = this.getById(osId);
+        if (os==null){
+            return false;
+        }
+        Map<String,Object> map = os.getNodeStatus();
+        if (map!=null){
+            // 删除宿主机上的os
+            String osName = os.getFileName();
+            for (String key : map.keySet()) {
+                Object osNodeStatusObj = map.get(key);
+                OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
+                // 如果为下载中，返回false
+                if (osNodeStatus.getStatus()==1){
+                    return false;
+                }
+                // 如果为2,3则删除宿主机上的os
+                if (osNodeStatus.getStatus()==2||osNodeStatus.getStatus()==3){
+                    boolean result = this.deleteNodeOs(osName,osNodeStatus.getNodeId());
+                    if (!result){
+                        return false;
+                    }
+                }
+            }
+        }
+        return this.removeById(osId);
     }
 
 }
