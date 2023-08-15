@@ -50,10 +50,11 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software/Controller
-    wget http://mirror.chuqiyun.com/software/controlled/main.py
-    wget http://mirror.chuqiyun.com/software/controlled/requirements.txt
-    wget http://mirror.chuqiyun.com/software/controlled/importdisk.sh
-    wget http://mirror.chuqiyun.com/software/controlled/change_password.sh
+    wget http://mirror.chuqiyun.com/software/Controller/main.py
+    wget http://mirror.chuqiyun.com/software/Controller/requirements.txt
+    wget http://mirror.chuqiyun.com/software/Controller/importdisk.sh
+    wget http://mirror.chuqiyun.com/software/Controller/change_password.sh
+    wget http://mirror.chuqiyun.com/software/Controller/update.sh
 }
 
 # 安装QimenIDC Controller依赖

@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 app=FastAPI()
+# 版本号
+version='1.0.1'
 
 '''
 自定义异常
@@ -140,6 +142,14 @@ async def pathFile(path:str):
     return common_response(CodeEnum.SUCCESS,'success',{'files':files})
 
 '''
+获取版本号
+Get version number
+'''
+@app.get('/version')
+async def version():
+    return common_response(CodeEnum.SUCCESS,'success',{'version':version})
+
+'''
 执行wget命令下载文件到指定目录
 重复url调用将返回下载进度
 Execute the wget command to download the file to the specified directory
@@ -168,6 +178,33 @@ async def wget(url:str,path:str):
     return common_response(CodeEnum.SUCCESS,'success',{})
 
 '''
+定义删除文件参数实体
+Define delete file parameter entity
+'''
+class DeleteFile(BaseModel):
+    path:str
+    file:str
+
+'''
+删除指定目录下的指定文件
+Delete the specified file under the specified directory
+'''
+@app.post('/deleteFile')
+async def deleteFile(item:DeleteFile):
+    # 判断路径是否存在
+    if not os.path.exists(item.path):
+        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
+    # 判断是否是目录
+    if not os.path.isdir(item.path):
+        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
+    # 判断文件是否存在
+    if not os.path.exists(os.path.join(item.path,item.file)):
+        return common_response(CodeEnum.NOT_FOUND,'file not found',{})
+    # 删除文件
+    os.remove(os.path.join(item.path,item.file))
+    return common_response(CodeEnum.SUCCESS,'success',{})
+
+'''
 定义修改密码参数实体
 Define change password parameter entity
 '''
@@ -185,6 +222,16 @@ async def changePassword(item: ChangePassword):
     # 创建一个线程执行修改密码脚本
     thread = threading.Thread(target=run_change_password, args=(item.id,item.username,item.password))  
     thread.start()
+    return common_response(CodeEnum.SUCCESS,'success',{})
+
+'''
+更新程序
+Update program
+'''
+@app.post('/update')
+async def update():
+    # 执行更新脚本
+    os.system('sh /home/software/Controller/update.sh')
     return common_response(CodeEnum.SUCCESS,'success',{})
 
 
