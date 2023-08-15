@@ -23,6 +23,7 @@ public class Group extends Model<Group> {
     private Integer id;
     
     private String name;
+    private Integer parent;
     
     private Integer realm;
 
