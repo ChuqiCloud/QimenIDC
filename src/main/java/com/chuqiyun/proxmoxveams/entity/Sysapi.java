@@ -26,6 +26,7 @@ public class Sysapi extends Model<Sysapi> {
     
     private String appkey;
     private String info;
+    private Integer status;
     private Long createDate;
 
 
