@@ -1,7 +1,7 @@
 package com.chuqiyun.proxmoxveams.dao;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.chuqiyun.proxmoxveams.entity.Group;
+import com.chuqiyun.proxmoxveams.entity.Area;
 
 /**
  * (Group)表数据库访问层
@@ -9,7 +9,7 @@ import com.chuqiyun.proxmoxveams.entity.Group;
  * @author mryunqi
  * @since 2023-08-14 18:14:15
  */
-public interface GroupDao extends BaseMapper<Group> {
+public interface AreaDao extends BaseMapper<Area> {
 
 }
 

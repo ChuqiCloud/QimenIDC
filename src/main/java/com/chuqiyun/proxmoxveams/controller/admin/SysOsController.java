@@ -218,6 +218,17 @@ public class SysOsController {
         if (node.getStatus() != 0){
             return ResponseResult.fail("节点不在线");
         }
+        // 获取该表中的nodeStatus
+        Map<String,Object> oldNodeStatus = os.getNodeStatus();
+        // 判断是否已经下载
+        if (oldNodeStatus != null){
+            for (String key : oldNodeStatus.keySet()){
+                OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(oldNodeStatus.get(key)),OsNodeStatus.class);
+                if (osNodeStatus.getNodeId().equals(nodeId)){
+                    return ResponseResult.fail("该节点已经下载");
+                }
+            }
+        }
         boolean result = osService.downloadOs(osId,nodeId);
         if (result){
             OsNodeStatus osNodeStatus = new OsNodeStatus();
@@ -227,17 +238,17 @@ public class SysOsController {
             osNodeStatus.setSchedule(0.00);
             // 转换为Map
             /*Map<String,Object> osNodeStatusMap = ModUtil.entityToMap(osNodeStatus);*/
-            // 获取该表中的nodeStatus
-            Map<String,Object> oldNodeStatus = os.getNodeStatus();
             // 判断是否为空
             if (oldNodeStatus == null){
                 oldNodeStatus = new HashMap<>();
                 oldNodeStatus.put("0",osNodeStatus);
             }
-            // 获取最后一个key
-            String lastKey = String.valueOf(oldNodeStatus.size());
-            // 添加到Map中
-            oldNodeStatus.put(lastKey,osNodeStatus);
+            else{
+                // 获取最后一个key
+                String lastKey = String.valueOf(oldNodeStatus.size());
+                // 添加到Map中
+                oldNodeStatus.put(lastKey,osNodeStatus);
+            }
             // 更新到数据库
             os.setNodeStatus(oldNodeStatus);
             osService.updateById(os);

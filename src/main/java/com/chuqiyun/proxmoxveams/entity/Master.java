@@ -22,7 +22,7 @@ public class Master extends Model<Master> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
     private String name;
-    private Integer group;
+    private Integer area;
     
     private String host;
     

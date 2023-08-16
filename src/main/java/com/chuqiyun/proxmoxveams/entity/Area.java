@@ -17,8 +17,8 @@ import java.io.Serializable;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "group")
-public class Group extends Model<Group> {
+@TableName(value = "area")
+public class Area extends Model<Area> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
     

@@ -1,11 +1,12 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
-import com.chuqiyun.proxmoxveams.entity.Group;
+import com.chuqiyun.proxmoxveams.entity.Area;
 import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.service.GroupService;
+import com.chuqiyun.proxmoxveams.service.AreaService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +22,7 @@ public class SysGroupController {
     @Value("${config.admin_path}")
     private String ADMIN_PATH;
     @Resource
-    private GroupService groupService;
+    private AreaService areaService;
     @Resource
     private MasterService masterService;
 
@@ -33,13 +34,38 @@ public class SysGroupController {
     @AdminApiCheck
     @PostMapping("/{adminPath}/addArea")
     public ResponseResult<String> addArea(@PathVariable("adminPath") String adminPath,
-                                          @RequestBody Group group) throws UnauthorizedException {
+                                          @RequestBody JSONObject params) throws UnauthorizedException {
         if (!adminPath.equals(ADMIN_PATH)){
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
+        String name = params.getString("name");
+        // 判断name是否存在
+        if (areaService.isExistName(name)){
+            return ResponseResult.fail("该地区已存在");
+        }
+        Integer realm = params.getInteger("realm");
+        Integer parent;
+        if (name == null || realm == null){
+            return ResponseResult.fail("参数错误");
+        }
+        if (realm == 1){
+            parent = params.getInteger("parent");
+            // 判断parent是否存在
+            if (parent == null || !areaService.isExistId(parent)){
+                return ResponseResult.fail("父级地区不存在");
+            }
+        }
+        else {
+            parent = 0;
+        }
+        Area area = new Area();
+        area.setName(name);
+        area.setRealm(realm);
+        area.setParent(parent);
+
         // 插入地区
-        if (groupService.save(group)){
+        if (areaService.save(area)){
             return ResponseResult.ok("添加成功");
         }
         return ResponseResult.fail("添加失败");
@@ -59,12 +85,12 @@ public class SysGroupController {
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
         // 判断是否有子节点
-        if (groupService.isExistChild(id)){
+        if (areaService.isExistChild(id)){
             return ResponseResult.fail("该地区下存在子地区，无法删除");
         }
-        groupService.updateGroupBindNode(id);
+        areaService.updateGroupBindNode(id);
         // 删除地区
-        if (groupService.removeById(id)){
+        if (areaService.removeById(id)){
             return ResponseResult.ok("删除成功");
         }
         return ResponseResult.fail("删除失败");
@@ -78,13 +104,13 @@ public class SysGroupController {
     @AdminApiCheck
     @RequestMapping(value = "/{adminPath}/updateArea",method = {RequestMethod.PUT,RequestMethod.POST})
     public ResponseResult<String> updateArea(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody Group group) throws UnauthorizedException {
+                                             @RequestBody Area area) throws UnauthorizedException {
         if (!adminPath.equals(ADMIN_PATH)){
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
         // 修改地区
-        if (groupService.updateById(group)){
+        if (areaService.updateById(area)){
             return ResponseResult.ok("修改成功");
         }
         return ResponseResult.fail("修改失败");
@@ -104,7 +130,7 @@ public class SysGroupController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        return ResponseResult.ok(groupService.selectGroupPage(page,limit));
+        return ResponseResult.ok(areaService.selectGroupPage(page,limit));
     }
 
     /**
@@ -120,7 +146,7 @@ public class SysGroupController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        return ResponseResult.ok(groupService.getById(id));
+        return ResponseResult.ok(areaService.getById(id));
     }
 
     /**
@@ -142,8 +168,8 @@ public class SysGroupController {
             return ResponseResult.fail("节点不存在");
         }
         // 判断地区是否存在
-        Integer groupId = node.getGroup();
-        if (groupService.getById(groupId) == null){
+        Integer groupId = node.getArea();
+        if (areaService.getById(groupId) == null){
             return ResponseResult.fail("地区不存在");
         }
         // 更新节点地区
