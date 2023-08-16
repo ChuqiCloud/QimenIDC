@@ -4,7 +4,9 @@ import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.Group;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.GroupService;
+import com.chuqiyun.proxmoxveams.service.MasterService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,6 +22,8 @@ public class SysGroupController {
     private String ADMIN_PATH;
     @Resource
     private GroupService groupService;
+    @Resource
+    private MasterService masterService;
 
     /**
     * @Author: mryunqi
@@ -117,5 +121,35 @@ public class SysGroupController {
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
         return ResponseResult.ok(groupService.getById(id));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 添加某节点到指定地区
+    * @DateTime: 2023/8/16 16:36
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/addNodeToArea",method = {RequestMethod.PUT,RequestMethod.POST})
+    public ResponseResult<String> addNodeToArea(@PathVariable("adminPath") String adminPath,
+                                                @RequestBody Master node) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        // 判断节点是否存在
+        Integer nodeId = node.getId();
+        if (masterService.getById(nodeId) == null){
+            return ResponseResult.fail("节点不存在");
+        }
+        // 判断地区是否存在
+        Integer groupId = node.getGroup();
+        if (groupService.getById(groupId) == null){
+            return ResponseResult.fail("地区不存在");
+        }
+        // 更新节点地区
+        if (masterService.updateById(node)){
+            return ResponseResult.ok("添加成功");
+        }
+        return ResponseResult.fail("添加失败");
     }
 }
