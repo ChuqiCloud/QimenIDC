@@ -56,12 +56,12 @@ public class SysNodeMasterController {
         }
         Page<Master> masterPage = masterService.getMasterList(page,size);
         // 将每个master的csrfToken与ticket加***处理
-        for (Master master : masterPage.getRecords()) {
+        /*for (Master master : masterPage.getRecords()) {
             master.setPassword("**********");
             master.setCsrfToken("**********");
             master.setTicket("**********");
             master.setSshPassword("**********");
-        }
+        }*/
         return ResponseResult.ok(masterPage);
     }
 

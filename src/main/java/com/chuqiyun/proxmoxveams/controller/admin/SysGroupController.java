@@ -1,6 +1,8 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -12,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.List;
 
 /**
  * @author mryunqi
@@ -177,5 +180,32 @@ public class SysGroupController {
             return ResponseResult.ok("添加成功");
         }
         return ResponseResult.fail("添加失败");
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定地区的节点列表
+    * @DateTime: 2023/8/17 21:56
+    */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/getNodeListByArea")
+    public ResponseResult<Object> getNodeListByArea(@PathVariable("adminPath") String adminPath,
+                                                    @RequestParam(name = "area") Integer area,
+                                                    @RequestParam(name = "page", defaultValue = "1") Integer page,
+                                                    @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("area",area);
+        Page<Master> masterPage = masterService.getMasterList(page,size,queryWrapper);
+        for (Master master : masterPage.getRecords()) {
+            master.setPassword("**********");
+            master.setCsrfToken("**********");
+            master.setTicket("**********");
+            master.setSshPassword("**********");
+        }
+        return ResponseResult.ok(masterPage);
     }
 }
