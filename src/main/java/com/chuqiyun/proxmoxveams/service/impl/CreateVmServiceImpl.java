@@ -164,7 +164,8 @@ public class CreateVmServiceImpl implements CreateVmService {
             if (vmParams.getHostname() == null) {
                 vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
             }
-        }else {
+        }
+        else {
             int count = vmParams.getIpConfig().size();
             HashMap<String, String> ipConfigMap = vmParams.getIpConfig();
             for (int i = 1; i <= count; i++) {
