@@ -44,14 +44,6 @@ public interface MasterService extends IService<Master> {
      * @Return  HashMap<String,String>
      */
     HashMap<String,String> getMasterCookieMap(Integer id);
-    /**
-     * @Author: mryunqi
-     * @Description: 生成最新vmid
-     * @DateTime: 2023/6/21 15:21
-     * @Params: Integer id 节点id
-     * @Return Integer
-     */
-    Integer getNewVmid(Integer id);
 
     /**
      * @Author: mryunqi
@@ -60,7 +52,7 @@ public interface MasterService extends IService<Master> {
      */
     ArrayList<JSONObject> getDiskList(Integer id);
 
-    Integer createVm(VmParams vmParams);
+    Integer createVm(VmParams vmParams, Integer vmId);
 
     JSONObject getVmInfo(Integer nodeId, Integer vmid);
 

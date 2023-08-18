@@ -180,7 +180,7 @@ public class SysOsController {
         os.setUrl(url);
         os.setCloud(cloud);
         os.setDownType(0);
-        os.setPath("/home/images/"+fileName);
+        os.setPath("/home/images/");
         os.setStatus(0);
         os.setCreateTime(System.currentTimeMillis());
 

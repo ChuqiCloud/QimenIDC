@@ -6,18 +6,22 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -79,13 +83,26 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setNodeid(vmParams.getNodeid());
         vmhost.setVmid(vmId);
         vmhost.setName(vmParams.getHostname());
+        vmhost.setSockets(vmParams.getSockets());
         vmhost.setCores(vmParams.getCores());
+        vmhost.setThreads(vmParams.getThreads());
+        vmhost.setDevirtualization(vmParams.getDevirtualization());
+        vmhost.setKvm(vmParams.getKvm());
+        vmhost.setCpu(vmParams.getCpu());
+        vmhost.setCpuUnits(vmParams.getCpuUnits());
+        vmhost.setArch(vmParams.getArch());
+        vmhost.setAcpi(vmParams.getAcpi());
         vmhost.setMemory(vmParams.getMemory());
+        vmhost.setSwap(vmParams.getSwap());
         vmhost.setStorage(vmParams.getStorage());
         vmhost.setSystemDiskSize(vmParams.getSystemDiskSize());
         vmhost.setDataDisk(vmParams.getDataDisk());
         vmhost.setBridge(vmParams.getBridge());
         vmhost.setOs(vmParams.getOs());
+        vmhost.setOsType(vmParams.getOsType());
+        vmhost.setIso(vmParams.getIso());
+        vmhost.setTemplate(vmParams.getTemplate());
+        vmhost.setOnBoot(vmParams.getOnBoot());
         vmhost.setBandwidth(vmParams.getBandwidth());
         vmhost.setIpConfig(vmParams.getIpConfig());
         if (vmParams.getNested() == null || !vmParams.getNested()) {
@@ -386,6 +403,56 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
         }
+    }
+
+    /**
+     * @Author: mryunqi
+     * @Description: 生成最新vmid
+     * @DateTime: 2023/6/21 15:21
+     * @Params: Integer id 节点id
+     * @Return Integer
+     */
+    @Override
+    public Integer getNewVmid(Integer id) {
+        // 获取master
+        Master master = masterService.getById(id);
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(id);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        // 查询vm列表 {"data":[{'vmid':100,'name':'test'},{'vmid':101,'name':'test2'}]}
+        JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
+        JSONArray jsonArray = vmJson.getJSONArray("data");
+        // 判断是否为空
+        if (jsonArray == null || jsonArray.size() == 0) {
+            return 100;
+        }
+        ArrayList<Integer> vmidList = new ArrayList<>();
+
+        for (int i = 0; i < jsonArray.size(); i++) {
+            JSONObject tempJsonObject = jsonArray.getJSONObject(i);
+            int vmid = tempJsonObject.getIntValue("vmid");
+            vmidList.add(vmid);
+        }
+
+        vmidList.sort(Comparator.naturalOrder());
+        int maxVmid = vmidList.get(vmidList.size() - 1);
+        // 获取数据库中是否存在该vmid
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("vmid",maxVmid);
+        queryWrapper.eq("nodeid",id);
+        Vmhost vmhost = this.getOne(queryWrapper);
+        if (vmhost == null) {
+            return maxVmid+1;
+        }
+        // 循环+1，直到找到一个不存在的vmid
+        while (vmhost != null) {
+            maxVmid++;
+            queryWrapper.clear();
+            queryWrapper.eq("nodeid",id);
+            queryWrapper.eq("vmid",maxVmid);
+            vmhost = this.getOne(queryWrapper);
+        }
+        return maxVmid;
     }
 
     /**

@@ -3,7 +3,9 @@ package com.chuqiyun.proxmoxveams.cron;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
@@ -35,6 +37,8 @@ public class DiskCron {
     private VmhostService vmhostService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private OsService osService;
     @Async
     @Scheduled(fixedDelay = 1000*60*10)  //每隔10分钟执行一次
     public void autoDiskName() {
@@ -91,14 +95,20 @@ public class DiskCron {
         // 获取disk信息
         Map<Object,Object> diskMap = task.getParams();
         String os = diskMap.get("os").toString();
-        log.info("[Task-ImportSystemDisk] 执行导入系统盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+        Os osInfo = osService.selectOsByFileName(os);
+        String path = osInfo.getPath();
+        // 删除结尾的/
+        if (path.endsWith("/")){
+            path = path.substring(0,path.length()-1);
+        }
+        UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"执行导入系统盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
         SshUtil sshUtil = new SshUtil(node.getHost(),node.getSshPort(),node.getSshUsername(),node.getSshPassword());
         try {
             sshUtil.connect();
-            sshUtil.executeCommand("qm importdisk "+task.getVmid()+" /home/images/"+os+" "+vmhost.getStorage());
+            sshUtil.executeCommand("qm importdisk "+task.getVmid()+" "+path+"/"+os+" "+vmhost.getStorage());
             sshUtil.disconnect();
         } catch (JSchException | InterruptedException e) {
-            log.error("[Task-ImportSystemDisk] 导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
             // 更新任务状态
             task.setStatus(3);
             // 添加错误信息
@@ -130,7 +140,7 @@ public class DiskCron {
                 task.setStatus(3);
                 task.setError("任务超时");
                 taskService.updateById(task);
-                log.error("[Task-ImportSystemDisk] 导入系统盘任务: NodeID:{} VM-ID:{} 失败",task.getNodeid(),task.getVmid());
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",task.getNodeid(),task.getVmid());
                 continue;
             }
             // 获取node信息
@@ -152,7 +162,7 @@ public class DiskCron {
                 try {
                     proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
                 } catch (Exception e) {
-                    log.error("[Task-ImportSystemDisk] 导入系统盘任务: NodeID:{} VM-ID:{} 失败",task.getNodeid(),task.getVmid());
+                    UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",task.getNodeid(),task.getVmid());
                     // 修改任务状态为失败
                     task.setStatus(3);
                     task.setError(e.getMessage());
@@ -163,9 +173,9 @@ public class DiskCron {
                 // 修改任务状态为成功
                 task.setStatus(2);
                 taskService.updateById(task);
-                log.info("[Task-ImportSystemDisk] 导入系统盘任务: NodeID:{} VM-ID:{} 完成",task.getNodeid(),task.getVmid());
+                UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 完成",task.getNodeid(),task.getVmid());
                 // 创建修改系统盘大小任务
-                log.info("[Task-UpdateSystemDisk] 添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+                UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
                 long time = System.currentTimeMillis();
                 Task updateSystemDiskTask = new Task();
                 updateSystemDiskTask.setNodeid(node.getId());
@@ -176,12 +186,12 @@ public class DiskCron {
                 updateSystemDiskTask.setParams(task.getParams());
                 updateSystemDiskTask.setCreateDate(time);
                 if (taskService.save(updateSystemDiskTask)){
-                    log.info("[Task-UpdateSystemDisk] 添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
+                    UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
                     // 增加虚拟机task
                     vmhost.getTask().put(String.valueOf(time), updateSystemDiskTask.getId());
                     vmhostService.updateById(vmhost);
                 }else {
-                    log.error("[Task-UpdateSystemDisk] 添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+                    UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 }
             }
         }

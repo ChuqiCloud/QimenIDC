@@ -32,6 +32,8 @@ public class CreateVmServiceImpl implements CreateVmService {
     @Resource
     private IppoolService ippoolService;
     @Resource
+    private OsService osService;
+    @Resource
     private VmhostService vmhostService;
     @Resource
     private ConfigService configService;
@@ -85,6 +87,14 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 判断cpu是否为空
         if (vmParams.getCpu() == null) {
             vmParams.setCpu("kvm64");
+        }
+        // 判断devirtualization是否为空
+        if (vmParams.getDevirtualization() == null) {
+            vmParams.setDevirtualization(false);
+        }
+        // 判断kvm是否为空
+        if (vmParams.getKvm() == null) {
+            vmParams.setKvm(true);
         }
         // 判断cpu是否支持
         else if (!VmUtil.isCpuTypeExist(vmParams.getCpu())) {
@@ -143,9 +153,13 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getOnBoot() == null) {
             vmParams.setOnBoot(0);
         }
+        // 设置网络
+        if (vmParams.getBridge() == null) {
+            vmParams.setBridge("vmbr0");
+        }
         // 获取可用ip最多的ip池
         Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
-        if (vmParams.getIpConfig() == null || vmParams.getIpConfig().size() < 1){
+        if (vmParams.getIpConfig() == null || vmParams.getIpConfig().size() <= 1){
             HashMap<String,String> ipConfig = new HashMap<>();
             if (ipPool == null) {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
@@ -200,6 +214,19 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 判断os与template、iso是否为空，至少有一个不为空
         if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
+        }
+        Os os = osService.isExistOs(vmParams.getOs());
+        // 判断镜像是否存在
+        if (os == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
+        }
+        else {
+            vmParams.setOs(os.getFileName());
+        }
+        int osStatus = osService.getNodeOsStatus(vmParams.getOs(), nodeId);
+        // 判断镜像是否可用
+        if (osStatus != 2) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
         }
         // 判断osType是否为空
         if (vmParams.getOsType() == null) {

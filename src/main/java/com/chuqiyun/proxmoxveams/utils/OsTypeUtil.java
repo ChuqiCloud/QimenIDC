@@ -13,7 +13,7 @@ public class OsTypeUtil {
     * @Return String 操作系统类型
     */
     public static String getOsType(String os,String type) {
-        if ("win".equals(type)) {
+        if ("windows".equals(type)) {
             // 模糊匹配os是否为Windows XP
             if (os.toLowerCase().contains("xp")) {
                 return "wxp";

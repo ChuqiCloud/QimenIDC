@@ -44,6 +44,14 @@ public class VmParams {
      */
     private Boolean nested;
     /**
+     * 是否去虚拟化
+     */
+    private Boolean devirtualization;
+    /**
+    * 是否启用kvm
+    */
+    private Boolean kvm;
+    /**
      * cpu类型
      */
     private String cpu;
@@ -51,6 +59,10 @@ public class VmParams {
      * cpu限制(单位:百分比)
      */
     private Integer cpuUnits;
+    /**
+     * args 命令集参数
+     */
+    private String args;
     /**
      * 系统架构(x86_64,arrch64)
      */

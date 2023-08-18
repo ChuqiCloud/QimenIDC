@@ -8,7 +8,9 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.MasterDao;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
@@ -73,40 +75,6 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
 
     /**
     * @Author: mryunqi
-    * @Description: 生成最新vmid
-    * @DateTime: 2023/6/21 15:21
-    * @Params: Integer id 节点id
-    * @Return Integer
-    */
-    @Override
-    public Integer getNewVmid(Integer id) {
-        // 获取master
-        Master master = this.getById(id);
-        // 获取cookie
-        HashMap<String, String> cookieMap = this.getMasterCookieMap(id);
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        // 查询vm列表 {"data":[{'vmid':100,'name':'test'},{'vmid':101,'name':'test2'}]}
-        JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
-        JSONArray jsonArray = vmJson.getJSONArray("data");
-        // 判断是否为空
-        if (jsonArray == null || jsonArray.size() == 0) {
-            return 100;
-        }
-        ArrayList<Integer> vmidList = new ArrayList<>();
-
-        for (int i = 0; i < jsonArray.size(); i++) {
-            JSONObject tempJsonObject = jsonArray.getJSONObject(i);
-            int vmid = tempJsonObject.getIntValue("vmid");
-            vmidList.add(vmid);
-        }
-
-        vmidList.sort(Comparator.naturalOrder());
-        int maxVmid = vmidList.get(vmidList.size() - 1);
-        return maxVmid+1;
-    }
-
-    /**
-    * @Author: mryunqi
     * @Description: 获取节点磁盘名称列表
     * @DateTime: 2023/6/21 20:07
     */
@@ -133,37 +101,40 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     * @DateTime: 2023/6/21 23:41
     */
     @Override
-    public Integer createVm(VmParams vmParams){
+    public Integer createVm(VmParams vmParams,Integer vmid) {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = this.getById(vmParams.getNodeid());
         // 创建虚拟机可选参数
         HashMap<String, Object> param = new HashMap<>();
-        int vmId = getNewVmid(vmParams.getNodeid());
+        int vmId = vmid;
         param.put("vmid", vmId);
         param.put("name", vmParams.getHostname());
         // 设置CPU插槽
         param.put("sockets", vmParams.getSockets());
         // 设置CPU
         param.put("cores", vmParams.getCores());
-        // 判断是否开启嵌套虚拟化
-        if (Boolean.TRUE.equals(vmParams.getNested())){
+        VmUtil.getArgs(vmParams, param);
+        // 设置kvm
+        param.put("kvm", vmParams.getKvm());
+        /*if (Boolean.TRUE.equals(vmParams.getNested())){
             // 判断是否为windows系统
-            if ("win".equals(vmParams.getOsType())){
+            if ("windows".equals(vmParams.getOsType())){
                 // 设置CPU为max，开启嵌套虚拟化
-                param.put("cpu", "max");
-                param.put("args", "-cpu max,-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
+                param.put("cpu", vmParams.getCpu());
+                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+",-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
             }else {
                 // 设置CPU为max，开启嵌套虚拟化
-                param.put("cpu", "max");
-                param.put("args", "-cpu max,+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
+                param.put("cpu", vmParams.getCpu());
+                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+",+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
             }
 
             //param.put("args", "-cpu host,+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
 
         }else {
+            param.put("cpu", vmParams.getCpu());
             // 设置CPU与宿主机相同，不开启嵌套虚拟化
-            param.put("args", "-cpu host,-vmx");
-        }
+            param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+",-vmx,family='6',model='151',stepping='2',model_id='12th Gen Intel(R) Core(TM) i9-12900KS @ 5.50GHz',topoext=on");
+        }*/
         int ipCount = vmParams.getIpConfig().size();
         for (int i = 0; i < ipCount; i++) {
             param.put("ipconfig"+i, vmParams.getIpConfig().get(String.valueOf(i+1)));
@@ -174,13 +145,17 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         // 设置虚拟机osType
         param.put("ostype", OsTypeUtil.getOsType(vmParams.getOs(),vmParams.getOsType()));
         // 开机启动
-        param.put("onboot", 1);
+        param.put("onboot", vmParams.getOnBoot());
         // 设置内存
         param.put("memory", vmParams.getMemory());
+        // 设置arch
+        param.put("arch", vmParams.getArch());
+        // 设置acpi
+        param.put("acpi", vmParams.getAcpi());
         // 开启QEMU Agent
         param.put("agent", 1);
         // 设置虚拟机citype
-        if ("win".equals(vmParams.getOsType())){
+        if ("windows".equals(vmParams.getOsType())){
             param.put("citype","configdrive2");
         }
         if ("linux".equals(vmParams.getOsType())){

@@ -41,5 +41,9 @@ public interface OsService extends IService<Os> {
     boolean deleteNodeOs(String osName, Integer nodeId);
 
     boolean deleteOs(Integer osId);
+
+    Os isExistOs(String osName);
+
+    Integer getNodeOsStatus(String osName, Integer nodeId);
 }
 

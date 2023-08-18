@@ -62,7 +62,12 @@ public class IpUtil {
             ip.setDns1(dns1);
             ip.setDns2(dns2);
             ip.setPoolId(ipParams.getPoolId());
-            ip.setStatus(0);
+            // 如果ip地址为网关地址，则设置为3,0=正常;1=已使用;2=停用;3=网关
+            if (i == gatewayIP) {
+                ip.setStatus(3);
+            } else {
+                ip.setStatus(0);
+            }
             ip.setIp(octet1 + "." + octet2 + "." + octet3 + "." + octet4);
             ipList.add(ip);
         }

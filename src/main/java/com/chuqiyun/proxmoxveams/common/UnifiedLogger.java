@@ -22,6 +22,9 @@ public class UnifiedLogger {
          */
         TASK_CREATE_VM("[Task-CreateVm]"),
         TASK_IMPORT_SYSTEM_DISK("[Task-ImportSystemDisk]"),
+        TASK_IMPORT_DATA_DISK("[Task-ImportDataDisk]"),
+        // updateSystemDisk
+        TASK_UPDATE_SYSTEM_DISK("[Task-UpdateSystemDisk]"),
         // 需要时添加更多日志类型
         ;
 
@@ -40,4 +43,23 @@ public class UnifiedLogger {
         String formattedMessage = String.format("%s %s", type.getType(), message);
         log.info(formattedMessage, args);
     }
+    /**
+    * @Author: mryunqi
+    * @Description: warn级别日志
+    * @DateTime: 2023/8/18 15:17
+    */
+    public static void warn(LogType type, String message, Object... args) {
+        String formattedMessage = String.format("%s %s", type.getType(), message);
+        log.warn(formattedMessage, args);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: error级别日志
+    * @DateTime: 2023/8/18 15:17
+    */
+    public static void error(LogType type, String message, Object... args) {
+        String formattedMessage = String.format("%s %s", type.getType(), message);
+        log.error(formattedMessage, args);
+    }
+
 }

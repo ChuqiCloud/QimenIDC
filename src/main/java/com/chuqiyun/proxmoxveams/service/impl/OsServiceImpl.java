@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * (Os)表服务实现类
@@ -254,7 +255,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             return false;
         }
         String osUrl = os.getUrl();
-        String osPath = "/home/images/";
+        String osPath = os.getPath();
         String ip = node.getHost();
         String token = configService.getToken();
         return ClientApiUtil.downloadFile(ip,token,osUrl,osPath);
@@ -275,7 +276,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             return null;
         }
         String osUrl = os.getUrl();
-        String osPath = "/home/images/";
+        String osPath = os.getPath();
         String ip = node.getHost();
         String token = configService.getToken();
         return ClientApiUtil.getDownloadProgress(ip,token,osUrl,osPath).getJSONObject("data");
@@ -330,6 +331,53 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             }
         }
         return this.removeById(osId);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 判断os是否存在，与创建虚拟机接口配合使用
+    * @DateTime: 2023/8/17 22:23
+    * @Params: String osName 镜像名称
+    * @Return Os os 镜像对象
+    */
+    @Override
+    public Os isExistOs(String osName){
+        //判断osName是否为数字
+        if (osName.matches("[0-9]+")){
+            // 如果为数字，则根据id查询
+            return this.getById(Integer.parseInt(osName));
+        }
+        // 如果不为数字，则根据osName查询
+        QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("file_name",osName);
+        return this.getOne(queryWrapper);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 查询指定节点os状态
+    * @DateTime: 2023/8/17 22:55
+    * @Params: String osName 镜像名称，Integer nodeId 节点id
+    * @Return Integer status os状态
+    */
+    @Override
+    public Integer getNodeOsStatus(String osName, Integer nodeId){
+        Os os = this.isExistOs(osName);
+        if (os==null){
+            return 0;
+        }
+        Map<String,Object> map = os.getNodeStatus();
+        if (map.size() == 0){
+            return 0;
+        }
+        for (String key : map.keySet()) {
+            Object osNodeStatusObj = map.get(key);
+            OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
+            if (Objects.equals(osNodeStatus.getNodeId(), nodeId)){
+                return osNodeStatus.getStatus();
+            }
+        }
+        return 0;
     }
 
 }

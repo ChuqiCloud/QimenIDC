@@ -192,4 +192,15 @@ public class ProxmoxApiUtil {
     public JSONObject getNodeLoadAvg(Master node, HashMap<String,String> cookie,String timeframe,String cf) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/rrddata?timeframe="+timeframe+"&cf="+cf,new HashMap<>());
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定节点网络信息
+    * @DateTime: 2023/8/18 15:05
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 HashMap<String,Object> params 请求参数
+    * @Return JSONObject 节点网络信息
+    */
+    public JSONObject getNodeNet(Master node, HashMap<String,String> cookie,HashMap<String,Object> params) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/network",params);
+    }
 }

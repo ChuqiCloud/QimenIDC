@@ -37,6 +37,10 @@ public enum UnifiedResultCode {
     ERROR_USERNAME_NOT_NULL(1012, "Username cannot be empty"),
     // 密码不能为空
     ERROR_PASSWORD_NOT_NULL(1013, "Password cannot be empty"),
+    // 镜像不存在
+    ERROR_CLOUD_IMAGE_NOT_EXIST(1014, "Cloud Image does not exist"),
+    // 镜像不可用
+    ERROR_CLOUD_IMAGE_NOT_AVAILABLE(1015, "Cloud Image is not available"),
 
     /*pve错误码范围：2xxx*/
 

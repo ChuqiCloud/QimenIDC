@@ -27,6 +27,8 @@ public interface VmhostService extends IService<Vmhost> {
 
     HashMap<String,Object> power(Integer hostId, String action);
 
+    Integer getNewVmid(Integer id);
+
     void syncVmStatus(JSONArray vmHosts, Integer nodeId);
 }
 

@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
@@ -61,7 +62,7 @@ public class CreateVmCron {
             try {
                 vmParams = EntityHashMapConverterUtil.convertToEntity(params, VmParams.class);
             } catch (IllegalAccessException | InstantiationException e) {
-                log.error("[Task-CreateVm] 创建虚拟机任务参数转换失败");
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务参数转换失败");
                 // 更新任务状态为3 3为失败
                 task.setStatus(3);
                 // 记录错误信息
@@ -71,9 +72,11 @@ public class CreateVmCron {
                 // 结束任务
                 return;
             }
-            int vmId = masterService.createVm(vmParams);
+            int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
+            int vmId = masterService.createVm(vmParams,vmIdInit);
             // 判断是否创建成功
             if (vmId == 0) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");
                 // 创建失败，修改任务状态为3
                 task.setStatus(3);
                 // 记录错误信息
@@ -87,7 +90,7 @@ public class CreateVmCron {
             // 记录节点id
             task.setNodeid(vmParams.getNodeid());
             taskService.updateById(task);
-            log.info("[Task-CreateVm] 创建基础虚拟机成功");
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机成功");
             String createTime = String.valueOf(System.currentTimeMillis());
             HashMap<Object, Object> taskMap = new HashMap<>();
             taskMap.put(createTime, task.getId());
@@ -96,6 +99,7 @@ public class CreateVmCron {
             Integer vmhostId = vmhostService.addVmhost(vmId, vmParams);
             // 判断是否存入成功
             if (vmhostId == null) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机信息存入数据库失败");
                 // 存入失败，修改任务状态为3
                 task.setStatus(3);
                 // 记录错误信息
@@ -130,6 +134,7 @@ public class CreateVmCron {
                 vmhost.getTask().put(String.valueOf(time), importTask.getId());
                 vmhostService.updateById(vmhost);
             }else {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建导入操作系统任务失败");
                 // 存入失败，修改任务状态为3
                 task.setStatus(3);
                 // 记录错误信息

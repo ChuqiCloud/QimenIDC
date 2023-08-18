@@ -30,10 +30,50 @@ public class Vmhost extends Model<Vmhost> {
     private Integer vmid;
     
     private String name;
+    /**
+     * 插槽数
+     */
+    private Integer sockets;
     
     private Integer cores;
+    /**
+     * 线程数
+     */
+    private Integer threads;
+    /**
+     * 是否去虚拟化
+     */
+    private Boolean devirtualization;
+    /**
+     * 是否启用kvm
+     */
+    private Boolean kvm;
+    /**
+     * cpu类型
+     */
+    private String cpu;
+    /**
+     * cpu限制(单位:百分比)
+     */
+    private Integer cpuUnits;
+    /**
+     * args 命令集参数
+     */
+    private String args;
+    /**
+     * 系统架构(x86_64,arrch64)
+     */
+    private String arch;
+    /**
+     * acpi 默认1 开启
+     */
+    private Integer acpi;
     
     private Integer memory;
+    /**
+     * swap大小
+     */
+    private Integer swap;
     
     private Integer agent;
     
@@ -45,6 +85,22 @@ public class Vmhost extends Model<Vmhost> {
     
     private String net1;
     private String os;
+    /**
+     * 操作系统类型
+     */
+    private String osType;
+    /**
+     * iso镜像
+     */
+    private String iso;
+    /**
+     * 虚拟机模板
+     */
+    private String template;
+    /**
+     * 是否开机自启 0:否 1:是
+     */
+    private Integer onBoot;
     private Integer bandwidth;
     private String storage;
     private Integer systemDiskSize;
