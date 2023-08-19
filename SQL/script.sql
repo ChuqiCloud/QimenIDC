@@ -1,3 +1,12 @@
+create table area
+(
+    id     int auto_increment
+        primary key,
+    name   varchar(255)  not null,
+    parent int           null comment '父级',
+    realm  int default 0 not null
+);
+
 create table config
 (
     id                     int                      not null
@@ -7,12 +16,20 @@ create table config
     win_system_disk_size   int          default 60  null
 );
 
-create table `group`
+create table cpuinfo
 (
-    id    int auto_increment
+    id          int auto_increment
         primary key,
-    name  varchar(255)  not null,
-    realm int default 0 not null
+    cpu         varchar(255) null,
+    name        varchar(255) null,
+    family      int          null,
+    model       int          null,
+    stepping    int          null,
+    level       varchar(255) null,
+    xlevel      varchar(255) null comment 'cpu拓展型号',
+    vendor      varchar(255) null comment '厂商',
+    l3_cache    int          null comment '三缓',
+    create_date varchar(13)  null
 );
 
 create table ippool
@@ -50,7 +67,7 @@ create table master
     id                int auto_increment
         primary key,
     name              varchar(255)               null,
-    `group`           int                        null,
+    area              int                        null,
     host              varchar(255)               not null,
     port              int          default 8006  not null,
     username          varchar(255)               not null,
@@ -87,6 +104,16 @@ create table os
     create_time mediumtext    null
 );
 
+create table smbios
+(
+    id          int auto_increment
+        primary key,
+    type        int         null,
+    model       json        null,
+    info        text        null,
+    create_date varchar(13) null
+);
+
 create table sysapi
 (
     id          int auto_increment
@@ -94,6 +121,7 @@ create table sysapi
     appid       varchar(255) not null,
     appkey      varchar(255) not null,
     info        varchar(255) null comment '备注',
+    status      int          null comment '0=正常，1=停用',
     create_date mediumtext   null
 );
 
@@ -131,14 +159,28 @@ create table vmhost
     nodeid           int                                        not null,
     vmid             int                                        null,
     name             varchar(255)                               not null,
+    sockets          int                                        null,
     cores            int                                        not null,
+    threads          int                                        null,
+    devirtualization int                                        null,
+    kvm              int                                        null,
+    cpu              varchar(255)                               null,
+    cpu_units        int                                        null,
+    args             text                                       null,
+    arch             varchar(20)                                null,
+    acpi             int                                        null,
     memory           int                                        not null,
+    swap             int                                        null,
     agent            int          default 1                     not null,
     ide0             varchar(255)                               null,
     ide2             varchar(255) default 'local-lvm:cloudinit' null comment 'cloud-init',
     net0             varchar(255) default 'virtio,bridge=vmbr0' null,
     net1             varchar(255)                               null,
     os               varchar(255)                               null,
+    os_type          varchar(20)                                null,
+    iso              varchar(255)                               null,
+    template         varchar(255)                               null,
+    on_boot          int                                        null,
     bandwidth        int                                        null,
     storage          varchar(255)                               null,
     system_disk_size int                                        null,
