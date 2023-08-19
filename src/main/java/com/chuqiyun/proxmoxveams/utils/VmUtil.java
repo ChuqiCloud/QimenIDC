@@ -190,7 +190,7 @@ public class VmUtil {
                 param.put("cpu", vmParams.getCpu());
                 // 判断args是否为空
                 if (vmParams.getArgs() == null) {
-                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + " -cpu " + vmParams.getCpu() + ",-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer");
+                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu + " -cpu " + vmParams.getCpu() + ",-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer");
                 }
                 else {
                     // 清理掉args中的冗余参数
@@ -223,13 +223,13 @@ public class VmUtil {
                     }
                     // 清理首尾的空格
                     cleanedArgs = cleanedArgs.trim();
-                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + " -cpu " + vmParams.getCpu()+ "," + cleanedArgs + ",-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer");
+                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu + " -cpu " + vmParams.getCpu()+ "," + cleanedArgs + ",-hypervisor,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,kvm=off,hv_vendor_id=intel,hv_synic,hv_stimer");
                 }
             } else {
                 param.put("cpu", vmParams.getCpu());
                 // 判断args是否为空
                 if (vmParams.getArgs() == null) {
-                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + " -cpu " + vmParams.getCpu() + ",+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
+                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu + " -cpu " + vmParams.getCpu() + ",+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
                 }
                 else {
                     // 清理掉args中的冗余参数
@@ -261,7 +261,7 @@ public class VmUtil {
                     }
                     // 清理首尾的空格
                     cleanedArgs = cleanedArgs.trim();
-                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + " -cpu " + vmParams.getCpu()+ "," + cleanedArgs + ",+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
+                    param.put("args", "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu + " -cpu " + vmParams.getCpu()+ "," + cleanedArgs + ",+kvm_nested,+kvm_pv_unhalt,+kvm_pv_eoi,hv_vendor_id=proxmox,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer,hv_frequencies,hv_tlbflush,hv_ipi");
                 }
             }
         }
@@ -272,7 +272,7 @@ public class VmUtil {
                 param.put("cpu", vmParams.getCpu());
                 // 判断args是否为空
                 if (vmParams.getArgs() == null){
-                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu());
+                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" -cpu "+vmParams.getCpu());
                 }
                 else {
                     // 清理掉args中的冗余参数
@@ -287,13 +287,13 @@ public class VmUtil {
                     }
                     // 清理首尾的空格
                     cleanedArgs = cleanedArgs.trim();
-                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" cpu "+vmParams.getCpu()+","+cleanedArgs);
+                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" cpu "+vmParams.getCpu()+","+cleanedArgs);
                 }
             }else {
                 param.put("cpu", vmParams.getCpu());
                 // 判断args是否为空
                 if (vmParams.getArgs() == null){
-                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu());
+                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" -cpu "+vmParams.getCpu());
                 }
                 else {
                     // 清理掉args中的冗余参数
@@ -308,7 +308,7 @@ public class VmUtil {
                     }
                     // 清理首尾的空格
                     cleanedArgs = cleanedArgs.trim();
-                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+","+cleanedArgs);
+                    param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" -cpu "+vmParams.getCpu()+","+cleanedArgs);
                 }
             }
         }
@@ -316,7 +316,7 @@ public class VmUtil {
             param.put("cpu", vmParams.getCpu());
             // 判断args是否为空
             if (vmParams.getArgs() == null){
-                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+",-vmx");
+                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" -cpu "+vmParams.getCpu()+",-vmx");
             }
             else {
                 // 清理掉args中的冗余参数
@@ -333,7 +333,7 @@ public class VmUtil {
                 }
                 // 清理首尾的空格
                 cleanedArgs = cleanedArgs.trim();
-                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads()+" -cpu "+vmParams.getCpu()+","+cleanedArgs+",-vmx");
+                param.put("args", "-smp "+vcpu+",cores="+vmParams.getCores()+",threads="+vmParams.getThreads() + ",maxcpus=" + vcpu +" -cpu "+vmParams.getCpu()+","+cleanedArgs+",-vmx");
             }
         }
     }
