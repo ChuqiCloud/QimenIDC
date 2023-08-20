@@ -116,8 +116,8 @@ public class SysSmBiosController {
     @AdminApiCheck
     @GetMapping("/{adminPath}/getSmbiosInfoList")
     public ResponseResult<Object> getSmbiosInfoList(@PathVariable("adminPath") String adminPath,
-                                                     @RequestParam("page") Integer page,
-                                                     @RequestParam("limit") Integer limit)
+                                                     @RequestParam(name = "page",defaultValue = "1") Integer page,
+                                                     @RequestParam(name = "limit",defaultValue = "20") Integer limit)
             throws UnauthorizedException {
         if (!adminPath.equals(ADMIN_PATH)){
             //判断后台路径是否正确

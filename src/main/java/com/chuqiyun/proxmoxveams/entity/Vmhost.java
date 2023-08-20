@@ -53,9 +53,9 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Integer cpuModel;
     /**
-     * smbios模型
+     * 模型组合，modelGroup优先级高于cpuModel
      */
-    private Integer smbios;
+    private Integer modelGroup;
     /**
      * cpu类型
      */

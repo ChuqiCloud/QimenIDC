@@ -9,4 +9,6 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
  */
 public interface CreateVmService {
     UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams);
+
+    Integer createPveVm(VmParams vmParams, Integer vmid);
 }

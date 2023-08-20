@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.CreateVmService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -35,6 +36,8 @@ public class CreateVmCron {
     private VmhostService vmhostService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private CreateVmService createVmService;
 
     /**
      * 创建虚拟机
@@ -73,7 +76,7 @@ public class CreateVmCron {
                 return;
             }
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
-            int vmId = masterService.createVm(vmParams,vmIdInit);
+            int vmId = createVmService.createPveVm(vmParams,vmIdInit);
             // 判断是否创建成功
             if (vmId == 0) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");

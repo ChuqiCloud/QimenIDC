@@ -1,6 +1,12 @@
 package com.chuqiyun.proxmoxveams.utils;
 
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Cpuinfo;
+import com.chuqiyun.proxmoxveams.entity.Modelgroup;
+import com.chuqiyun.proxmoxveams.entity.Smbios;
+import com.chuqiyun.proxmoxveams.service.CpuinfoService;
+import com.chuqiyun.proxmoxveams.service.SmbiosService;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -338,5 +344,128 @@ public class VmUtil {
         }
 
 
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 组合拼接模型组合args参数
+    * @DateTime: 2023/8/20 22:42
+    */
+    public static String getArgsParamsByModelGroup(CpuinfoService cpuinfoService, SmbiosService smbiosService, Modelgroup modelgroup){
+        String args = null;
+        // 判断cpuModel是否为空
+        if (modelgroup.getCpuModel() != null){
+            // 判断cpuModel是否存在
+            Cpuinfo cpuinfo = cpuinfoService.getById(modelgroup.getCpuModel());
+            args = cpuinfoService.cpuinfoToString(cpuinfo);
+        }
+        // 判断smbios是否为空
+        if (modelgroup.getSmbiosModel() != null){
+            // 以逗号分割字符串
+            String[] smbiosIds = modelgroup.getSmbiosModel().split(",");
+            StringBuilder stringBuilder = new StringBuilder();
+            for (String smbiosId : smbiosIds) {
+                Smbios smbios = smbiosService.getById(Long.parseLong(smbiosId));
+                stringBuilder.append(smbiosService.smbiosToStringArgs(smbios));
+            }
+            // 去掉最后一个逗号
+            if (stringBuilder.length() > 0 && stringBuilder.charAt(stringBuilder.length() - 1) == ',') {
+                stringBuilder.setLength(stringBuilder.length() - 1);
+            }
+            args = args + stringBuilder;
+        }
+        return args;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 使用组合模组时的args参数
+    * @DateTime: 2023/8/20 22:59
+    */
+    public static void getArgsByModelGroup(VmParams vmParams,HashMap<String, Object> param) {
+        int vcpu = vmParams.getSockets() * vmParams.getCores() * vmParams.getThreads();
+        Boolean nested = vmParams.getNested();
+        Boolean devirtualization = vmParams.getDevirtualization();
+        // 如果同时开启嵌套虚拟化和去虚拟机化
+        if (Boolean.TRUE.equals(nested) && Boolean.TRUE.equals(devirtualization)) {
+            // 判断是否为windows系统
+            if ("windows".equals(vmParams.getOsType())) {
+                param.put("cpu", vmParams.getCpu());
+                param.put("args",
+                        "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu +
+                                " -cpu " + vmParams.getCpu() +
+                                ",-hypervisor," +
+                                "+kvm_pv_unhalt," +
+                                "+kvm_pv_eoi," +
+                                "hv_spinlocks=0x1fff," +
+                                "hv_vapic," +
+                                "hv_time," +
+                                "hv_reset," +
+                                "hv_vpindex," +
+                                "hv_runtime," +
+                                "hv_relaxed," +
+                                "kvm=off," +
+                                "hv_vendor_id=intel," +
+                                "hv_synic," +
+                                "hv_stimer," +
+                                "hv_spinlocks=0x1fff," +
+                                "hv_vapic," +
+                                "hv_time," +
+                                "hv_reset," +
+                                "hv_vpindex," +
+                                "hv_runtime," +
+                                "hv_relaxed," +
+                                "kvm=off," +
+                                "hv_vendor_id=intel," +
+                                "hv_synic," +
+                                "hv_stimer," +
+                                vmParams.getArgs());
+            } else {
+                param.put("cpu", vmParams.getCpu());
+                param.put("args",
+                        "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu +
+                                " -cpu " + vmParams.getCpu() +
+                                ",+kvm_nested," +
+                                "+kvm_pv_unhalt," +
+                                "+kvm_pv_eoi," +
+                                "hv_vendor_id=proxmox," +
+                                "hv_spinlocks=0x1fff," +
+                                "hv_vapic," +
+                                "hv_time," +
+                                "hv_reset," +
+                                "hv_vpindex," +
+                                "hv_runtime," +
+                                "hv_relaxed," +
+                                "hv_synic," +
+                                "hv_stimer," +
+                                "hv_frequencies," +
+                                "hv_tlbflush," +
+                                "hv_ipi," +
+                                vmParams.getArgs());
+            }
+        }
+        // 如果开启嵌套虚拟机并没有开启去虚拟化
+        else if (Boolean.TRUE.equals(nested) && Boolean.FALSE.equals(devirtualization)) {
+            // 判断是否为windows系统
+            if ("windows".equals(vmParams.getOsType())) {
+                param.put("cpu", vmParams.getCpu());
+                param.put("args",
+                        "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu +
+                                " -cpu " + vmParams.getCpu() + "," +
+                                vmParams.getArgs());
+            } else {
+                param.put("cpu", vmParams.getCpu());
+                param.put("args",
+                        "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu +
+                                " -cpu " + vmParams.getCpu() + "," +
+                                vmParams.getArgs());
+            }
+        } else {
+            param.put("cpu", vmParams.getCpu());
+            param.put("args",
+                    "-smp " + vcpu + ",cores=" + vmParams.getCores() + ",threads=" + vmParams.getThreads() + ",maxcpus=" + vcpu +
+                            " -cpu " + vmParams.getCpu() + ",-vmx," +
+                            vmParams.getArgs());
+        }
     }
 }

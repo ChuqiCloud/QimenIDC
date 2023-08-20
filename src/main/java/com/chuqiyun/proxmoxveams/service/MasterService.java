@@ -52,8 +52,6 @@ public interface MasterService extends IService<Master> {
      */
     ArrayList<JSONObject> getDiskList(Integer id);
 
-    Integer createVm(VmParams vmParams, Integer vmId);
-
     JSONObject getVmInfo(Integer nodeId, Integer vmid);
 
     JSONObject getVmStatusCurrent(Integer nodeId, Integer vmid);

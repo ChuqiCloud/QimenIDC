@@ -52,7 +52,7 @@ public class SmbiosServiceImpl extends ServiceImpl<SmbiosDao, Smbios> implements
     @Override
     public StringBuilder smbiosToStringArgs(Smbios smbios){
         StringBuilder args = new StringBuilder();
-
+        args.append(" -smbios ").append("type=").append(smbios.getType()).append(',');
         Map<String, String> smbiosMap = smbios.getModel();
         for (Map.Entry<String, String> entry : smbiosMap.entrySet()) {
             appendField(args, entry.getKey(), entry.getValue());

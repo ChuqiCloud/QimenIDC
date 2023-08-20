@@ -1,15 +1,13 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
-import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
-import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
-import com.chuqiyun.proxmoxveams.utils.ModUtil;
-import com.chuqiyun.proxmoxveams.utils.VmUtil;
+import com.chuqiyun.proxmoxveams.utils.*;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -33,6 +31,12 @@ public class CreateVmServiceImpl implements CreateVmService {
     private IppoolService ippoolService;
     @Resource
     private OsService osService;
+    @Resource
+    private ModelgroupService modelgroupService;
+    @Resource
+    private CpuinfoService cpuinfoService;
+    @Resource
+    private SmbiosService smbiosService;
     @Resource
     private VmhostService vmhostService;
     @Resource
@@ -257,5 +261,91 @@ public class CreateVmServiceImpl implements CreateVmService {
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+    }
+
+    /**
+     * @Author: mryunqi
+     * @Description: 创建虚拟机
+     * @DateTime: 2023/6/21 23:41
+     */
+    @Override
+    public Integer createPveVm(VmParams vmParams, Integer vmid) {
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        Master node = masterService.getById(vmParams.getNodeid());
+        // 创建虚拟机可选参数
+        HashMap<String, Object> param = new HashMap<>();
+        int vmId = vmid;
+        param.put("vmid", vmId);
+        param.put("name", vmParams.getHostname());
+        // 设置CPU插槽
+        param.put("sockets", vmParams.getSockets());
+        // 设置CPU
+        param.put("cores", vmParams.getCores());
+
+        // 如果modelGroup为空
+        if (vmParams.getModelGroup() == null) {
+            Cpuinfo cpuinfo = cpuinfoService.getById(vmParams.getCpuModel());
+            param.put("args", cpuinfoService.cpuinfoToString(cpuinfo));
+            VmUtil.getArgs(vmParams, param);
+        } else {
+            Modelgroup modelgroup = modelgroupService.getById(vmParams.getModelGroup());
+            param.put("args", VmUtil.getArgsParamsByModelGroup(cpuinfoService,smbiosService,modelgroup));
+            VmUtil.getArgsByModelGroup(vmParams, param);
+        }
+        // 设置kvm
+        param.put("kvm", vmParams.getKvm());
+
+        int ipCount = vmParams.getIpConfig().size();
+        for (int i = 0; i < ipCount; i++) {
+            param.put("ipconfig"+i, vmParams.getIpConfig().get(String.valueOf(i+1)));
+        }
+        //param.put("ipconfig0", "ip=23.94.247.39/28,gw=23.94.247.33");
+        // 设置DNS
+        param.put("nameserver", vmParams.getDns1());
+        // 设置虚拟机osType
+        param.put("ostype", OsTypeUtil.getOsType(vmParams.getOs(),vmParams.getOsType()));
+        // 开机启动
+        param.put("onboot", vmParams.getOnBoot());
+        // 设置内存
+        param.put("memory", vmParams.getMemory());
+        // 设置arch
+        param.put("arch", vmParams.getArch());
+        // 设置acpi
+        param.put("acpi", vmParams.getAcpi());
+        // 开启QEMU Agent
+        param.put("agent", 1);
+        // 设置虚拟机citype
+        if ("windows".equals(vmParams.getOsType())){
+            param.put("citype","configdrive2");
+        }
+        if ("linux".equals(vmParams.getOsType())){
+            param.put("citype","nocloud");
+        }
+        // 设置虚拟机账号
+        param.put("ciuser",vmParams.getUsername());
+        // 设置虚拟机密码
+        param.put("cipassword",vmParams.getPassword());
+        // 设置cloud-init
+        if (vmParams.getStorage() == null){
+            param.put("ide2", "local-lvm:cloudinit");
+        }else if ("auto".equals(vmParams.getStorage())) {
+            param.put("ide2", "local-lvm:cloudinit");
+        }else {
+            param.put("ide2", vmParams.getStorage()+":cloudinit");
+        }
+        // 设置网络
+        if (vmParams.getBridge() == null) {
+            param.put("net0", "virtio,bridge=vmbr0,rate="+vmParams.getBandwidth());
+        }else {
+            param.put("net0", "virtio,bridge="+vmParams.getBridge());
+        }
+        // 获取cookie
+        HashMap<String, String> authentications = masterService.getMasterCookieMap(vmParams.getNodeid());
+        JSONObject jsonObject =  proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);
+        if (jsonObject.containsKey("data")){
+            return vmId;
+        }else {
+            return 0;
+        }
     }
 }

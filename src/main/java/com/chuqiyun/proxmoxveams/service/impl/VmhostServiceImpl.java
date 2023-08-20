@@ -88,6 +88,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setThreads(vmParams.getThreads());
         vmhost.setDevirtualization(vmParams.getDevirtualization());
         vmhost.setKvm(vmParams.getKvm());
+        vmhost.setCpuModel(vmParams.getCpuModel());
+        vmhost.setModelGroup(vmParams.getModelGroup());
+        vmhost.setArgs(vmParams.getArgs());
         vmhost.setCpu(vmParams.getCpu());
         vmhost.setCpuUnits(vmParams.getCpuUnits());
         vmhost.setArch(vmParams.getArch());
