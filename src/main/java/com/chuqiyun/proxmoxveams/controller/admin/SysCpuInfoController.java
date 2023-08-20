@@ -15,7 +15,7 @@ import javax.annotation.Resource;
  * @date 2023/8/19
  */
 @RestController
-public class SysCpuInfo {
+public class SysCpuInfoController {
     @Value("${config.admin_path}")
     private String ADMIN_PATH;
     @Resource
@@ -81,6 +81,23 @@ public class SysCpuInfo {
             return ResponseResult.ok("修改成功");
         }
         return ResponseResult.fail("修改失败");
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 查询cpu信息模型
+    * @DateTime: 2023/8/20 15:26
+    */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/selectCpuInfo")
+    public ResponseResult<Object> selectCpuInfo(@PathVariable("adminPath") String adminPath,
+                                                @RequestParam("id") Integer id)
+            throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        return ResponseResult.ok(cpuinfoService.getById(id));
     }
 
     /**
