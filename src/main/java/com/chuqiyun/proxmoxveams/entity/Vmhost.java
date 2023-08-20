@@ -49,6 +49,14 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Boolean kvm;
     /**
+     * cpu模型
+     */
+    private Integer cpuModel;
+    /**
+     * smbios模型
+     */
+    private Integer smbios;
+    /**
      * cpu类型
      */
     private String cpu;

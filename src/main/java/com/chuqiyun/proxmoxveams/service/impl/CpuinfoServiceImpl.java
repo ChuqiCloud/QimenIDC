@@ -40,5 +40,57 @@ public class CpuinfoServiceImpl extends ServiceImpl<CpuinfoDao, Cpuinfo> impleme
         return this.page(cpuinfoPage);
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 将cpu信息模型转换为cpu信息实体字符串
+    * @DateTime: 2023/8/20 17:07
+    * @Params: Cpuinfo cpuinfo cpu信息模型
+    * @Return String cpu信息实体字符串
+    */
+    @Override
+    public String cpuinfoToString(Cpuinfo cpuinfo) {
+        StringBuilder args = new StringBuilder();
+
+        appendField(args, "model_id", cpuinfo.getName());
+        appendIntegerField(args, "family", cpuinfo.getFamily());
+        appendIntegerField(args, "model", cpuinfo.getModel());
+        appendIntegerField(args, "stepping", cpuinfo.getStepping());
+        appendField(args, "level", cpuinfo.getLevel());
+        appendField(args, "xlevel", cpuinfo.getXlevel());
+        appendField(args, "vendor", cpuinfo.getVendor());
+        appendBooleanField(args, "l3_cache", cpuinfo.getL3Cache());
+        appendField(args, null, cpuinfo.getOther());
+
+        // 删除最后一个逗号
+        if (args.length() > 0 && args.charAt(args.length() - 1) == ',') {
+            args.setLength(args.length() - 1);
+        }
+
+        return args.toString();
+    }
+
+    private void appendField(StringBuilder builder, String fieldName, String fieldValue) {
+        if (fieldValue != null && !fieldValue.isEmpty()) {
+            if (fieldName != null) {
+                builder.append(fieldName).append('=');
+            }
+            builder.append(fieldValue).append(',');
+        }
+    }
+    private void appendIntegerField(StringBuilder builder, String fieldName, Integer fieldValue) {
+        if (fieldValue != null) {
+            if (fieldName != null) {
+                builder.append(fieldName).append('=');
+            }
+            builder.append(fieldValue).append(',');
+        }
+    }
+    private void appendBooleanField(StringBuilder builder, String fieldName, boolean fieldValue) {
+        if (fieldName != null) {
+            builder.append(fieldName).append('=');
+            builder.append(fieldValue ? "true" : "false").append(',');
+        }
+    }
+
 }
 

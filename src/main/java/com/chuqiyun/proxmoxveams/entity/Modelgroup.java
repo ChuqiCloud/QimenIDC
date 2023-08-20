@@ -10,32 +10,23 @@ import lombok.EqualsAndHashCode;
 import java.io.Serializable;
 
 /**
- * (Cpuinfo)表实体类
+ * (Modelgroup)表实体类
  *
  * @author mryunqi
- * @since 2023-08-19 12:59:59
+ * @since 2023-08-20 16:04:31
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "cpuinfo",autoResultMap = true)
-public class Cpuinfo extends Model<Cpuinfo> {
+@TableName(value = "modelgroup",autoResultMap = true)
+public class Modelgroup extends Model<Modelgroup> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
     
-    private String cpu;
+    private Integer cpuModel;
     
-    private String name;
-    
-    private Integer family;
-    
-    private Integer model;
-    
-    private Integer stepping;
-    private String level;
-    private String xlevel;
-    private String vendor;
-    private Boolean l3Cache;
-    private String other;
+    private String smbiosModel;
+    private String args;
+    private String info;
     
     private Long createDate;
 

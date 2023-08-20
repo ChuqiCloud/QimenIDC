@@ -52,6 +52,14 @@ public class VmParams {
     */
     private Boolean kvm;
     /**
+     * cpu模型
+     */
+    private Integer cpuModel;
+    /**
+     * smbios模型
+     */
+    private Integer smbios;
+    /**
      * cpu类型
      */
     private String cpu;

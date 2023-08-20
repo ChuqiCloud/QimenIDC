@@ -15,5 +15,7 @@ public interface CpuinfoService extends IService<Cpuinfo> {
     Boolean addCpuInfo(Cpuinfo cpuinfo);
 
     Page<Cpuinfo> selectCpuInfoPage(Integer page, Integer limit);
+
+    String cpuinfoToString(Cpuinfo cpuinfo);
 }
 

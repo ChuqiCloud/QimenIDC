@@ -7,6 +7,8 @@ import com.chuqiyun.proxmoxveams.entity.Smbios;
 import com.chuqiyun.proxmoxveams.service.SmbiosService;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 /**
  * (Smbios)表服务实现类
  *
@@ -39,5 +41,32 @@ public class SmbiosServiceImpl extends ServiceImpl<SmbiosDao, Smbios> implements
         Page<Smbios> smbiosPage = new Page<>(page,limit);
         return this.page(smbiosPage);
     }
+
+    /**
+     * @Author: mryunqi
+     * @Description: 将smbios信息模型转换为smbios信息实体字符串
+     * @DateTime: 2023/8/20 17:07
+     * @Params: Smbios smbios smbios信息模型
+     * @Return StringBuilder smbios信息实体字符串
+     */
+    @Override
+    public StringBuilder smbiosToStringArgs(Smbios smbios){
+        StringBuilder args = new StringBuilder();
+
+        Map<String, String> smbiosMap = smbios.getModel();
+        for (Map.Entry<String, String> entry : smbiosMap.entrySet()) {
+            appendField(args, entry.getKey(), entry.getValue());
+        }
+        return args;
+    }
+    private void appendField(StringBuilder builder, String fieldName, String fieldValue) {
+        if (fieldValue != null && !fieldValue.isEmpty()) {
+            if (fieldName != null) {
+                builder.append(fieldName).append('=');
+            }
+            builder.append(fieldValue).append(',');
+        }
+    }
+
 }
 

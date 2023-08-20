@@ -15,5 +15,7 @@ public interface SmbiosService extends IService<Smbios> {
     Boolean addSmbiosInfo(Smbios smbios);
 
     Page<Smbios> selectSmbiosInfoPage(Integer page, Integer limit);
+
+    StringBuilder smbiosToStringArgs(Smbios smbios);
 }
 
