@@ -5,7 +5,6 @@
 
 本项目是一个开源、免费、云原生的多云管理及混合云融合系统，它致力于简化多云环境下的资源管理和操作，提高管理多云的效率。
 
-QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
 
 项目主要托管于码云，地址为：[https://gitee.com/chuqicloud/QimenIDC](https://gitee.com/chuqicloud/QimenIDC)。
 
@@ -19,37 +18,65 @@ QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
 
 ## 快速开始
 
-以下是在本地环境中启动 QimenIDC 的基本步骤：
+### 程序获取
 
-1. 克隆项目代码到本地：
+你可以直接下载已经构建好的 QimenIDC 发行版
+
+或者，你也可以从源代码构建 QimenIDC，下方有构建指南。
+
+请将config目录与jar包放在同一目录下。
+
+配置文件说明：
+
+主配置文件：application.yml
+
+```yaml
+config:
+   profiles: prod # 配置文件环境，可选值：dev、prod、test
+```
+profiles的内容与config目录下的文件名对应，例如：profiles为prod时，会加载application-prod.yml文件。
+
+可根据自己的需要修改配置文件。
+
+使用命令行运行：
+
+```shell
+java -jar QimenIDC.jar
+```
+
+可根据自己服务器的配置修改启动参数。
+
+### 自行构建
+
+QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
+
+**前置：**
+
+- [Java SE Development Kits - 17](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html)或更高版本
+- [Git](https://git-scm.com/downloads)
+
+**步骤：**
+
+#### Windows
 
    ```shell
    git clone https://gitee.com/chuqicloud/QimenIDC.git
-   ```
-
-2. 进入项目目录：
-
-   ```shell
    cd QimenIDC
+   .\gradlew.bat # 设置开发环境
+   .\gradlew jar # 编译
    ```
 
-3. 配置数据库和云服务提供商的认证信息，可以通过 `/config/application.yml` 文件进行配置。
+#### Linux (GNU)
 
-4. 确保您已经安装 JDK 17，并将其配置为项目的运行环境。
-
-5. 使用 Gradle 进行构建：
-
-   ```shell
-   ./gradlew build
+   ```bash
+    git clone https://gitee.com/chuqicloud/QimenIDC.git
+    cd QimenIDC
+    chmod +x gradlew # 设置开发环境
+    ./gradlew jar # 编译
    ```
 
-6. 启动 QimenIDC：
+你可以在项目的根目录找到输出的jar。
 
-   ```shell
-   ./gradlew bootRun
-   ```
-
-详细的部署和配置指南可以在 [文档链接](https://www.chuqiyun.com) 中找到。
 
 
 ## 社区和支持
