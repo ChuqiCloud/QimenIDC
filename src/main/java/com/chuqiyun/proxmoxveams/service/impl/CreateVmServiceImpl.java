@@ -284,12 +284,15 @@ public class CreateVmServiceImpl implements CreateVmService {
 
         // 如果modelGroup为空
         if (vmParams.getModelGroup() == null) {
-            Cpuinfo cpuinfo = cpuinfoService.getById(vmParams.getCpuModel());
-            param.put("args", cpuinfoService.cpuinfoToString(cpuinfo));
-            VmUtil.getArgs(vmParams, param);
+            if (vmParams.getCpuModel() != null) {
+                Cpuinfo cpuinfo = cpuinfoService.getById(vmParams.getCpuModel());
+                vmParams.setArgs(cpuinfoService.cpuinfoToString(cpuinfo));
+                VmUtil.getArgs(vmParams, param);
+            }
+
         } else {
             Modelgroup modelgroup = modelgroupService.getById(vmParams.getModelGroup());
-            param.put("args", VmUtil.getArgsParamsByModelGroup(cpuinfoService,smbiosService,modelgroup));
+            vmParams.setArgs(modelgroup.getArgs());
             VmUtil.getArgsByModelGroup(vmParams, param);
         }
         // 设置kvm

@@ -23,6 +23,7 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -424,28 +425,46 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 查询vm列表 {"data":[{'vmid':100,'name':'test'},{'vmid':101,'name':'test2'}]}
         JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
-        JSONArray jsonArray = vmJson.getJSONArray("data");
-        // 判断是否为空
-        if (jsonArray == null || jsonArray.size() == 0) {
-            return 100;
+        JSONObject lxcJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/lxc",new HashMap<>());
+        JSONArray VmJsonArray = vmJson.getJSONArray("data");
+        JSONArray LxcJsonArray = lxcJson.getJSONArray("data");
+        // 提取出所有lxc的vmid
+        ArrayList<Integer> lxcVmidList = new ArrayList<>();
+        for (int i = 0; i < LxcJsonArray.size(); i++) {
+            JSONObject tempJsonObject = LxcJsonArray.getJSONObject(i);
+            int vmid = tempJsonObject.getIntValue("vmid");
+            lxcVmidList.add(vmid);
         }
+
         ArrayList<Integer> vmidList = new ArrayList<>();
 
-        for (int i = 0; i < jsonArray.size(); i++) {
-            JSONObject tempJsonObject = jsonArray.getJSONObject(i);
+        for (int i = 0; i < VmJsonArray.size(); i++) {
+            JSONObject tempJsonObject = VmJsonArray.getJSONObject(i);
             int vmid = tempJsonObject.getIntValue("vmid");
             vmidList.add(vmid);
         }
 
+        // 合并两个list
+        vmidList.addAll(lxcVmidList);
+        // 去重
+        vmidList = (ArrayList<Integer>) vmidList.stream().distinct().collect(Collectors.toList());
+        // 排序
         vmidList.sort(Comparator.naturalOrder());
-        int maxVmid = vmidList.get(vmidList.size() - 1);
+        int maxVmid;
+        // 如果vmidList为空，maxVmid为100
+        if (vmidList.size() == 0) {
+            maxVmid = 100;
+        }else{
+            maxVmid = vmidList.get(vmidList.size() - 1);
+        }
         // 获取数据库中是否存在该vmid
         QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("vmid",maxVmid);
         queryWrapper.eq("nodeid",id);
-        Vmhost vmhost = this.getOne(queryWrapper);
+        Vmhost vmhost;
+        vmhost = this.getOne(queryWrapper);
         if (vmhost == null) {
-            return maxVmid+1;
+            return maxVmid;
         }
         // 循环+1，直到找到一个不存在的vmid
         while (vmhost != null) {
