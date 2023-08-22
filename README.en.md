@@ -1,57 +1,149 @@
 # QimenIDC - Cloud-Native Multi-Cloud Management and Hybrid Cloud Integration System
 
+[简体中文](./README.md) | [English](./README.en.md)
 
-Welcome to the GitHub page of QimenIDC! This project is an open-source, free, and cloud-native system designed for managing and operating resources in multi-cloud environments, with the aim of improving the efficiency of multi-cloud management. QimenIDC is built using Gradle and requires JDK 17 for execution. The project is primarily hosted on Gitee, and its address is: [https://gitee.com/chuqicloud/QimenIDC](https://gitee.com/chuqicloud/QimenIDC).
+This project is an open-source, free, cloud-native multi-cloud management and hybrid cloud integration system. It aims to simplify resource management and operations in multi-cloud environments, enhancing the efficiency of managing multiple clouds.
+
+The project is primarily hosted on Gitee at: [https://gitee.com/chuqicloud/QimenIDC](https://gitee.com/chuqicloud/QimenIDC).
 
 ## Key Features
 
-- **Multi-Cloud Management**: QimenIDC provides a unified API that hides the differences in data models and APIs among various cloud service providers, allowing users to access multiple cloud providers as if they were using a single cloud platform.
-- **Cloud-Native Architecture**: QimenIDC is a cloud-native system that leverages containerization and microservices architecture, offering advantages such as elastic scalability, high availability, and flexible deployment.
-- **Hybrid Cloud Integration**: By integrating different cloud service providers, including the currently integrated ProxmoxVE, QimenIDC enables unified management and collaborative operations for resources in hybrid cloud environments.
-- **Simplified Complexity**: QimenIDC abstracts the details and differences of underlying infrastructure, providing a simple and consistent interface that enables users to easily manage and operate in multi-cloud environments without the need to focus on underlying complexities.
-- **Efficient Management**: QimenIDC offers powerful management tools and automation mechanisms to assist users in quickly configuring, monitoring, and adjusting resources in multi-cloud environments, thereby improving management efficiency.
+- **Multi-Cloud Management**: QimenIDC provides a unified API that hides the data models and API differences of various cloud service providers. This allows users to access multiple cloud service providers as if they were using a single cloud platform.
+
+- **Cloud-Native Architecture**: QimenIDC is a cloud-native system that leverages containerization and microservices architecture. It offers features such as elastic scalability, high availability, and flexible deployment.
+
+- **Hybrid Cloud Integration**: QimenIDC integrates different cloud service providers, including the currently integrated ProxmoxVE, to achieve unified management and collaborative operations in a hybrid cloud environment.
+
+- **Simplified Complexity**: By abstracting the details and differences of underlying infrastructure, QimenIDC provides a concise and consistent interface, enabling users to easily manage and operate in multi-cloud environments without having to worry about underlying complexity.
+
+- **Efficient Management**: QimenIDC offers powerful management tools and automation mechanisms to help users quickly configure, monitor, and adjust resources in multi-cloud environments, thus improving management efficiency.
+
+This project is a community-driven open-source project, and everyone is welcome to use it and contribute code.
+
+Enterprise-level users can look forward to the upcoming commercial version, which will provide additional features and services, including but not limited to:
+
+- Extended Support
+- Advanced Management Feature Support
+- Advanced Monitoring Feature Support
+- Advanced Automation Feature Support
+- Advanced Security Feature Support
+- Advanced Networking Feature Support
+- Advanced Storage Feature Support
+- Advanced Compute Feature Support
+- Advanced Container Feature Support
+- Advanced Application Feature Support
+- Disaster Recovery Backup Feature Support
+
+The architecture of the enterprise edition will be entirely different from the community edition, designed to meet the needs of enterprise-level users with more standardized, stable, and secure architecture.
+
+## Developer API Documentation
+
+[https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd](https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd)
 
 ## Quick Start
 
-Here are the basic steps to get started with QimenIDC in your local environment:
+### Project Structure Overview
 
-1. Clone the project code to your local machine:
+This project consists of two parts: the controller and the node. The controller is the management node, while the node is the managed node.
 
-   ```shell
-   git clone https://gitee.com/chuqicloud/QimenIDC.git
-   ```
+The node is deployed on the host machine, while the controller can be deployed on any server or in a container.
 
-2. Navigate to the project directory:
+Minimum system requirements for the controller:
 
-   ```shell
-   cd QimenIDC
-   ```
+- CPU: 2 cores
+- Memory: 4GB
+- Hard Disk: 20GB
 
-3. Configure the authentication information for the database and cloud service providers in the `/config/application.yml` file.
+### Node Deployment
 
-4. Ensure that you have JDK 17 installed and configured as the runtime environment for the project.
+The controlled program is located in the Controlled directory. Upload the install.sh file from the Controlled directory to the controlled server and execute the script.
 
-5. Build the QimenIDC project using Gradle:
+Alternatively, you can run the following command:
 
-   ```shell
-   ./gradlew build
-   ```
+```shell
+wget -O install.sh http://mirror.chuqiyun.com/software/controlled/install.sh && bash install.sh
+```
 
-6. Start QimenIDC:
+### Node Port Openings
 
-   ```shell
-   ./gradlew bootRun
-   ```
+Port open on the controlled server:
 
-Detailed deployment and configuration guides can be found in the [documentation](https://www.chuqiyun.com).
+- 7600/tcp
+
+Port open on the host machine:
+
+- 22/tcp
+- 8006/tcp
+
+SSH service needs to be enabled on the host machine.
+
+### Controller Deployment
+
+#### Program Retrieval
+
+You can either download the pre-built QimenIDC distribution or build it from source code. There are build instructions below.
+
+Place the config directory and jar file in the same directory.
+
+Explanation of configuration files:
+
+Main configuration file: application.yml
+
+```yaml
+config:
+   profiles: prod # Configuration file environment, optional values: dev, prod, test
+```
+
+The contents of profiles correspond to the file names in the config directory. For example, when profiles is prod, it will load the application-prod.yml file.
+
+Modify the configuration file according to your needs.
+
+Run from the command line:
+
+```shell
+java -jar QimenIDC.jar
+```
+
+Modify the startup parameters according to your server's configuration.
+
+### Self-Build
+
+QimenIDC uses Gradle for building and requires JDK 17 environment to run.
+
+**Prerequisites:**
+
+- [Java SE Development Kits - 17](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html) or higher versions
+- [Git](https://git-scm.com/downloads)
+
+**Steps:**
+
+#### Windows
+
+```shell
+git clone https://gitee.com/chuqicloud/QimenIDC.git
+cd QimenIDC
+.\gradlew.bat # Set up the development environment
+.\gradlew jar # Compile
+```
+
+#### Linux (GNU)
+
+```bash
+git clone https://gitee.com/chuqicloud/QimenIDC.git
+cd QimenIDC
+chmod +x gradlew # Set executable permissions
+./gradlew jar # Compile
+```
+
+You can find the output jar in the project's root directory.
 
 ## Community and Support
 
-If you have any questions, suggestions, or feedback, feel free to reach out to us via email:
+If you have any questions, suggestions, or feedback, you can send them to our email:
 
-- Email: cloud@chuqis.com
+- Mailing List: cloud@chuqis.com
 
-You can report issues or submit feature requests on our [GitHub Issues](https://github.com/your-username/QimenIDC/issues) page.
+You can also report issues or make feature requests on our [GitHub Issues](https://github.com/your-username/QimenIDC/issues) page.
 
 ## License
 
@@ -59,4 +151,4 @@ QimenIDC is licensed under the [AGPL-3.0 License](https://www.gnu.org/licenses/a
 
 ---
 
-Thank you for your interest and support in QimenIDC! We look forward to your contributions and hope that QimenIDC will provide you with a convenient experience for multi-cloud management and hybrid cloud integration. If you have any questions or need assistance regarding this project, please don't hesitate to contact us.
+Thank you for your interest and support for the QimenIDC project! We look forward to your contributions and hope that QimenIDC provides you with a convenient multi-cloud management and hybrid cloud integration experience. If you have any questions or need assistance with this project, please feel free to contact us.
