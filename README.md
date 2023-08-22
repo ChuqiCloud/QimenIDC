@@ -71,7 +71,7 @@ QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
    ```bash
     git clone https://gitee.com/chuqicloud/QimenIDC.git
     cd QimenIDC
-    chmod +x gradlew # 设置开发环境
+    chmod +x gradlew # 设置可执行权限
     ./gradlew jar # 编译
    ```
 
