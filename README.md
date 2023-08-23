@@ -1,9 +1,4 @@
-<p align="center">
-  <a href="#"><img src="https://s1.ax1x.com/2023/08/23/pPYJ8PS.png" width="400" height="200" alt="一白_"></a>
-</p>
-<div align="center">
-
-[![pPYJ8PS.png](https://s1.ax1x.com/2023/08/23/pPYJ8PS.png)](https://imgse.com/i/pPYJ8PS)
+[![pPYJ8PS.png](https://s1.ax1x.com/2023/08/23/pPYJ8PS.png)](https://github.com/ChuqiCloud/QimenIDC)
 
 # QimenIDC - 云原生的多云管理及混合云融合系统
 
