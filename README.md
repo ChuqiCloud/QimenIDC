@@ -6,6 +6,8 @@
 ![Static Badge](https://img.shields.io/badge/OpenJDK-17%2B-green?style=flat-square&logo=openjdk&logoColor=%23FFFFFF)
 ![Static Badge](https://img.shields.io/badge/Proxmox-7.0%2B-green?style=flat-square&logo=proxmox&logoColor=%23E57000)
 
+---
+
 [![Security Status](https://www.murphysec.com/platform3/v31/badge/1694374706311229440.svg)](https://www.murphysec.com/console/report/1694334903591460864/1694374706311229440)
 
 ---
