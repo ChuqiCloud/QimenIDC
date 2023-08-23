@@ -1,6 +1,10 @@
 [![pPYJ8PS.png](https://s1.ax1x.com/2023/08/23/pPYJ8PS.png)](https://github.com/ChuqiCloud/QimenIDC)
 
-# QimenIDC - 云原生的多云管理及混合云融合系统
+# QimenIDC - 云原生的多云管理及混合云融合系统 #
+
+![Static Badge](https://img.shields.io/badge/SpringBoot-2.7.5-green?style=flat-square&logo=springboot&logoColor=%236DB33F)
+![Static Badge](https://img.shields.io/badge/OpenJDK-17%2B-green?style=flat-square&logo=openjdk&logoColor=%23FFFFFF)
+![Static Badge](https://img.shields.io/badge/Proxmox-7.0%2B-green?style=flat-square&logo=proxmox&logoColor=%23E57000)
 
 [简体中文](./README.md) | [English](./README.en.md)
 
