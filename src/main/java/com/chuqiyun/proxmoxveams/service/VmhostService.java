@@ -23,6 +23,14 @@ public interface VmhostService extends IService<Vmhost> {
 
     Page<Vmhost> selectPage(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper);
 
+    Page<Vmhost> selectPageByIp(Integer page, Integer limit, String ip);
+
+    Vmhost getVmhostByName(String name);
+
+    Page<Vmhost> selectPageByNodeId(Integer page, Integer limit, String nodeId);
+
+    Page<Vmhost> selectPageByStatus(Integer page, Integer size, Integer status);
+
     Integer addVmhost(int vmId, VmParams vmParams);
 
     HashMap<String,Object> power(Integer hostId, String action);

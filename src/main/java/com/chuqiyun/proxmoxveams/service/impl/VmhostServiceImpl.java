@@ -75,6 +75,57 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     /**
     * @Author: mryunqi
+    * @Description: 模糊查询指定IP地址的虚拟机实例信息
+    * @DateTime: 2023/8/24 16:05
+    * @Params: Integer page 页码，Integer limit 每页数量，String ip IP地址
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPageByIp(Integer page, Integer limit, String ip) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("ip_config",ip));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据主机名查询虚拟机实例信息
+    * @DateTime: 2023/8/24 16:17
+    * @Params: String name 主机名
+    * @Return Vmhost 虚拟机实例信息
+    */
+    @Override
+    public Vmhost getVmhostByName(String name) {
+        return this.getOne(new QueryWrapper<Vmhost>().eq("name",name));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据节点id分页查询虚拟机实例信息
+    * @DateTime: 2023/8/24 16:24
+    * @Params: Integer page 页码，Integer limit 每页数量，String nodeId 节点id
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPageByNodeId(Integer page, Integer limit, String nodeId) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("nodeid",nodeId));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据状态分页查询
+    * @DateTime: 2023/8/24 17:41
+    * @Params: Integer page 页码，Integer limit 每页数量，Integer status 状态
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPageByStatus(Integer page,Integer size,Integer status){
+        Page<Vmhost> vmhostPage = new Page<>(page, size);
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("status",status));
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 添加虚拟机实例信息
     * @DateTime: 2023/6/21 23:54
     */

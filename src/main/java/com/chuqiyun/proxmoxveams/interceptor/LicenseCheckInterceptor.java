@@ -80,7 +80,6 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                 if (null != ma) {
                     //获得名为member的对象
                     Sysuser members = ServletUtil.getSysLoginMember(request,secret);
-
                     if (null == members) {
                         //如果不是转发到/index上
                         response.sendRedirect("/"+ADMIN_PATH+"/login");
@@ -116,6 +115,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     if (null == members){
                         return authError(response);
                     }
+
                     Sysuser sysuser = sysuserService.getSysuserByUuid(members.getUuid());
                     if (Objects.isNull(sysuser)){
                         return authError(response);

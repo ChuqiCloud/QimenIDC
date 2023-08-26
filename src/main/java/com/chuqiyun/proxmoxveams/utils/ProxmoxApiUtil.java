@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.utils;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import io.swagger.models.auth.In;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -202,5 +203,16 @@ public class ProxmoxApiUtil {
     */
     public JSONObject getNodeNet(Master node, HashMap<String,String> cookie,HashMap<String,Object> params) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/network",params);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定节点指定虚拟机实时信息
+    * @DateTime: 2023/8/24 0:16
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 String vmid 虚拟机ID
+    * @Return JSONObject 虚拟机实时信息
+    */
+    public JSONObject getVmStatus(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/status/current",new HashMap<>());
     }
 }

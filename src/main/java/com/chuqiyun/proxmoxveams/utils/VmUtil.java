@@ -468,4 +468,25 @@ public class VmUtil {
                             vmParams.getArgs());
         }
     }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 根据字符串状态获取状态码
+    * @DateTime: 2023/8/24 16:47
+    * @Params: String status 字符串状态
+    * @Return Integer 状态码
+    */
+    public static Integer statusStrToInt(String status){
+        // 状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停
+        // 0=running、1=stopped、2=suspended、3=migrating、4=paused
+        return switch (status) {
+            case "running" -> 0;
+            case "stopped" -> 1;
+            case "suspended" -> 2;
+            case "migrating" -> 3;
+            case "paused" -> 4;
+            default -> null;
+        };
+
+    }
 }
