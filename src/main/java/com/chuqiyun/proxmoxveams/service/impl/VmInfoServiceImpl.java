@@ -89,6 +89,68 @@ public class VmInfoServiceImpl implements VmInfoService {
         return getVmByPage(page, size);
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 根据vmid获取虚拟机信息
+    * @DateTime: 2023/8/28 19:44
+    * @Params: Integer vmId 虚拟机ID
+    * @Return VmHostDto 虚拟机信息
+    */
+    @Override
+    public VmHostDto getVmHostByVmId(Integer vmId) {
+        Vmhost vmhost = vmhostService.getVmhostByVmId(vmId);
+        // 如果虚拟机不存在
+        if (vmhost == null){
+            return null;
+        }
+        VmHostDto vmHostDto = new VmHostDto();
+        vmHostDto.setVmhost(vmhost);
+        Integer nodeId = vmhost.getNodeid();
+        Master node = masterService.getById(nodeId);
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        // 获取虚拟机信息
+        try{
+            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmId,"hour","AVERAGE"));
+        }catch (Exception e){
+            vmHostDto.setRrddata(null);
+        }
+        try {
+            vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmId));
+        }catch(Exception e){
+            vmHostDto.setCurrent(null);
+        }
+        return vmHostDto;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机历史负载
+    * @DateTime: 2023/8/28 20:06
+    * @Params: Integer vmId 虚拟机ID，String timeframe 时间范围，String cf 数据类型
+    * @Return JSONObject 虚拟机历史负载
+    */
+    @Override
+    public JSONObject getVmInfoRrdData(Integer vmId,String timeframe, String cf){
+        Vmhost vmhost = vmhostService.getVmhostByVmId(vmId);
+        // 判断是否存在
+        if (vmhost == null){
+            return null;
+        }
+        Integer nodeId = vmhost.getNodeid();
+        Master node = masterService.getById(nodeId);
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        // 获取虚拟机信息
+        try{
+            return proxmoxApiUtil.getVmRrd(node, cookieMap, vmId,timeframe,cf);
+        }catch (Exception e){
+            return null;
+        }
+    }
+
     private void buildVmHostDto(Page<Vmhost> vmhostPage,HashMap<String, Object> pageMap){
         List<Vmhost> vmhostList = vmhostPage.getRecords();
         List<VmHostDto> vmHostDtoList = new ArrayList<>();

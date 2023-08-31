@@ -12,4 +12,5 @@ import lombok.Data;
 public class VmHostDto {
     private Vmhost vmhost;
     private JSONObject current;
+    private JSONObject rrddata;
 }

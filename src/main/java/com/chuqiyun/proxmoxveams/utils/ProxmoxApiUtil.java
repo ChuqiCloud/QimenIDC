@@ -215,4 +215,15 @@ public class ProxmoxApiUtil {
     public JSONObject getVmStatus(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/status/current",new HashMap<>());
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定虚拟机rrd数据
+    * @DateTime: 2023/8/28 19:52
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String timeframe 时间范围 String cf 数据源
+    * @Return JSONObject 虚拟机rrd数据
+    */
+    public JSONObject getVmRrd(Master node, HashMap<String,String> cookie, Integer vmid, String timeframe, String cf) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/rrddata?timeframe="+timeframe+"&cf="+cf,new HashMap<>());
+    }
 }
