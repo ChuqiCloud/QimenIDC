@@ -1,0 +1,79 @@
+package com.chuqiyun.proxmoxveams.controller.admin;
+
+import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.service.VmInfoService;
+import com.chuqiyun.proxmoxveams.service.VmhostService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
+import java.util.HashMap;
+
+/**
+ * @author mryunqi
+ * @date 2023/8/31
+ */
+@RestController
+public class SysVmHostController {
+    @Value("${config.admin_path}")
+    private String ADMIN_PATH;
+    @Resource
+    private VmhostService vmhostService;
+
+    /**
+    * @Author: mryunqi
+    * @Description: pve虚拟机开关机等操作
+    * @DateTime: 2023/8/31 20:15
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object power(@PathVariable("adminPath") String adminPath,
+                        @PathVariable("hostId") Integer hostId,
+                        @PathVariable("action") String action) throws UnauthorizedException {
+        if (!ADMIN_PATH.equals(adminPath)){
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        // 判断虚拟机是否存在
+        if (vmhostService.getById(hostId) == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        // 判断action是否合法
+        if (!"start".equals(action) && !"stop".equals(action) && !"shutdown".equals(action) && !"reboot".equals(action)
+                && !"pause".equals(action) && !"unpause".equals(action) && !"suspend".equals(action) && !"resume".equals(action)) {
+            return ResponseResult.fail("action不合法");
+        }
+        HashMap<String, Object> result = vmhostService.power(hostId, action);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        Boolean status = (Boolean) result.get("status");
+        if (!status) {
+            return ResponseResult.fail(result.get("msg").toString());
+        }
+        return ResponseResult.ok("操作成功");
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 重装系统
+    * @DateTime: 2023/9/2 0:10
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object reinstall(@PathVariable("adminPath") String adminPath,
+                            @RequestBody JSONObject params) throws UnauthorizedException {
+        if (!ADMIN_PATH.equals(adminPath)){
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("vmHostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+}

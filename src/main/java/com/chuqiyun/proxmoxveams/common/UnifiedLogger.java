@@ -25,6 +25,14 @@ public class UnifiedLogger {
         TASK_IMPORT_DATA_DISK("[Task-ImportDataDisk]"),
         // updateSystemDisk
         TASK_UPDATE_SYSTEM_DISK("[Task-UpdateSystemDisk]"),
+        TASK_CREATE_DATA_DISK("[Task-CreateDataDisk]"),
+        TASK_UPDATE_BOOT("[Task-UpdateBoot]"),
+        // 重置系统
+        TASK_RESET_SYSTEM("[Task-ResetSystem]"),
+        // 重置密码
+        TASK_RESET_PASSWORD("[Task-ResetPassword]"),
+        // 开机任务
+        TASK_START_VM("[Task-StartVm]"),
         // 需要时添加更多日志类型
         ;
 

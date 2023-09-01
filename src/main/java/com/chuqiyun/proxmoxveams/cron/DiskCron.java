@@ -146,7 +146,7 @@ public class DiskCron {
             // 获取node信息
             Master node = masterService.getById(task.getNodeid());
             // 获取vm信息
-            Vmhost vmhost = vmhostService.getById(task.getHostid());
+            //Vmhost vmhost = vmhostService.getById(task.getHostid());
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             JSONObject vmInfo = masterService.getVmInfo(node.getId(),task.getVmid());
@@ -174,7 +174,7 @@ public class DiskCron {
                 task.setStatus(2);
                 taskService.updateById(task);
                 UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 完成",task.getNodeid(),task.getVmid());
-                // 创建修改系统盘大小任务
+                /*// 创建修改系统盘大小任务
                 UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
                 long time = System.currentTimeMillis();
                 Task updateSystemDiskTask = new Task();
@@ -192,11 +192,14 @@ public class DiskCron {
                     vmhostService.updateById(vmhost);
                 }else {
                     UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                }
+                }*/
             }
         }
     }
 
+    /**
+     * 修改系统盘大小
+     */
     @Async
     @Scheduled(fixedDelay = 1000)
     public void updateSystemDiskSizeCron(){
@@ -242,7 +245,7 @@ public class DiskCron {
             taskService.updateById(task);
             log.info("[Task-UpdateSystemDisk] 添加修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),vmhost.getVmid());
             // 创建数据盘任务
-            log.info("[Task-CreateDataDisk] 添加创建数据盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+            /*log.info("[Task-CreateDataDisk] 添加创建数据盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             long time = System.currentTimeMillis();
             Task createDataDiskTask = new Task();
             createDataDiskTask.setNodeid(node.getId());
@@ -263,7 +266,7 @@ public class DiskCron {
                 task.setStatus(3);
                 task.setError("创建数据盘任务失败");
                 taskService.updateById(task);
-            }
+            }*/
         }
     }
 
@@ -320,7 +323,7 @@ public class DiskCron {
         task.setStatus(2);
         taskService.updateById(task);
         log.info("[Task-CreateDataDisk] 创建数据盘任务: NodeID:{} VM-ID:{} 完成",node.getId(),vmhost.getVmid());
-        // 创建修改启动项任务
+        /*// 创建修改启动项任务
         log.info("[Task-UpdateBoot] 添加创建修改启动项任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
         long time = System.currentTimeMillis();
         Task updateBootDiskTask = new Task();
@@ -344,8 +347,7 @@ public class DiskCron {
             task.setStatus(3);
             task.setError("创建修改启动项任务失败");
             taskService.updateById(task);
-        }
+        }*/
     }
-
 
 }

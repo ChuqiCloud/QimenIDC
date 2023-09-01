@@ -226,4 +226,21 @@ public class ProxmoxApiUtil {
     public JSONObject getVmRrd(Master node, HashMap<String,String> cookie, Integer vmid, String timeframe, String cf) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/rrddata?timeframe="+timeframe+"&cf="+cf,new HashMap<>());
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分离并删除虚拟机磁盘
+    * @DateTime: 2023/9/1 20:07
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String disk 磁盘名称
+    * @Return Boolean 是否成功
+    */
+    public void deleteVmDisk(Master node, HashMap<String,String> cookie, Integer vmid, String disk) throws UnauthorizedException {
+        // 分离磁盘
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("delete",disk);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+        // 删除磁盘
+        params.put("delete","unused0");
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
 }

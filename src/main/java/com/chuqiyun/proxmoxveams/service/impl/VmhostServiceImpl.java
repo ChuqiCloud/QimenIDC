@@ -5,12 +5,17 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
@@ -40,6 +45,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private MasterService masterService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private OsService osService;
     /**
     * @Author: mryunqi
     * @Description: 根据虚拟机id获取虚拟机实例信息
@@ -286,24 +293,48 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     return result;
                 }
                 else {
-                    Task vmRebootTask = new Task();
-                    vmRebootTask.setNodeid(nodeId);
-                    vmRebootTask.setVmid(vmId);
-                    vmRebootTask.setHostid(hostId);
-                    vmRebootTask.setType(REBOOT_VM);
-                    vmRebootTask.setStatus(0);
-                    vmRebootTask.setCreateDate(time);
-                    if (taskService.save(vmRebootTask)) {
-                        log.info("[Task-RebootVm] 重启任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
-                        result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmRebootTask.getId());
-                        this.updateById(vmhost);
+                    // 判断虚拟机状态是否为已停止，如果是则直接开机
+                    if (vmStatus == 1 || vmStatus == 2) {
+                        Task vmStartTask = new Task();
+                        vmStartTask.setNodeid(nodeId);
+                        vmStartTask.setVmid(vmId);
+                        vmStartTask.setHostid(hostId);
+                        vmStartTask.setType(START_VM);
+                        vmStartTask.setStatus(0);
+                        vmStartTask.setCreateDate(time);
+                        if (taskService.save(vmStartTask)) {
+                            log.info("[Task-StartVm] 开机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                            result.put("status", true);
+                            // 增加虚拟机task
+                            vmhost.getTask().put(String.valueOf(time),vmStartTask.getId());
+                            this.updateById(vmhost);
+                        }
+                        else {
+                            log.info("[Task-StartVm] 开机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                            result.put("status", false);
+                            result.put("msg", "开机任务创建失败");
+                        }
                     }
                     else {
-                        log.info("[Task-RebootVm] 重启任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
-                        result.put("status", false);
-                        result.put("msg", "重启任务创建失败");
+                        // 创建重启任务
+                        Task vmRebootTask = new Task();
+                        vmRebootTask.setNodeid(nodeId);
+                        vmRebootTask.setVmid(vmId);
+                        vmRebootTask.setHostid(hostId);
+                        vmRebootTask.setType(REBOOT_VM);
+                        vmRebootTask.setStatus(0);
+                        vmRebootTask.setCreateDate(time);
+                        if (taskService.save(vmRebootTask)) {
+                            log.info("[Task-RebootVm] 重启任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                            result.put("status", true);
+                            // 增加虚拟机task
+                            vmhost.getTask().put(String.valueOf(time), vmRebootTask.getId());
+                            this.updateById(vmhost);
+                        } else {
+                            log.info("[Task-RebootVm] 重启任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                            result.put("status", false);
+                            result.put("msg", "重启任务创建失败");
+                        }
                     }
                 }
                 return result;
@@ -593,6 +624,61 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             vmhost.setStatus(initStatus);
             this.updateById(vmhost);
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 重装虚拟机系统
+    * @DateTime: 2023/9/1 15:33
+    * @Params: Long vmHostId 虚拟机id，String osName 镜像名称，String newPassword 新密码，Boolean resetDataDisk 是否重置数据盘
+    * @Return UnifiedResultDto<Object> 统一返回结果
+    */
+    @Override
+    public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmHostId);
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+
+        // 判断虚拟机是否为禁用状态
+        if (vmhost.getStatus() == 4){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+
+
+        Os os = osService.isExistOs(osName);
+        // 判断镜像是否存在
+        if (os == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
+        }
+
+        // 判断虚拟机是否为开机状态
+        if (vmhost.getStatus() == 0){
+            this.power(vmhost.getId(), "shutdown");
+        }
+        // 重置osName
+        osName = os.getFileName();
+
+        // 创建重置虚拟机系统的任务
+        HashMap<Object, Object> vmParamsMap = new HashMap<>();
+        vmParamsMap.put("osName",osName);
+        vmParamsMap.put("newPassword",newPassword);
+        vmParamsMap.put("resetDataDisk",resetDataDisk);
+        Task task = new Task();
+        task.setHostid(vmhost.getId());
+        task.setVmid(vmhost.getVmid());
+        task.setNodeid(vmhost.getNodeid());
+        task.setStatus(0);
+        task.setType(REINSTALL_VM);
+        task.setParams(vmParamsMap);
+        task.setCreateDate(System.currentTimeMillis());
+        if (taskService.insertTask(task)){
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM,"创建重置虚拟机系统任务成功，任务id为：" + task.getId());
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_SYSTEM_FAILED, null);
     }
 }
 

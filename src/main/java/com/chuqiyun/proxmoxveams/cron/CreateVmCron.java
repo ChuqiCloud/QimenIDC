@@ -22,6 +22,8 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
+
 /**
  * @author mryunqi
  * @date 2023/6/30
@@ -30,8 +32,6 @@ import java.util.Map;
 @Component
 @EnableScheduling
 public class CreateVmCron {
-    @Resource
-    private MasterService masterService;
     @Resource
     private VmhostService vmhostService;
     @Resource
@@ -127,22 +127,165 @@ public class CreateVmCron {
             importParams.put("os", vmParams.getOs());
             importParams.put("size", vmParams.getSystemDiskSize());
             importTask.setParams(importParams);
-            if (taskService.insertTask(importTask)) {
-                // 存入成功，修改任务状态为2
-                task.setStatus(2);
-                taskService.updateById(task);
-                // 获取数据库中的虚拟机信息
-                Vmhost vmhost = vmhostService.getById(vmhostId);
-                // 增加虚拟机task
-                vmhost.getTask().put(String.valueOf(time), importTask.getId());
-                vmhostService.updateById(vmhost);
-            }else {
+            if (!taskService.insertTask(importTask)) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建导入操作系统任务失败");
                 // 存入失败，修改任务状态为3
-                task.setStatus(3);
+                importTask.setStatus(3);
                 // 记录错误信息
-                task.setError("创建导入操作系统任务失败");
-                taskService.updateById(task);
+                importTask.setError("创建导入操作系统任务失败");
+                taskService.updateById(importTask);
+                return;
+            }
+            Task taskStatus;
+            // 等待导入操作系统任务完成
+            do {
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 获取任务
+                taskStatus = taskService.getById(importTask.getId());
+                // 判断任务状态
+                if (taskStatus.getStatus() == 3) {
+                    // 任务状态为3，任务失败
+                    // 结束任务
+                    return;
+                }
+            } while (taskStatus.getStatus() != 2);
+            // 任务状态为2，任务成功
+            // 创建修改系统盘大小任务
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
+            time = System.currentTimeMillis();
+            Task updateSystemDiskTask = new Task();
+            updateSystemDiskTask.setNodeid(vmParams.getNodeid());
+            updateSystemDiskTask.setHostid(vmhostId);
+            updateSystemDiskTask.setVmid(vmId);
+            updateSystemDiskTask.setType(UPDATE_SYSTEM_DISK_SIZE);
+            updateSystemDiskTask.setStatus(0);
+            updateSystemDiskTask.setParams(task.getParams());
+            updateSystemDiskTask.setCreateDate(time);
+            if (!taskService.save(updateSystemDiskTask)){
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
+                // 存入失败，修改任务状态为3
+                updateSystemDiskTask.setStatus(3);
+                // 记录错误信息
+                updateSystemDiskTask.setError("创建导入操作系统任务失败");
+                taskService.updateById(updateSystemDiskTask);
+                return;
+            }
+
+            // 等待修改系统盘大小任务完成
+            do {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 获取任务
+                taskStatus = taskService.getById(updateSystemDiskTask.getId());
+                // 判断任务状态
+                if (taskStatus.getStatus() == 3) {
+                    // 任务状态为3，任务失败
+                    // 结束任务
+                    return;
+                }
+            } while (taskStatus.getStatus() != 2);
+            // 任务状态为2，任务成功
+            // 创建数据盘任务
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
+            time = System.currentTimeMillis();
+            Task createDataDiskTask = new Task();
+            createDataDiskTask.setNodeid(vmParams.getNodeid());
+            createDataDiskTask.setHostid(vmhostId);
+            createDataDiskTask.setVmid(vmId);
+            createDataDiskTask.setType(CREATE_DATA_DISK);
+            createDataDiskTask.setStatus(0);
+            createDataDiskTask.setParams(vmParams.getDataDisk());
+            createDataDiskTask.setCreateDate(time);
+            if (!taskService.save(createDataDiskTask)){
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
+
+                // 修改任务状态为失败
+                createDataDiskTask.setStatus(3);
+                createDataDiskTask.setError("创建数据盘任务失败");
+                taskService.updateById(createDataDiskTask);
+                return;
+            }
+
+            // 等待创建数据盘任务完成
+            do {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 获取任务
+                taskStatus = taskService.getById(createDataDiskTask.getId());
+                // 判断任务状态
+                if (taskStatus.getStatus() == 3) {
+                    // 任务状态为3，任务失败
+                    // 结束任务
+                    return;
+                }
+            } while (taskStatus.getStatus() != 2);
+
+            // 任务状态为2，任务成功
+            // 创建修改启动项任务
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_BOOT,"添加创建修改启动项任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
+
+            time = System.currentTimeMillis();
+            Task updateBootDiskTask = new Task();
+            updateBootDiskTask.setNodeid(vmParams.getNodeid());
+            updateBootDiskTask.setHostid(vmhostId);
+            updateBootDiskTask.setVmid(vmId);
+            updateBootDiskTask.setType(UPDATE_VM_BOOT);
+            updateBootDiskTask.setStatus(0);
+            Map<Object,Object> bootDiskMap = new HashMap<>();
+            bootDiskMap.put("boot","order=scsi0;ide2;net0");
+            updateBootDiskTask.setParams(bootDiskMap);
+            updateBootDiskTask.setCreateDate(time);
+            if (!taskService.insertTask(updateBootDiskTask)){
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_UPDATE_BOOT,"添加创建修改启动项任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
+                // 修改任务状态为失败
+                updateBootDiskTask.setStatus(3);
+                updateBootDiskTask.setError("创建修改启动项任务失败");
+                taskService.updateById(updateBootDiskTask);
+            }
+
+            // 等待创建修改启动项任务完成
+            do {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 获取任务
+                taskStatus = taskService.getById(updateBootDiskTask.getId());
+                // 判断任务状态
+                if (taskStatus.getStatus() == 3) {
+                    // 任务状态为3，任务失败
+                    // 结束任务
+                    return;
+                }
+            } while (taskStatus.getStatus() != 2);
+
+            // 任务状态为2，任务成功
+            // 创建开机任务
+            Task startTask = new Task();
+            time = System.currentTimeMillis();
+            startTask.setNodeid(vmParams.getNodeid());
+            startTask.setVmid(vmId);
+            startTask.setHostid(vmhostId);
+            startTask.setType(START_VM);
+            startTask.setStatus(0);
+            startTask.setCreateDate(time);
+            if (!taskService.insertTask(startTask)){
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_START_VM,"添加创建开机任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
+                // 修改任务状态为失败
+                startTask.setStatus(3);
+                startTask.setError("添加创建开机任务失败");
+                taskService.updateById(startTask);
             }
         }
     }

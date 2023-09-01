@@ -77,7 +77,7 @@ public class BootCron {
                 task.setStatus(2);
                 taskService.updateById(task);
                 // 创建开机任务
-                Task startTask = new Task();
+                /*Task startTask = new Task();
                 long time = System.currentTimeMillis();
                 startTask.setNodeid(node.getId());
                 startTask.setVmid(task.getVmid());
@@ -96,7 +96,7 @@ public class BootCron {
                     task.setStatus(3);
                     task.setError("创建修改启动项任务失败");
                     taskService.updateById(task);
-                }
+                }*/
             }
         }
     }

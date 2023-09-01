@@ -129,5 +129,13 @@ public class TaskType {
      * 恢复虚拟机
      */
     public static Integer UNPAUSE_VM = 31;
+    /**
+     * 重装系统
+     */
+    public static Integer REINSTALL_VM = 32;
+    /**
+     * 重置密码
+     */
+    public static Integer RESET_PASSWORD = 33;
 
 }

@@ -41,6 +41,12 @@ public enum UnifiedResultCode {
     ERROR_CLOUD_IMAGE_NOT_EXIST(1014, "Cloud Image does not exist"),
     // 镜像不可用
     ERROR_CLOUD_IMAGE_NOT_AVAILABLE(1015, "Cloud Image is not available"),
+    // vm不存在
+    ERROR_VM_NOT_EXIST(1016, "Virtual machine does not exist"),
+    // 重置系统失败
+    ERROR_RESET_SYSTEM_FAILED(1017, "Failed to reset system"),
+    // 虚拟机为禁用状态
+    ERROR_VM_IS_DISABLED(1018, "Virtual machine is disabled"),
 
     /*pve错误码范围：2xxx*/
 
