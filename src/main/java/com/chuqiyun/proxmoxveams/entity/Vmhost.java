@@ -84,6 +84,8 @@ public class Vmhost extends Model<Vmhost> {
     private Integer swap;
     
     private Integer agent;
+    private String username;
+    private String password;
     
     private String ide0;
     //cloud-init

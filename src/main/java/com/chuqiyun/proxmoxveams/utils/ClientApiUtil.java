@@ -147,4 +147,21 @@ public class ClientApiUtil {
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 重置密码
+    * @DateTime: 2023/9/2 15:18
+    * @Params:
+    * @Return
+    */
+    public static Boolean resetPassword(String ip, String token, Integer vmId, String username, String password){
+        String url = "http://"+ip+":7600/changePassword";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("id",vmId);
+        paramMap.put("username",username);
+        paramMap.put("password",password);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
 }

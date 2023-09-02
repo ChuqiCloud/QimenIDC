@@ -356,5 +356,8 @@ public class ResetSystemCron {
             taskService.updateById(startTask);
         }
 
+        // 更新主线程任务task状态为2
+        task.setStatus(2);
+        taskService.updateById(task);
     }
 }

@@ -243,4 +243,16 @@ public class ProxmoxApiUtil {
         params.put("delete","unused0");
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
     }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 重置虚拟机密码
+    * @DateTime: 2023/9/2 15:09
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String password 密码
+    */
+    public void resetVmPassword(Master node, HashMap<String,String> cookie, Integer vmid, String password) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("cipassword",password);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
 }
