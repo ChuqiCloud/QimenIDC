@@ -6,7 +6,6 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
-import com.chuqiyun.proxmoxveams.service.VmInfoService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -71,6 +70,25 @@ public class SysVmHostController {
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
         UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("vmHostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除虚拟机
+    * @DateTime: 2023/9/2 16:15
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object delete(@PathVariable("adminPath") String adminPath,
+                         @PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        if (!ADMIN_PATH.equals(adminPath)){
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

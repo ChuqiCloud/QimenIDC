@@ -41,5 +41,7 @@ public interface VmhostService extends IService<Vmhost> {
     void syncVmStatus(JSONArray vmHosts, Integer nodeId);
 
     UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk);
+
+    UnifiedResultDto<Object> deleteVm(Long vmHostId);
 }
 

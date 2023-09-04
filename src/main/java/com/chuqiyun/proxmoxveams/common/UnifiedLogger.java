@@ -33,6 +33,8 @@ public class UnifiedLogger {
         TASK_RESET_PASSWORD("[Task-ResetPassword]"),
         // 开机任务
         TASK_START_VM("[Task-StartVm]"),
+        // 删除虚拟机
+        TASK_DELETE_VM("[Task-DeleteVm]"),
         // 需要时添加更多日志类型
         ;
 

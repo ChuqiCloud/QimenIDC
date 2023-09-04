@@ -47,6 +47,8 @@ public enum UnifiedResultCode {
     ERROR_RESET_SYSTEM_FAILED(1017, "Failed to reset system"),
     // 虚拟机为禁用状态
     ERROR_VM_IS_DISABLED(1018, "Virtual machine is disabled"),
+    // 删除虚拟机失败
+    ERROR_DELETE_VM_FAILED(1019, "Failed to delete virtual machine"),
 
     /*pve错误码范围：2xxx*/
 

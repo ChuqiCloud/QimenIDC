@@ -133,6 +133,42 @@ public class ProxmoxApiUtil {
 
     /**
     * @Author: mryunqi
+    * @Description: 通用DELETE请求
+    * @DateTime: 2023/9/2 15:46
+    * @Params: Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params
+    * @Return  JSONObject
+    */
+    public JSONObject deleteNodeApi(Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params) throws UnauthorizedException {
+        // 构建请求主体
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("Cookie", cookie.get("cookie"));
+        headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
+
+        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        for (String key : params.keySet()) {
+            requestBody.add(key, params.get(key));
+        }
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        // 忽略证书验证
+        TrustSslUtil.initDefaultSsl();
+        // 发送 POST 请求
+        RestTemplate restTemplate = new RestTemplate();
+        ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.DELETE, entity, String.class);
+
+        if (response.getStatusCode().is2xxSuccessful()) {
+            // 提取 Cookie 和 CSRF 预防令牌
+            JSONObject body = JSONObject.parseObject(response.getBody());
+            assert body != null;
+            return body;
+        } else {
+            throw new UnauthorizedException("请求失败");
+        }
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 登录获取cookie
     * @DateTime: 2023/6/20 15:22
     * @Return
@@ -254,5 +290,15 @@ public class ProxmoxApiUtil {
         HashMap<String,Object> params = new HashMap<>();
         params.put("cipassword",password);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 删除指定虚拟机
+    * @DateTime: 2023/9/2 15:45
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
+    */
+    public void deleteVm(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        deleteNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "?purge=1&destroy-unreferenced-disks=1", new HashMap<>());
     }
 }

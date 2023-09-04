@@ -682,5 +682,46 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_SYSTEM_FAILED, null);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除虚拟机
+    * @DateTime: 2023/9/2 16:12
+    * @Params: Long vmHostId 虚拟机id
+    * @Return UnifiedResultDto<Object> 统一返回结果
+    */
+    @Override
+    public UnifiedResultDto<Object> deleteVm(Long vmHostId){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmHostId);
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+
+        // 判断虚拟机是否为禁用状态
+        if (vmhost.getStatus() == 4){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+
+        // 判断虚拟机是否为开机状态
+        if (vmhost.getStatus() == 0){
+            this.power(vmhost.getId(), "shutdown");
+        }
+
+        // 创建删除虚拟机的任务
+        Task task = new Task();
+        task.setHostid(vmhost.getId());
+        task.setVmid(vmhost.getVmid());
+        task.setNodeid(vmhost.getNodeid());
+        task.setStatus(0);
+        task.setType(DELETE_VM);
+        task.setCreateDate(System.currentTimeMillis());
+        if (taskService.insertTask(task)){
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_DELETE_VM,"创建删除虚拟机任务成功，任务id为：" + task.getId());
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_VM_FAILED, null);
+    }
 }
 
