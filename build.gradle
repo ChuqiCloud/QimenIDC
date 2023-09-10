@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.chuqiyun'
-version = '1.0.4'
+version = '1.0.6'
 sourceCompatibility = '17'
 
 configurations {

@@ -3,11 +3,11 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.VmHostDto;
+import com.chuqiyun.proxmoxveams.entity.Area;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
-import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.VmInfoService;
-import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
@@ -27,6 +27,10 @@ public class VmInfoServiceImpl implements VmInfoService {
     private MasterService masterService;
     @Resource
     private VmhostService vmhostService;
+    @Resource
+    private OsService osService;
+    @Resource
+    private AreaService areaService;
 
     /**
     * @Author: mryunqi
@@ -180,6 +184,15 @@ public class VmInfoServiceImpl implements VmInfoService {
             vmHostDto.setVmhost(vmhost);
             vmHostDto.setCurrent(vmInfo);
             vmHostDtoList.add(vmHostDto);
+            vmHostDto.setNodeName(node.getName());
+            if (node.getArea() == null){
+                vmHostDto.setArea(null);
+            }else {
+                Area area = areaService.getById(node.getArea());
+                vmHostDto.setArea(area.getName());
+            }
+            Os os = osService.selectOsByFileName(vmhost.getOs());
+            vmHostDto.setOs(os);
         }
         // 将Page对象转换为Map
         pageMap.put("total", vmhostPage.getTotal());
