@@ -51,7 +51,14 @@ public class DeleteVmCron {
         if (taskPage.getRecords().size() == 0) {
             return;
         }
+
         Task task = taskPage.getRecords().get(0);
+        // 获取虚拟机配置信息
+        Vmhost vmhost = vmhostService.getById(task.getHostid());
+        // 判断虚拟机状态是否为1或者为4
+        if (vmhost.getStatus() != 1 && vmhost.getStatus() != 4) {
+            return;
+        }
         // 修改任务状态为1
         task.setStatus(1);
         taskService.updateById(task);

@@ -48,7 +48,7 @@ public class CreateVmServiceImpl implements CreateVmService {
      *
      */
     @Override
-    public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams){
+    public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams, boolean isApi){
         // 判断nodeId是否为空
         if (vmParams.getNodeid() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
@@ -287,10 +287,61 @@ public class CreateVmServiceImpl implements CreateVmService {
         task.setType(CREATE_VM);
         task.setParams(vmParamsMap);
         task.setCreateDate(System.currentTimeMillis());
+        //
         if (taskService.insertTask(task)){
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务: NodeID="+nodeId+",OsType="+vmParams.getOsType()+
                     ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory());
-            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+            // 如果isApi为true，则循环等待任务完成
+            if (isApi) {
+                int count = 0;
+                while (true) {
+                    // 如果超过30秒还没有完成，则返回失败
+                    if (count >= 300) {
+                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+                    }
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    Task task1 = taskService.getById(task.getId());
+                    // 等于0表示任务还未开始
+                    if (task1.getStatus() == 0) {
+                        count++;
+                        continue;
+                    }
+                    // 等于1表示任务正在进行
+                    else if (task1.getStatus() == 1) {
+                        count++;
+                        continue;
+                    }
+                    // 等于4表示任务成功
+                    else if (task1.getStatus() == 4) {
+                        // 设置虚拟机ID
+                        vmParams.setVmid(task1.getVmid());
+                        // 设置虚拟机hostId
+                        vmParams.setHostid(task1.getHostid());
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+                    }
+                    // 等于2表示任务完成
+                    else if (task1.getStatus() == 2) {
+                        // 设置虚拟机ID
+                        vmParams.setVmid(task1.getVmid());
+                        // 设置虚拟机hostId
+                        vmParams.setHostid(task1.getHostid());
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+                    }
+                    // 等于3表示任务失败
+                    else if (task1.getStatus() == 3) {
+                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+                    }
+                    else {
+                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+                    }
+                }
+            }else {
+                return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+            }
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
     }

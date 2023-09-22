@@ -35,11 +35,11 @@ public class CreateVm {
     @PublicSysApiCheck
     @PostMapping("/api/v1/pve/cerateVM")
     public ResponseResult<Object> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
-        UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams);
+        UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams,true);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }
-        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+        return ResponseResult.ok(resultDto.getData());
     }
 
 

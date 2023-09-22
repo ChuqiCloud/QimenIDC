@@ -110,6 +110,12 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 // 结束任务
                 return;
+            }else {
+                UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机信息存入数据库成功");
+                // 设置为4 4为提示api接口调用时非异步成功
+                task.setStatus(4);
+                taskService.updateById(task);
+
             }
             // 更新当前任务hostid
             task.setHostid(vmhostId);

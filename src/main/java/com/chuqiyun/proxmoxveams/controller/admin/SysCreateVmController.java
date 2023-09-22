@@ -41,7 +41,7 @@ public class SysCreateVmController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams);
+        UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams,false);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

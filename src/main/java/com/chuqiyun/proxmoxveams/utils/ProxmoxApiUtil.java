@@ -138,27 +138,22 @@ public class ProxmoxApiUtil {
     * @Params: Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params
     * @Return  JSONObject
     */
-    public JSONObject deleteNodeApi(Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params) throws UnauthorizedException {
-        // 构建请求主体
+    public JSONObject deleteNodeApi(Master node, HashMap<String, String> cookie, String url, HashMap<String, Object> params) throws UnauthorizedException {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
-        for (String key : params.keySet()) {
-            requestBody.add(key, params.get(key));
-        }
+        HttpEntity<?> entity = new HttpEntity<>(headers);
 
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
-        // 发送 POST 请求
+
+        // 发送 DELETE 请求
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.DELETE, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {
-            // 提取 Cookie 和 CSRF 预防令牌
             JSONObject body = JSONObject.parseObject(response.getBody());
             assert body != null;
             return body;
@@ -166,6 +161,7 @@ public class ProxmoxApiUtil {
             throw new UnauthorizedException("请求失败");
         }
     }
+
 
     /**
     * @Author: mryunqi
