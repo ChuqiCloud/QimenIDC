@@ -16,6 +16,32 @@ create table config
     win_system_disk_size   int          default 60  null
 );
 
+create table configuretemplate
+(
+    id               int auto_increment
+        primary key,
+    name             varchar(255)                null,
+    cores            int                         null comment '核数',
+    sockets          int                         null,
+    threads          int                         null,
+    devirtualization int                         null,
+    kvm              int                         null,
+    cpu_model        int                         null,
+    model_group      int                         null,
+    nested           int                         null,
+    cpu              varchar(255)                null,
+    cpu_units        int                         null,
+    arch             varchar(255)                null,
+    acpi             int          default 1      null,
+    memory           int          default 512    null,
+    storage          varchar(255) default 'auto' null,
+    system_disk_size int                         null,
+    data_disk        json                        null,
+    bandwidth        int                         null,
+    onBoot           int          default 0      null
+)
+    comment '配置模板';
+
 create table cpuinfo
 (
     id          int auto_increment
@@ -29,6 +55,7 @@ create table cpuinfo
     xlevel      varchar(255) null comment 'cpu拓展型号',
     vendor      varchar(255) null comment '厂商',
     l3_cache    int          null comment '三缓',
+    other       text         null,
     create_date varchar(13)  null
 );
 
@@ -82,6 +109,17 @@ create table master
     ssh_username      varchar(255)               null,
     ssh_password      varchar(255)               null,
     controller_status int                        null
+);
+
+create table modelgroup
+(
+    id           int auto_increment
+        primary key,
+    cpu_model    int          null,
+    smbios_model varchar(255) null,
+    args         text         null,
+    info         text         null,
+    create_date  varchar(13)  null
 );
 
 create table os
@@ -164,6 +202,8 @@ create table vmhost
     threads          int                                        null,
     devirtualization int                                        null,
     kvm              int                                        null,
+    cpu_model        int                                        null,
+    model_group      int                                        null,
     cpu              varchar(255)                               null,
     cpu_units        int                                        null,
     args             text                                       null,
@@ -172,6 +212,8 @@ create table vmhost
     memory           int                                        not null,
     swap             int                                        null,
     agent            int          default 1                     not null,
+    username         varchar(255)                               null,
+    password         varchar(255)                               null,
     ide0             varchar(255)                               null,
     ide2             varchar(255) default 'local-lvm:cloudinit' null comment 'cloud-init',
     net0             varchar(255) default 'virtio,bridge=vmbr0' null,
