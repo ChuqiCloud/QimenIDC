@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Configuretemplate;
 import com.chuqiyun.proxmoxveams.entity.Cpuinfo;
 import com.chuqiyun.proxmoxveams.entity.Modelgroup;
 import com.chuqiyun.proxmoxveams.entity.Smbios;
@@ -48,8 +49,6 @@ public class VmUtil {
     * @Author: mryunqi
     * @Description: 获取cpu类型
     * @DateTime: 2023/8/7 22:32
-    * @Params:
-    * @Return
     */
     public static Map<String,String> getCpuTypeMap(){
         Map<String, String> map = new HashMap<>();
@@ -489,4 +488,5 @@ public class VmUtil {
         };
 
     }
+
 }

@@ -105,7 +105,12 @@ public class VmInfoServiceImpl implements VmInfoService {
         Vmhost vmhost = vmhostService.getVmhostByVmId(vmId);
         // 如果虚拟机不存在
         if (vmhost == null){
-            return null;
+            // 将vmId作为hostId
+            vmhost = vmhostService.getById(vmId);
+            // 如果虚拟机不存在
+            if (vmhost == null){
+                return null;
+            }
         }
         VmHostDto vmHostDto = new VmHostDto();
         vmHostDto.setVmhost(vmhost);

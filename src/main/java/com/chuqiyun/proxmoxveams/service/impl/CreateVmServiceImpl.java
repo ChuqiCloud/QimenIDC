@@ -36,6 +36,8 @@ public class CreateVmServiceImpl implements CreateVmService {
     @Resource
     private CpuinfoService cpuinfoService;
     @Resource
+    private ConfiguretemplateService configuretemplateService;
+    @Resource
     private SmbiosService smbiosService;
     @Resource
     private VmhostService vmhostService;
@@ -59,6 +61,36 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 判断节点是否可用
         if (node.getStatus() >= 1) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
+        }
+        // 如果configureTemplateId不为空且大于0
+        if (vmParams.getConfigureTemplateId() != null && vmParams.getConfigureTemplateId() > 0) {
+            Configuretemplate configuretemplate = configuretemplateService.selectConfiguretemplateById(vmParams.getConfigureTemplateId());
+            if (ModUtil.isNull(configuretemplate)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CONFIGURE_TEMPLATE_NOT_EXIST, null);
+            }
+            vmParams.setCpu(configuretemplate.getCpu());
+            vmParams.setCores(configuretemplate.getCores());
+            vmParams.setSockets(configuretemplate.getSockets());
+            vmParams.setThreads(configuretemplate.getThreads());
+            vmParams.setMemory(configuretemplate.getMemory());
+            vmParams.setNested(configuretemplate.getNested() == 1);
+            vmParams.setDevirtualization(configuretemplate.getDevirtualization() == 1);
+            vmParams.setKvm(configuretemplate.getKvm() == 1);
+            vmParams.setModelGroup(configuretemplate.getModelGroup());
+            vmParams.setCpuModel(configuretemplate.getCpuModel());
+            vmParams.setCpuUnits(configuretemplate.getCpuUnits());
+            vmParams.setArch(configuretemplate.getArch());
+            vmParams.setAcpi(configuretemplate.getAcpi());
+            vmParams.setStorage(configuretemplate.getStorage());
+            vmParams.setSystemDiskSize(configuretemplate.getSystemDiskSize());
+            // 将Map转换为HashMap
+            HashMap<Object, Object> map = new HashMap<>();
+            if (configuretemplate.getDataDisk() != null) {
+                map.putAll(configuretemplate.getDataDisk());
+            }
+            vmParams.setDataDisk(map);
+            vmParams.setBandwidth(configuretemplate.getBandwidth());
+            vmParams.setOnBoot(configuretemplate.getOnboot());
         }
         // 判断nested是否为空
         if (vmParams.getNested() == null) {

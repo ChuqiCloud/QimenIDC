@@ -20,6 +20,15 @@ public class CustomLogContextListener extends ContextAwareBase implements Logger
 
     /** 存储日志路径标识 */
     public static final String LOG_PAHT_KEY = "LOG_PATH";
+    /** 日志保留天数标识 */
+    public static final String LOG_RETAIN_DAYS_KEY = "LOG_RETAIN_DAYS";
+    /** 日志文件最大大小天数标识 */
+    public static final String LOG_MAX_TOTAL_FILE_SIZE_KEY = "LOG_MAX_TOTAL_FILE_SIZE";
+    /** 单日志文件最大大小标识 */
+    public static final String LOG_MAX_FILE_SIZE_KEY = "LOG_MAX_FILE_SIZE";
+    /** 指定日期删除标识 */
+    public static final String LOG_CLEAN_HISTORY_ON_START_KEY = "LOG_CLEAN_HISTORY_ON_START";
+
 
     @Override
     public boolean isResetResistant() {

@@ -50,6 +50,9 @@ public enum UnifiedResultCode {
     // 删除虚拟机失败
     ERROR_DELETE_VM_FAILED(1019, "Failed to delete virtual machine"),
 
+    // 不存在该配置模板
+    ERROR_CONFIGURE_TEMPLATE_NOT_EXIST(1020, "The configuration template does not exist"),
+
     /*pve错误码范围：2xxx*/
 
     /*成功*/

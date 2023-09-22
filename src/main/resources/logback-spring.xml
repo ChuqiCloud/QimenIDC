@@ -40,6 +40,10 @@
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!--输出路径-->
             <fileNamePattern>${LOG_PATH}/temp/logs/info.%d.log</fileNamePattern>
+            <!--日志保留天数-->
+            <maxHistory>30</maxHistory>
+            <!--日志文件最大大小-->
+            <totalSizeCap>100MB</totalSizeCap>
         </rollingPolicy>
     </appender>
 
@@ -56,6 +60,10 @@
         <!-- 滚动策略 -->
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}\temp\logs\error.%d.log</fileNamePattern>
+            <!--日志保留天数-->
+            <maxHistory>30</maxHistory>
+            <!--总日志文件最大大小-->
+            <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
     </appender>
 

@@ -28,6 +28,10 @@ public class VmParams {
      */
     private String hostname;
     /**
+     * 配置模板ID
+     */
+    private Integer configureTemplateId;
+    /**
      * 插槽数
      */
     private Integer sockets;

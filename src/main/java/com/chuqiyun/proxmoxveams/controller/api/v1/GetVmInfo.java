@@ -5,6 +5,7 @@ import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.VmInfoService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -24,26 +25,14 @@ import java.util.HashMap;
 @RestController
 public class GetVmInfo {
     @Resource
-    private MasterService masterService;
-    @Resource
-    private VmhostService vmhostService;
+    private VmInfoService vmInfoService;
 
     @PublicSysApiCheck
-    @GetMapping("/api/v1/getVmInfo")
-    public ResponseResult<HashMap<String, Object>> getNode(@RequestParam(name = "hostId") Integer hostId) throws UnauthorizedException {
-        Vmhost vmhost = vmhostService.getById(hostId);
-        if (vmhost == null) {
-            return ResponseResult.fail("虚拟机不存在");
+    @GetMapping("/api/v1/pve/getVmInfo")
+    public ResponseResult<Object> getNode(@RequestParam(name = "hostId") Integer hostId) throws UnauthorizedException {
+        if (hostId == 0) {
+            return ResponseResult.fail("参数不能为空");
         }
-        Master node = masterService.getById(vmhost.getNodeid());
-        if (node == null) {
-            return ResponseResult.fail("节点不存在");
-        }
-        // 从proxmox获取虚拟机信息
-        HashMap<String, Object> result = new HashMap<>();
-        result.put("info", vmhost);
-        JSONObject vmJsonInfo = masterService.getVmStatusCurrent(node.getId(),vmhost.getVmid());
-        result.put("status", vmJsonInfo);
-        return ResponseResult.ok(result);
+        return ResponseResult.ok(vmInfoService.getVmHostByVmId(hostId));
     }
 }
