@@ -177,10 +177,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getStorage() == null || "auto".equals(vmParams.getStorage())) {
             vmParams.setStorage(node.getAutoStorage());
         }
-        // 判断username是否为空
-        if (vmParams.getUsername() == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_USERNAME_NOT_NULL, null);
-        }
+
         // 判断password是否为空
         if (vmParams.getPassword() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_PASSWORD_NOT_NULL, null);
@@ -192,6 +189,44 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 设置网络
         if (vmParams.getBridge() == null) {
             vmParams.setBridge("vmbr0");
+        }
+
+        // 判断os与template、iso是否为空，至少有一个不为空
+        if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
+        }
+        Os os = osService.isExistOs(vmParams.getOs());
+        // 判断镜像是否存在
+        if (os == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
+        }
+        else {
+            vmParams.setOs(os.getFileName());
+        }
+        int osStatus = osService.getNodeOsStatus(vmParams.getOs(), nodeId);
+        // 判断镜像是否可用
+        if (osStatus != 2) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
+        }
+        // 判断osType是否为空
+        if (vmParams.getOsType() == null) {
+            vmParams.setOsType(os.getType());
+        }
+        // 判断osType是否支持
+        if (!VmUtil.isOsTypeExist(vmParams.getOsType())) {
+            vmParams.setOsType("other");
+        }
+        // 判断username是否为空
+        if (vmParams.getUsername() == null) {
+            if (os.getOsType().equals("ubuntu")){
+                vmParams.setUsername("ubuntu");
+            }
+            else if (os.getOsType().equals("windows")){
+                vmParams.setUsername("administrator");
+            }
+            else{
+                vmParams.setUsername("root");
+            }
         }
         // 获取可用ip最多的ip池
         Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
@@ -247,31 +282,6 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getDns1() == null) {
             vmParams.setDns1(ipPool.getDns1());
         }
-        // 判断os与template、iso是否为空，至少有一个不为空
-        if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
-        }
-        Os os = osService.isExistOs(vmParams.getOs());
-        // 判断镜像是否存在
-        if (os == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
-        }
-        else {
-            vmParams.setOs(os.getFileName());
-        }
-        int osStatus = osService.getNodeOsStatus(vmParams.getOs(), nodeId);
-        // 判断镜像是否可用
-        if (osStatus != 2) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
-        }
-        // 判断osType是否为空
-        if (vmParams.getOsType() == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_OS_TYPE_NOT_NULL, null);
-        }
-        // 判断osType是否支持
-        if (!VmUtil.isOsTypeExist(vmParams.getOsType())) {
-            vmParams.setOsType("other");
-        }
         // 将vmParams转换为HashMap
         HashMap<Object, Object> vmParamsMap;
         try {
@@ -321,7 +331,16 @@ public class CreateVmServiceImpl implements CreateVmService {
                         vmParams.setVmid(task1.getVmid());
                         // 设置虚拟机hostId
                         vmParams.setHostid(task1.getHostid());
-                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+                        HashMap<Object, Object> vmParamsMapResult;
+                        try {
+                            vmParamsMapResult = EntityHashMapConverterUtil.convertToHashMap(vmParams);
+                        } catch (IllegalAccessException e) {
+                            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "返回参数转换失败");
+                            e.printStackTrace();
+                            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+                        }
+                        vmParamsMapResult.put("ipConfig", VmUtil.splitIpAddress(vmParams.getIpConfig()));
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParamsMapResult);
                     }
                     // 等于2表示任务完成
                     else if (task1.getStatus() == 2) {
@@ -329,7 +348,16 @@ public class CreateVmServiceImpl implements CreateVmService {
                         vmParams.setVmid(task1.getVmid());
                         // 设置虚拟机hostId
                         vmParams.setHostid(task1.getHostid());
-                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
+                        HashMap<Object, Object> vmParamsMapResult;
+                        try {
+                            vmParamsMapResult = EntityHashMapConverterUtil.convertToHashMap(vmParams);
+                        } catch (IllegalAccessException e) {
+                            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "返回参数转换失败");
+                            e.printStackTrace();
+                            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
+                        }
+                        vmParamsMapResult.put("ipConfig", VmUtil.splitIpAddress(vmParams.getIpConfig()));
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParamsMapResult);
                     }
                     // 等于3表示任务失败
                     else if (task1.getStatus() == 3) {

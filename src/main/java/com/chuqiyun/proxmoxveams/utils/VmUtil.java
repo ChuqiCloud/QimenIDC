@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.dto.IpDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Configuretemplate;
 import com.chuqiyun.proxmoxveams.entity.Cpuinfo;
@@ -11,6 +12,7 @@ import com.chuqiyun.proxmoxveams.service.SmbiosService;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -487,6 +489,50 @@ public class VmUtil {
             default -> null;
         };
 
+    }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 分离原始字符ip地址为实体
+    * @DateTime: 2023/9/24 23:19
+    * @Params: 
+    * @Return
+    */
+    public static List<IpDto> splitIpAddress(HashMap<String,String> ipConfig){
+        List<IpDto> ipList = new ArrayList<>();
+        IpDto ipAddressEntity = new IpDto();
+        int count = 1;
+        int size = ipConfig.size();
+        // count为key,ip地址为value,如1=ip=192.168.1.2/28,gw=192.168.1.1
+        for (String s : ipConfig.keySet()) {
+            // 如果count大于size
+            if (count > size) {
+                break;
+            }
+            if (count == size) {
+                // 先以逗号分割
+                String[] split = s.split(",");
+                for (String s1 : split) {
+                    // 再以等号分割
+                    String[] split1 = s1.split("=");
+                    // ip地址
+                    if ("ip".equals(split1[0])) {
+                        // ip为/28之前的字符串
+                        ipAddressEntity.setIp(split1[1].split("/")[0]);
+                        // 子网掩码
+                        ipAddressEntity.setSubnetMask(Integer.valueOf(split1[1].split("/")[1]));
+                    }
+                    // 网关
+                    if ("gw".equals(split1[0])) {
+                        ipAddressEntity.setGateway(split1[1]);
+                    }
+                }
+                // 存入list
+                ipList.add(ipAddressEntity);
+            }
+            count++;
+        }
+        return ipList;
     }
 
 }
