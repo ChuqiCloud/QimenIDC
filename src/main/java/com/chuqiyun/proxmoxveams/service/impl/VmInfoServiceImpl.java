@@ -112,6 +112,15 @@ public class VmInfoServiceImpl implements VmInfoService {
                 return null;
             }
         }
+        // 将Map类型的ipConfig转换为HashMap
+
+        vmhost.setIpData(VmUtil.splitIpAddress(new HashMap<>(vmhost.getIpConfig())));
+        // 判断osName是否为空
+        if (vmhost.getOsName() == null){
+            // 提取os中镜像字符串开头到第一个.之间的字符串
+            String osName = vmhost.getOs().substring(0, vmhost.getOs().indexOf("."));
+            vmhost.setOsName(osName);
+        }
         VmHostDto vmHostDto = new VmHostDto();
         vmHostDto.setVmhost(vmhost);
         Integer nodeId = vmhost.getNodeid();
@@ -121,12 +130,12 @@ public class VmInfoServiceImpl implements VmInfoService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 获取虚拟机信息
         try{
-            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmId,"hour","AVERAGE"));
+            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmhost.getVmid(),"hour","AVERAGE"));
         }catch (Exception e){
             vmHostDto.setRrddata(null);
         }
         try {
-            vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmId));
+            vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmhost.getVmid()));
         }catch(Exception e){
             vmHostDto.setCurrent(null);
         }

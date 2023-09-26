@@ -73,12 +73,28 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setSockets(configuretemplate.getSockets());
             vmParams.setThreads(configuretemplate.getThreads());
             vmParams.setMemory(configuretemplate.getMemory());
-            vmParams.setNested(configuretemplate.getNested() == 1);
-            vmParams.setDevirtualization(configuretemplate.getDevirtualization() == 1);
-            vmParams.setKvm(configuretemplate.getKvm() == 1);
+            // 判断nested是否为空
+            if (configuretemplate.getNested() == null) {
+                vmParams.setNested(false);
+            } else {
+                vmParams.setNested(configuretemplate.getNested() == 1);
+            }
+            // 判断Devirtualization是否为空
+            if (configuretemplate.getDevirtualization() == null) {
+                vmParams.setDevirtualization(false);
+            } else {
+                vmParams.setDevirtualization(configuretemplate.getDevirtualization() == 1);
+            }
+            // 判断Kvm是否为空
+            if (configuretemplate.getKvm() == null) {
+                vmParams.setKvm(true);
+            } else {
+                vmParams.setKvm(configuretemplate.getKvm() == 1);
+            }
             vmParams.setModelGroup(configuretemplate.getModelGroup());
             vmParams.setCpuModel(configuretemplate.getCpuModel());
             vmParams.setCpuUnits(configuretemplate.getCpuUnits());
+            vmParams.setBwlimit(configuretemplate.getBwlimit());
             vmParams.setArch(configuretemplate.getArch());
             vmParams.setAcpi(configuretemplate.getAcpi());
             vmParams.setStorage(configuretemplate.getStorage());
@@ -91,6 +107,10 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setDataDisk(map);
             vmParams.setBandwidth(configuretemplate.getBandwidth());
             vmParams.setOnBoot(configuretemplate.getOnboot());
+        }
+        // 判断带宽是否为空
+        if (vmParams.getBandwidth() == null) {
+            vmParams.setBandwidth(1);
         }
         // 判断nested是否为空
         if (vmParams.getNested() == null) {
@@ -153,6 +173,13 @@ public class CreateVmServiceImpl implements CreateVmService {
         else {
             vmParams.setCpuUnits(vmParams.getCpuUnits()*1024);
         }
+        // 判断bwlimit是否为空
+        if (vmParams.getBwlimit() == null) {
+            vmParams.setBwlimit(configService.getBwlimit());
+        }else {
+            // mb/s转换为kb/s
+            vmParams.setBwlimit(vmParams.getBwlimit()*1024);
+        }
         // 判断arch是否为空
         if (vmParams.getArch() == null) {
             vmParams.setArch("x86_64");
@@ -178,10 +205,6 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setStorage(node.getAutoStorage());
         }
 
-        // 判断password是否为空
-        if (vmParams.getPassword() == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_PASSWORD_NOT_NULL, null);
-        }
         // 判断onBoot是否为空
         if (vmParams.getOnBoot() == null) {
             vmParams.setOnBoot(0);
@@ -195,6 +218,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
         }
+        vmParams.setOsName(vmParams.getOs()); // 保存osName
         Os os = osService.isExistOs(vmParams.getOs());
         // 判断镜像是否存在
         if (os == null) {
@@ -227,6 +251,20 @@ public class CreateVmServiceImpl implements CreateVmService {
             else{
                 vmParams.setUsername("root");
             }
+        }
+        // 判断系统盘大小是否为空
+        if (vmParams.getSystemDiskSize() == null) {
+            if (os.getType().equals("windows")){
+                vmParams.setSystemDiskSize(configService.getWinSystemDiskSize());
+            }
+            else{
+                vmParams.setSystemDiskSize(configService.getLinuxSystemDiskSize());
+            }
+        }
+        // 判断password是否为空
+        if (vmParams.getPassword() == null) {
+            // 生成随机密码
+            vmParams.setPassword(VmUtil.generatePassword());
         }
         // 获取可用ip最多的ip池
         Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
@@ -331,16 +369,8 @@ public class CreateVmServiceImpl implements CreateVmService {
                         vmParams.setVmid(task1.getVmid());
                         // 设置虚拟机hostId
                         vmParams.setHostid(task1.getHostid());
-                        HashMap<Object, Object> vmParamsMapResult;
-                        try {
-                            vmParamsMapResult = EntityHashMapConverterUtil.convertToHashMap(vmParams);
-                        } catch (IllegalAccessException e) {
-                            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "返回参数转换失败");
-                            e.printStackTrace();
-                            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
-                        }
-                        vmParamsMapResult.put("ipConfig", VmUtil.splitIpAddress(vmParams.getIpConfig()));
-                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParamsMapResult);
+                        vmParams.setIpData(VmUtil.splitIpAddress(vmParams.getIpConfig()));
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
                     }
                     // 等于2表示任务完成
                     else if (task1.getStatus() == 2) {
@@ -348,16 +378,18 @@ public class CreateVmServiceImpl implements CreateVmService {
                         vmParams.setVmid(task1.getVmid());
                         // 设置虚拟机hostId
                         vmParams.setHostid(task1.getHostid());
-                        HashMap<Object, Object> vmParamsMapResult;
+                        /*HashMap<Object, Object> vmParamsMapResult;
                         try {
                             vmParamsMapResult = EntityHashMapConverterUtil.convertToHashMap(vmParams);
                         } catch (IllegalAccessException e) {
                             UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "返回参数转换失败");
                             e.printStackTrace();
                             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
-                        }
-                        vmParamsMapResult.put("ipConfig", VmUtil.splitIpAddress(vmParams.getIpConfig()));
-                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParamsMapResult);
+                        }*/
+
+                        /*vmParamsMapResult.put("ipData", VmUtil.splitIpAddress(vmParams.getIpConfig()));*/
+                        vmParams.setIpData(VmUtil.splitIpAddress(vmParams.getIpConfig()));
+                        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
                     }
                     // 等于3表示任务失败
                     else if (task1.getStatus() == 3) {
@@ -420,6 +452,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         param.put("ostype", OsTypeUtil.getOsType(vmParams.getOs(),vmParams.getOsType()));
         // 开机启动
         param.put("onboot", vmParams.getOnBoot());
+        // 设置bwlimit
+        param.put("bwlimit", vmParams.getBwlimit());
         // 设置内存
         param.put("memory", vmParams.getMemory());
         // 设置arch
@@ -451,7 +485,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getBridge() == null) {
             param.put("net0", "virtio,bridge=vmbr0,rate="+vmParams.getBandwidth());
         }else {
-            param.put("net0", "virtio,bridge="+vmParams.getBridge());
+            param.put("net0", "virtio,bridge="+vmParams.getBridge()+",rate="+vmParams.getBandwidth());
         }
         // 获取cookie
         HashMap<String, String> authentications = masterService.getMasterCookieMap(vmParams.getNodeid());

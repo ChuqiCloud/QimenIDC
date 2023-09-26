@@ -350,7 +350,20 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         // 如果不为数字，则根据osName查询
         QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("file_name",osName);
-        return this.getOne(queryWrapper);
+        Os os = this.getOne(queryWrapper);
+        // 如果查询不到，则根据osName查询
+        if (os==null){
+            queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("name",osName);
+            os = this.getOne(queryWrapper);
+            // 如果查询不到，则在后面加上.qcow2后缀再查询
+            if (os==null){
+                queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("file_name",osName+".qcow2");
+                os = this.getOne(queryWrapper);
+            }
+        }
+        return os;
     }
 
     /**

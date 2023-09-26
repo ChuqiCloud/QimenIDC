@@ -36,12 +36,14 @@ function install_python(){
     else
         cd /home/software
         wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
+        # wget http://mirror.chuqiyun.com/software/python/Python-3.10.5.tgz
         tar -zxvf Python-3.10.5.tgz
         cd Python-3.10.5
         ./configure --prefix=/home/software/python3.10.5
         make && make install
         ln -s /home/software/python3.10.5/bin/python3.10 /usr/bin/python3.10
         ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
+        pip3.10 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
         pip3.10 install --upgrade pip
     fi
 }

@@ -76,30 +76,9 @@ public class CreateVmCron {
                 return;
             }
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
-            int vmId = createVmService.createPveVm(vmParams,vmIdInit);
-            // 判断是否创建成功
-            if (vmId == 0) {
-                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");
-                // 创建失败，修改任务状态为3
-                task.setStatus(3);
-                // 记录错误信息
-                task.setError("创建基础虚拟机失败");
-                taskService.updateById(task);
-                // 结束任务
-                return;
-            }
-            // 记录虚拟机id
-            task.setVmid(vmId);
-            // 记录节点id
-            task.setNodeid(vmParams.getNodeid());
-            taskService.updateById(task);
-            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机成功");
-            String createTime = String.valueOf(System.currentTimeMillis());
-            HashMap<Object, Object> taskMap = new HashMap<>();
-            taskMap.put(createTime, task.getId());
-            vmParams.setTask(taskMap);
+
             // 将创建的虚拟机信息存入数据库
-            Integer vmhostId = vmhostService.addVmhost(vmId, vmParams);
+            Integer vmhostId = vmhostService.addVmhost(vmIdInit, vmParams);
             // 判断是否存入成功
             if (vmhostId == null) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机信息存入数据库失败");
@@ -114,12 +93,30 @@ public class CreateVmCron {
                 UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机信息存入数据库成功");
                 // 设置为4 4为提示api接口调用时非异步成功
                 task.setStatus(4);
+                task.setVmid(vmIdInit);
+                task.setHostid(vmhostId);
                 taskService.updateById(task);
-
             }
-            // 更新当前任务hostid
-            task.setHostid(vmhostId);
-            taskService.updateById(task);
+
+            int vmId = createVmService.createPveVm(vmParams,vmIdInit);
+            // 判断是否创建成功
+            if (vmId == 0) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");
+                // 创建失败，修改任务状态为3
+                task.setStatus(3);
+                // 记录错误信息
+                task.setError("创建基础虚拟机失败");
+                taskService.updateById(task);
+                // 结束任务
+                return;
+            }
+
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机成功");
+            String createTime = String.valueOf(System.currentTimeMillis());
+            HashMap<Object, Object> taskMap = new HashMap<>();
+            taskMap.put(createTime, task.getId());
+            vmParams.setTask(taskMap);
+
             // 添加导入操作系统任务
             Task importTask = new Task();
             long time = System.currentTimeMillis();
@@ -199,43 +196,45 @@ public class CreateVmCron {
             } while (taskStatus.getStatus() != 2);
             // 任务状态为2，任务成功
             // 创建数据盘任务
-            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
-            time = System.currentTimeMillis();
-            Task createDataDiskTask = new Task();
-            createDataDiskTask.setNodeid(vmParams.getNodeid());
-            createDataDiskTask.setHostid(vmhostId);
-            createDataDiskTask.setVmid(vmId);
-            createDataDiskTask.setType(CREATE_DATA_DISK);
-            createDataDiskTask.setStatus(0);
-            createDataDiskTask.setParams(vmParams.getDataDisk());
-            createDataDiskTask.setCreateDate(time);
-            if (!taskService.save(createDataDiskTask)){
-                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
+            // 判断是否有数据盘或者数据盘大小是否为0
+            if (vmParams.getDataDisk() != null && vmParams.getDataDisk().size() > 0){
+                UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
+                time = System.currentTimeMillis();
+                Task createDataDiskTask = new Task();
+                createDataDiskTask.setNodeid(vmParams.getNodeid());
+                createDataDiskTask.setHostid(vmhostId);
+                createDataDiskTask.setVmid(vmId);
+                createDataDiskTask.setType(CREATE_DATA_DISK);
+                createDataDiskTask.setStatus(0);
+                createDataDiskTask.setParams(vmParams.getDataDisk());
+                createDataDiskTask.setCreateDate(time);
+                if (!taskService.save(createDataDiskTask)){
+                    UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
 
-                // 修改任务状态为失败
-                createDataDiskTask.setStatus(3);
-                createDataDiskTask.setError("创建数据盘任务失败");
-                taskService.updateById(createDataDiskTask);
-                return;
-            }
-
-            // 等待创建数据盘任务完成
-            do {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(createDataDiskTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
+                    // 修改任务状态为失败
+                    createDataDiskTask.setStatus(3);
+                    createDataDiskTask.setError("创建数据盘任务失败");
+                    taskService.updateById(createDataDiskTask);
                     return;
                 }
-            } while (taskStatus.getStatus() != 2);
 
+                // 等待创建数据盘任务完成
+                do {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    // 获取任务
+                    taskStatus = taskService.getById(createDataDiskTask.getId());
+                    // 判断任务状态
+                    if (taskStatus.getStatus() == 3) {
+                        // 任务状态为3，任务失败
+                        // 结束任务
+                        return;
+                    }
+                } while (taskStatus.getStatus() != 2);
+            }
             // 任务状态为2，任务成功
             // 创建修改启动项任务
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_BOOT,"添加创建修改启动项任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);

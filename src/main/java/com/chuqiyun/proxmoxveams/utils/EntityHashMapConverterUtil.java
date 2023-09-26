@@ -57,7 +57,26 @@ public class EntityHashMapConverterUtil {
         for (Field field : fields) {
             field.setAccessible(true);
             Object value = hashMap.get(field.getName());
-            field.set(entity, value);
+//            field.set(entity, value);
+            if (value != null) {
+                try {
+                    if (field.getType() == Long.class) {
+                        field.set(entity, Long.valueOf(value.toString()));
+                    } /*else if (field.getType() == Integer.class) {
+                        field.set(entity, Integer.valueOf(value.toString()));
+                    } else if (field.getType() == Double.class) {
+                        field.set(entity, Double.valueOf(value.toString()));
+                    } else if (field.getType() == String.class) {
+                        field.set(entity, value.toString());
+                    }*/ else {
+                        // 如果字段类型不是Long、Integer、Double或String，可以根据需要添加其他类型的处理
+                        field.set(entity, value);
+                    }
+                } catch (NumberFormatException e) {
+                    // 处理无法转换为目标类型的情况
+                    throw new IllegalArgumentException("Failed to convert value for field " + field.getName(), e);
+                }
+            }
         }
 
         return entity;

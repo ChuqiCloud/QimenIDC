@@ -164,4 +164,25 @@ public class ClientApiUtil {
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 导入磁盘
+    * @DateTime: 2023/9/26 15:07
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: vmid 虚拟机id
+     * @Params: diskName 磁盘名称
+     * @Params: osPath 磁盘路径
+    * @Return Boolean 是否导入成功
+    */
+    public static Boolean importDisk(String ip, String token, Long vmid, String osPath,  String diskName){
+        String url = "http://"+ip+":7600/importDisk";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vmid",vmid);
+        paramMap.put("image_path",osPath);
+        paramMap.put("save_path",diskName);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
 }

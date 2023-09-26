@@ -9,6 +9,7 @@ import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.jcraft.jsch.JSchException;
@@ -39,6 +40,8 @@ public class DiskCron {
     private TaskService taskService;
     @Resource
     private OsService osService;
+    @Resource
+    private ConfigService configService;
     @Async
     @Scheduled(fixedDelay = 1000*60*10)  //每隔10分钟执行一次
     public void autoDiskName() {
@@ -102,7 +105,7 @@ public class DiskCron {
             path = path.substring(0,path.length()-1);
         }
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"执行导入系统盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-        SshUtil sshUtil = new SshUtil(node.getHost(),node.getSshPort(),node.getSshUsername(),node.getSshPassword());
+        /*SshUtil sshUtil = new SshUtil(node.getHost(),node.getSshPort(),node.getSshUsername(),node.getSshPassword());
         try {
             sshUtil.connect();
             sshUtil.executeCommand("qm importdisk "+task.getVmid()+" "+path+"/"+os+" "+vmhost.getStorage());
@@ -115,8 +118,28 @@ public class DiskCron {
             task.setError(e.getMessage());
             taskService.updateById(task);
             e.printStackTrace();
-        }
+        }*/
+        // 调用被控api导入系统盘
+        try {
+            boolean result = ClientApiUtil.importDisk(node.getHost(),configService.getToken(), Long.valueOf(task.getVmid()),path+"/"+os,vmhost.getStorage());
 
+            if (!result){
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+                // 更新任务状态
+                task.setStatus(3);
+                // 添加错误信息
+                task.setError("导入系统盘失败");
+                taskService.updateById(task);
+            }
+        } catch (Exception e) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+            // 更新任务状态
+            task.setStatus(3);
+            // 添加错误信息
+            task.setError(e.getMessage());
+            taskService.updateById(task);
+            e.printStackTrace();
+        }
 
     }
 
@@ -222,7 +245,7 @@ public class DiskCron {
             Vmhost vmhost = vmhostService.getById(task.getHostid());
             // 获取disk信息
             Map<Object,Object> diskMap = task.getParams();
-            int size = diskMap.get("size") == null ? 40 : Integer.parseInt(diskMap.get("size").toString());
+            int size = Integer.parseInt(diskMap.get("systemDiskSize").toString());
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String, Object> params = new HashMap<>();

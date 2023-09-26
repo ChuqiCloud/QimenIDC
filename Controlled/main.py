@@ -234,6 +234,42 @@ async def update():
     os.system('sh /home/software/Controller/update.sh')
     return common_response(CodeEnum.SUCCESS,'success',{})
 
+'''
+导入磁盘镜像调用函数
+Import disk image call function
+'''
+def import_disk_to_vm(vmid, image_path, save_path):
+    # 构建命令
+    command = f"qm importdisk {vmid} {image_path} {save_path}"
+
+    # 执行命令
+    try:
+        subprocess.run(command, shell=True, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        return False
+    
+'''
+定义导入磁盘镜像参数实体
+Define import disk image parameter entity
+'''
+class ImportDisk(BaseModel):
+    vmid: int
+    image_path: str
+    save_path: str
+
+
+'''
+导入磁盘镜像
+Import disk image
+'''
+@app.post('/importDisk')
+async def importDisk(item: ImportDisk):
+    # 创建一个线程执行导入磁盘镜像脚本
+    thread = threading.Thread(target=import_disk_to_vm, args=(item.vmid,item.image_path,item.save_path))  
+    thread.start()
+    return common_response(CodeEnum.SUCCESS,'success',{})
+
 
 if __name__ == '__main__':
     uvicorn.run(app,host="0.0.0.0",port=7600)

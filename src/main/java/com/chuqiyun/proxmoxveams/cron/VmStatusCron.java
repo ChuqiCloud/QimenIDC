@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -84,6 +86,8 @@ public class VmStatusCron {
         }
     }
 
+
+
     /**
     * @Author: mryunqi
     * @Description: 关机任务
@@ -109,7 +113,7 @@ public class VmStatusCron {
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/shutdown", params);
             } catch (Exception e) {
                 log.error("[Task-StopVm] 关机任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 // 修改任务状态为3 3为执行失败
@@ -202,7 +206,7 @@ public class VmStatusCron {
             params.put("forceStop",true);
 
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/shutdown", params);
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);
             } catch (Exception e) {
                 log.error("[Task-StopVmNow] 停止任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 // 修改任务状态为3 3为执行失败
@@ -494,6 +498,84 @@ public class VmStatusCron {
                 break;
             }
             i++;
+        }
+
+    }
+
+    /**
+     * @Author: mryunqi
+     * @Description: 到期监听
+     * @DateTime: 2023/9/26 20:45
+     */
+    @Async
+    @Scheduled(fixedDelay = 1000)
+    public void expireCron(){
+        int i = 1; // 页数
+        while (true){
+            QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
+            // 筛选状态不为6
+            queryWrap.ne("status", 5);
+            // 筛选expirationTime小于等于当前时间
+            queryWrap.le("expiration_time", System.currentTimeMillis());
+            // 分页获取10行节点实例
+            Page<Vmhost> page = vmhostService.selectPage(i,10,queryWrap);
+            List<Vmhost> vmList = page.getRecords();
+            // 如果为空则跳出循环
+            if (vmList.size() == 0){
+                break;
+            }
+            for (Vmhost vmhost : vmList){
+                // 判断是否正在运行
+                if (vmhost.getStatus() == 0){
+                    // 如果正在运行则创建关机任务
+                    Task vmStartTask = new Task();
+                    vmStartTask.setNodeid(vmhost.getNodeid());
+                    vmStartTask.setVmid(vmhost.getVmid());
+                    vmStartTask.setHostid(vmhost.getId());
+                    vmStartTask.setType(START_VM);
+                    vmStartTask.setStatus(0);
+                    vmStartTask.setCreateDate(System.currentTimeMillis());
+                    taskService.save(vmStartTask);
+                    // 等待该任务执行完成
+                    int count = 0;
+                    while (true){
+                        // 如果超过60秒还没有完成，则跳出循环
+                        if (count >= 600) {
+                            vmhost.setStatus(5);
+                            vmhostService.updateById(vmhost);
+                            break;
+                        }
+                        // 休眠1秒
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        Task task = taskService.getById(vmStartTask.getId());
+                        if (task == null){
+                            vmhost.setStatus(5);
+                            vmhostService.updateById(vmhost);
+                            break;
+                        }
+                        if (task.getStatus() == 2){
+                            vmhost.setStatus(5);
+                            vmhostService.updateById(vmhost);
+                            break;
+                        }
+                        if (task.getStatus() == 3){
+                            vmhost.setStatus(5);
+                            vmhostService.updateById(vmhost);
+                            break;
+                        }
+                        count++;
+                    }
+                }
+                // 如果不是正在运行则直接修改状态为5
+                else {
+                    vmhost.setStatus(5);
+                    vmhostService.updateById(vmhost);
+                }
+            }
         }
 
     }

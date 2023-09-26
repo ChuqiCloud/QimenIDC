@@ -142,6 +142,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setNodeid(vmParams.getNodeid());
         vmhost.setVmid(vmId);
         vmhost.setName(vmParams.getHostname());
+        vmhost.setConfigureTemplateId(vmParams.getConfigureTemplateId());
         vmhost.setSockets(vmParams.getSockets());
         vmhost.setCores(vmParams.getCores());
         vmhost.setThreads(vmParams.getThreads());
@@ -152,6 +153,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setArgs(vmParams.getArgs());
         vmhost.setCpu(vmParams.getCpu());
         vmhost.setCpuUnits(vmParams.getCpuUnits());
+        vmhost.setBwlimit(vmParams.getBwlimit());
         vmhost.setUsername(vmParams.getUsername());
         vmhost.setPassword(vmParams.getPassword());
         vmhost.setArch(vmParams.getArch());
@@ -163,6 +165,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setDataDisk(vmParams.getDataDisk());
         vmhost.setBridge(vmParams.getBridge());
         vmhost.setOs(vmParams.getOs());
+        vmhost.setOsName(vmParams.getOsName());
         vmhost.setOsType(vmParams.getOsType());
         vmhost.setIso(vmParams.getIso());
         vmhost.setTemplate(vmParams.getTemplate());
@@ -177,6 +180,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         vmhost.setTask(vmParams.getTask());
         vmhost.setCreateTime(System.currentTimeMillis());
+        // 设置状态为6，表示创建中
+        vmhost.setStatus(6);
         // 判断到期时间是否为空
         if (vmParams.getExpirationTime() == null) {
             // 时间设定为99年后到期
@@ -213,7 +218,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取虚拟机状态
         int vmStatus = vmhost.getStatus();
         long time = System.currentTimeMillis();
-        // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停
+        // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停、5=到期、6=创建中、7=开机中、8=关机中、9=停止中（强制关机中）、10=挂起中、11=暂停中、12重启中、13=重装系统中
         // action类型有start=开机、stop=关机、reboot=重启、shutdown=强制关机、suspend=挂起、resume=恢复、pause=暂停、unpause=恢复
         switch (action) {
             case "start": {
@@ -223,12 +228,22 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法关机");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法开机");
+                    return result;
+                }
                 // 判断虚拟机状态是否为已停止
                 if (vmStatus == 0 || vmStatus == 3) {
                     result.put("status", true);
                     // 直接返回true
                 }
                 else {
+                    // 设置虚拟机状态为7，表示开机中
+                    vmhost.setStatus(7);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     // 创建开机任务
                     Task vmStartTask = new Task();
                     vmStartTask.setNodeid(nodeId);
@@ -260,11 +275,21 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法关机");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法关机");
+                    return result;
+                }
                 if (vmStatus == 1 || vmStatus == 2) {
                     result.put("status", true);
                     // 直接返回true
                 }
                 else {
+                    // 设置虚拟机状态为8，表示关机中
+                    vmhost.setStatus(8);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     Task vmStopTask = new Task();
                     vmStopTask.setNodeid(nodeId);
                     vmStopTask.setVmid(vmId);
@@ -294,7 +319,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法重启");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法重启");
+                    return result;
+                }
                 else {
+                    // 设置虚拟机状态为12，表示重启中
+                    vmhost.setStatus(12);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     // 判断虚拟机状态是否为已停止，如果是则直接开机
                     if (vmStatus == 1 || vmStatus == 2) {
                         Task vmStartTask = new Task();
@@ -349,7 +384,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法关机");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法关机");
+                    return result;
+                }
                 else {
+                    // 设置虚拟机状态为9，表示强制关机中
+                    vmhost.setStatus(9);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     Task vmShutdownTask = new Task();
                     vmShutdownTask.setNodeid(nodeId);
                     vmShutdownTask.setVmid(vmId);
@@ -379,7 +424,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法挂起");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法挂起");
+                    return result;
+                }
                 else {
+                    // 设置虚拟机状态为10，表示挂起中
+                    vmhost.setStatus(10);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     Task vmSuspendTask = new Task();
                     vmSuspendTask.setNodeid(nodeId);
                     vmSuspendTask.setVmid(vmId);
@@ -409,7 +464,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已暂停，无法恢复");
                     return result;
                 }
+                // 判断虚拟机是否到期
+                if (vmStatus == 5){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机已到期，无法恢复");
+                    return result;
+                }
                 else {
+                    // 设置虚拟机状态为3，表示恢复中
+                    vmhost.setStatus(3);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     Task vmResumeTask = new Task();
                     vmResumeTask.setNodeid(nodeId);
                     vmResumeTask.setVmid(vmId);
@@ -433,6 +498,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "pause":{
+                // 设置虚拟机状态为11，表示暂停中
+                vmhost.setStatus(11);
+                // 更新虚拟机状态
+                this.updateById(vmhost);
                 Task vmPauseTask = new Task();
                 vmPauseTask.setNodeid(nodeId);
                 vmPauseTask.setVmid(vmId);
@@ -462,6 +531,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     return result;
                 }
                 else {
+                    // 设置虚拟机状态为3，表示恢复中
+                    vmhost.setStatus(3);
+                    // 更新虚拟机状态
+                    this.updateById(vmhost);
                     Task vmUnpauseTask = new Task();
                     vmUnpauseTask.setNodeid(nodeId);
                     vmUnpauseTask.setVmid(vmId);
@@ -662,6 +735,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         // 重置osName
         osName = os.getFileName();
+
+        // 设置虚拟机状态为重装系统中
+        vmhost.setStatus(13);
+        this.updateById(vmhost);
 
         // 创建重置虚拟机系统的任务
         HashMap<Object, Object> vmParamsMap = new HashMap<>();

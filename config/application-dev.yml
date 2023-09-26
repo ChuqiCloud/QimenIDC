@@ -8,8 +8,8 @@ config:
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:
-  host: localhost
+  host: 222.134.0.82
   port: 3306
-  username: root
+  username: pve
   password: 123456
   database: pve

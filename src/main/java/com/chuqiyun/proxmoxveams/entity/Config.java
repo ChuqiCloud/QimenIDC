@@ -26,6 +26,10 @@ public class Config extends Model<Config> {
     // 全局Windows系统盘大小
     private Integer winSystemDiskSize;
     /**
+     * I/O限制(单位:KB/s)
+     */
+    private Long bwlimit;
+    /**
      * 获取主键值
      *
      * @return 主键值

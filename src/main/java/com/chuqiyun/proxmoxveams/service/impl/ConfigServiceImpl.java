@@ -46,5 +46,16 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     public Integer getWinSystemDiskSize(){
         return this.getById(1).getWinSystemDiskSize();
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取全局默认bwlimit限制
+    * @DateTime: 2023/9/25 17:01
+    * @Return Long bwlimit
+    */
+    @Override
+    public Long getBwlimit(){
+        return this.getById(1).getBwlimit();
+    }
 }
 

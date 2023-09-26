@@ -16,5 +16,7 @@ public interface ConfigService extends IService<Config> {
     Integer getLinuxSystemDiskSize();
 
     Integer getWinSystemDiskSize();
+
+    Long getBwlimit();
 }
 

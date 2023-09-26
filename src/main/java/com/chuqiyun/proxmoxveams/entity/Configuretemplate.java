@@ -47,6 +47,10 @@ public class Configuretemplate extends Model<Configuretemplate> {
     private String cpu;
     
     private Integer cpuUnits;
+    /**
+     * I/O限制(单位:KB/s)
+     */
+    private Long bwlimit;
     
     private String arch;
     

@@ -1,2 +1,2 @@
 config:
-  profiles: prod
+  profiles: dev

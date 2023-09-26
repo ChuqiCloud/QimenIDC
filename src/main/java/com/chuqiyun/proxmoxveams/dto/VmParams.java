@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.dto;
 import lombok.Data;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -72,6 +73,10 @@ public class VmParams {
      */
     private Integer cpuUnits;
     /**
+     * I/O限制(单位:KB/s)
+     */
+    private Long bwlimit;
+    /**
      * args 命令集参数
      */
     private String args;
@@ -111,11 +116,13 @@ public class VmParams {
      * ipconfig
      */
     private HashMap<String,String> ipConfig;
+    private List<IpDto> ipData;
     private String dns1;
     /**
      * 操作系统
      */
     private String os;
+    private String osName;
     /**
      * 操作系统类型
      */

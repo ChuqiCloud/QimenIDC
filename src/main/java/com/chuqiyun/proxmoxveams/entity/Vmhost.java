@@ -6,10 +6,12 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.chuqiyun.proxmoxveams.dto.IpDto;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,6 +32,10 @@ public class Vmhost extends Model<Vmhost> {
     private Integer vmid;
     
     private String name;
+    /**
+     * 配置模板ID
+     */
+    private Integer configureTemplateId;
     /**
      * 插槽数
      */
@@ -65,6 +71,10 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Integer cpuUnits;
     /**
+     * I/O限制(单位:KB/s)
+     */
+    private Long bwlimit;
+    /**
      * args 命令集参数
      */
     private String args;
@@ -96,6 +106,10 @@ public class Vmhost extends Model<Vmhost> {
     private String net1;
     private String os;
     /**
+     * 创建时传递的参数
+     */
+    private String osName;
+    /**
      * 操作系统类型
      */
     private String osType;
@@ -119,6 +133,11 @@ public class Vmhost extends Model<Vmhost> {
     private String  bridge;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, String>  ipConfig;
+    /**
+     * ip数据(为ipConfig的拆解完善版)
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<IpDto> ipData;
     private Integer nested;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> task;
