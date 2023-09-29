@@ -52,6 +52,14 @@ public enum UnifiedResultCode {
 
     // 不存在该配置模板
     ERROR_CONFIGURE_TEMPLATE_NOT_EXIST(1020, "The configuration template does not exist"),
+    // 虚拟机已到期
+    ERROR_VM_IS_EXPIRED(1021, "Virtual machine has expired"),
+    // 新密码不能为空
+    ERROR_NEW_PASSWORD_NOT_NULL(1022, "New password cannot be empty"),
+    // 重置密码失败
+    ERROR_RESET_PASSWORD_FAILED(1023, "Failed to reset password"),
+    // 虚拟机续期失败
+    ERROR_RENEWAL_FAILED(1024, "Failed to renew virtual machine"),
 
     /*pve错误码范围：2xxx*/
 

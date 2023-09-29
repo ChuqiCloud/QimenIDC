@@ -75,6 +75,9 @@ public class CreateVmCron {
                 // 结束任务
                 return;
             }
+            Map<Object, Object> taskMap = new HashMap<>();
+            taskMap.put(String.valueOf(System.currentTimeMillis()), task.getId());
+            vmParams.setTask(params);
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
 
             // 将创建的虚拟机信息存入数据库
@@ -112,10 +115,10 @@ public class CreateVmCron {
             }
 
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机成功");
-            String createTime = String.valueOf(System.currentTimeMillis());
+            /*String createTime = String.valueOf(System.currentTimeMillis());
             HashMap<Object, Object> taskMap = new HashMap<>();
             taskMap.put(createTime, task.getId());
-            vmParams.setTask(taskMap);
+            vmParams.setTask(taskMap);*/
 
             // 添加导入操作系统任务
             Task importTask = new Task();
@@ -139,6 +142,8 @@ public class CreateVmCron {
                 taskService.updateById(importTask);
                 return;
             }
+            // 添加任务流程
+            vmhostService.addVmHostTask(vmhostId, importTask.getId());
             Task taskStatus;
             // 等待导入操作系统任务完成
             do {
@@ -177,6 +182,9 @@ public class CreateVmCron {
                 taskService.updateById(updateSystemDiskTask);
                 return;
             }
+            // 添加任务流程
+            vmhostService.addVmHostTask(vmhostId, updateSystemDiskTask.getId());
+
 
             // 等待修改系统盘大小任务完成
             do {
@@ -217,6 +225,8 @@ public class CreateVmCron {
                     taskService.updateById(createDataDiskTask);
                     return;
                 }
+                // 添加任务流程
+                vmhostService.addVmHostTask(vmhostId,createDataDiskTask.getId());
 
                 // 等待创建数据盘任务完成
                 do {
@@ -257,6 +267,8 @@ public class CreateVmCron {
                 updateBootDiskTask.setError("创建修改启动项任务失败");
                 taskService.updateById(updateBootDiskTask);
             }
+            // 添加任务流程
+            vmhostService.addVmHostTask(vmhostId,updateBootDiskTask.getId());
 
             // 等待创建修改启动项任务完成
             do {
@@ -292,6 +304,8 @@ public class CreateVmCron {
                 startTask.setError("添加创建开机任务失败");
                 taskService.updateById(startTask);
             }
+            // 添加任务流程
+            vmhostService.addVmHostTask(vmhostId, startTask.getId());
             // 更新主线程任务task状态为2
             task.setStatus(2);
             taskService.updateById(task);

@@ -87,6 +87,20 @@ def run_change_password(id:int,username:str,password:str):
     process = subprocess.Popen(['expect', '/home/software/Controller/change_password.sh',id,username,password])
     return process
 
+'''
+导入磁盘镜像调用函数
+Import disk image call function
+'''
+def import_disk_to_vm(vmid, image_path, save_path):
+    # 构建命令
+    command = f"qm importdisk {vmid} {image_path} {save_path}"
+
+    # 执行命令
+    try:
+        subprocess.run(command, shell=True, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        return False
 
 '''
 设置拦截器,验证token是否正确
@@ -234,20 +248,7 @@ async def update():
     os.system('sh /home/software/Controller/update.sh')
     return common_response(CodeEnum.SUCCESS,'success',{})
 
-'''
-导入磁盘镜像调用函数
-Import disk image call function
-'''
-def import_disk_to_vm(vmid, image_path, save_path):
-    # 构建命令
-    command = f"qm importdisk {vmid} {image_path} {save_path}"
 
-    # 执行命令
-    try:
-        subprocess.run(command, shell=True, check=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        return False
     
 '''
 定义导入磁盘镜像参数实体

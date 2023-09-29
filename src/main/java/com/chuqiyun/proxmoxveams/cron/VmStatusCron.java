@@ -112,6 +112,7 @@ public class VmStatusCron {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
+            params.put("forceStop",true);
             try {
                 proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/shutdown", params);
             } catch (Exception e) {
@@ -203,7 +204,7 @@ public class VmStatusCron {
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
             // 强制停止
-            params.put("forceStop",true);
+            //params.put("forceStop",true);
 
             try {
                 proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -43,5 +44,11 @@ public interface VmhostService extends IService<Vmhost> {
     UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk);
 
     UnifiedResultDto<Object> deleteVm(Long vmHostId);
+
+    UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword);
+
+    Boolean addVmHostTask(Object hostId, Object taskId);
+
+    UnifiedResultDto<Object> updateVmhostExpireTime(RenewalParams renewalParams);
 }
 

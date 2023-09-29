@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
+import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
@@ -22,12 +23,14 @@ import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -218,7 +221,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取虚拟机状态
         int vmStatus = vmhost.getStatus();
         long time = System.currentTimeMillis();
-        // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停、5=到期、6=创建中、7=开机中、8=关机中、9=停止中（强制关机中）、10=挂起中、11=暂停中、12重启中、13=重装系统中
+        // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停、5=到期、6=创建中、7=开机中、8=关机中、9=停止中（强制关机中）、10=挂起中、11=暂停中、12重启中、13=重装系统中、14=修改密码中
         // action类型有start=开机、stop=关机、reboot=重启、shutdown=强制关机、suspend=挂起、resume=恢复、pause=暂停、unpause=恢复
         switch (action) {
             case "start": {
@@ -255,10 +258,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     // 保存任务
                     if (taskService.save(vmStartTask)) {
                         log.info("[Task-StartVm] 开机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmStartTask.getId());
-                        this.updateById(vmhost);
                         result.put("status", true);
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmStartTask.getId());
                     }
                     else {
                         log.info("[Task-StartVm] 开机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -300,9 +302,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     if (taskService.save(vmStopTask)) {
                         log.info("[Task-StopVm] 关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmStopTask.getId());
-                        this.updateById(vmhost);
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmStopTask.getId());
                     }
                     else {
                         log.info("[Task-StopVm] 关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -342,9 +343,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                         if (taskService.save(vmStartTask)) {
                             log.info("[Task-StartVm] 开机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                             result.put("status", true);
-                            // 增加虚拟机task
-                            vmhost.getTask().put(String.valueOf(time),vmStartTask.getId());
-                            this.updateById(vmhost);
+                            // 添加任务流程
+                            this.addVmHostTask(hostId, vmStartTask.getId());
                         }
                         else {
                             log.info("[Task-StartVm] 开机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -364,9 +364,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                         if (taskService.save(vmRebootTask)) {
                             log.info("[Task-RebootVm] 重启任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                             result.put("status", true);
-                            // 增加虚拟机task
-                            vmhost.getTask().put(String.valueOf(time), vmRebootTask.getId());
-                            this.updateById(vmhost);
+                            // 添加任务流程
+                            this.addVmHostTask(hostId, vmRebootTask.getId());
                         } else {
                             log.info("[Task-RebootVm] 重启任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                             result.put("status", false);
@@ -405,9 +404,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     if (taskService.save(vmShutdownTask)) {
                         log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmShutdownTask.getId());
-                        this.updateById(vmhost);
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmShutdownTask.getId());
                     }
                     else {
                         log.info("[Task-ShutdownVm] 强制关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -445,9 +443,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     if (taskService.save(vmSuspendTask)) {
                         log.info("[Task-SuspendVm] 挂起任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmSuspendTask.getId());
-                        this.updateById(vmhost);
+
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmSuspendTask.getId());
                     }
                     else {
                         log.info("[Task-SuspendVm] 挂起任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -485,9 +483,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     if (taskService.save(vmResumeTask)) {
                         log.info("[Task-ResumeVm] 恢复任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmResumeTask.getId());
-                        this.updateById(vmhost);
+
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmResumeTask.getId());
                     }
                     else {
                         log.info("[Task-ResumeVm] 恢复任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -512,9 +510,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (taskService.save(vmPauseTask)) {
                     log.info("[Task-PauseVm] 暂停任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                     result.put("status", true);
-                    // 增加虚拟机task
-                    vmhost.getTask().put(String.valueOf(time),vmPauseTask.getId());
-                    this.updateById(vmhost);
+
+                    // 添加任务流程
+                    this.addVmHostTask(hostId, vmPauseTask.getId());
                 }
                 else {
                     log.info("[Task-PauseVm] 暂停任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -545,9 +543,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     if (taskService.save(vmUnpauseTask)) {
                         log.info("[Task-UnpauseVm] 恢复任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
-                        // 增加虚拟机task
-                        vmhost.getTask().put(String.valueOf(time),vmUnpauseTask.getId());
-                        this.updateById(vmhost);
+
+                        // 添加任务流程
+                        this.addVmHostTask(hostId, vmUnpauseTask.getId());
                     }
                     else {
                         log.info("[Task-UnpauseVm] 恢复任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
@@ -683,8 +681,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             if (vmStatus == 4 && initStatus == 2){
                 continue;
             }
-            // 判断数据库中的状态是否为6(到期)，且pve中的状态不为1(关机)
-            if (vmStatus == 6 && initStatus != 1){
+            // 判断数据库中的状态是否为5(到期)，且pve中的状态不为1(关机)
+            if (vmStatus == 5 && initStatus != 1){
                 // 强制关机
                 this.power(vmhost.getId(),"shutdown");
                 continue;
@@ -720,6 +718,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 判断虚拟机是否为禁用状态
         if (vmhost.getStatus() == 4){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        // 判断虚拟机是否为到期
+        if (vmhost.getStatus() == 5){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
         }
 
 
@@ -757,6 +759,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM,"创建重置虚拟机系统任务成功，任务id为：" + task.getId());
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
+        // 添加任务流程
+        this.addVmHostTask(vmhost.getId(), task.getId());
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_SYSTEM_FAILED, null);
     }
 
@@ -771,6 +775,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public UnifiedResultDto<Object> deleteVm(Long vmHostId){
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
+        // 如果虚拟机不存在
+        if (vmhost == null){
+            // 将vmHostId作为为vmid
+            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
+        }
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
@@ -798,7 +807,141 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_DELETE_VM,"创建删除虚拟机任务成功，任务id为：" + task.getId());
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
+        // 添加任务流程
+        this.addVmHostTask(vmhost.getId(), task.getId());
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_VM_FAILED, null);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 创建重置密码任务
+    * @DateTime: 2023/9/29 15:09
+    * @Params: Long vmHostId 虚拟机id，String newPassword 新密码
+    * @Return UnifiedResultDto<Object> 统一返回结果
+    */
+    @Override
+    public UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmHostId);
+        // 如果虚拟机不存在
+        if (vmhost == null){
+            // 将vmHostId作为为vmid
+            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
+        }
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+
+        // 判断新密码是否为空
+        if (StringUtils.isEmpty(newPassword)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NEW_PASSWORD_NOT_NULL, null);
+        }
+
+        // 判断虚拟机是否为禁用状态
+        if (vmhost.getStatus() == 4){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        // 判断虚拟机是否为到期
+        if (vmhost.getStatus() == 5){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
+        }
+
+        // 判断虚拟机是否为开机状态
+        if (vmhost.getStatus() == 0){
+            this.power(vmhost.getId(), "shutdown");
+        }
+        // 对比新旧密码是否相同
+        if (newPassword.equals(vmhost.getPassword())){
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }
+        // 设置虚拟机状态为重置密码中
+        vmhost.setStatus(14);
+        // 创建重置密码的任务
+        Task task = new Task();
+        task.setHostid(vmhost.getId());
+        task.setVmid(vmhost.getVmid());
+        task.setNodeid(vmhost.getNodeid());
+        task.setStatus(0);
+        task.setType(RESET_PASSWORD);
+        Map<Object, Object> params = new HashMap<>();
+        params.put("newPassword",newPassword);
+        task.setParams(params);
+        task.setCreateDate(System.currentTimeMillis());
+        if (taskService.insertTask(task)){
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_PASSWORD,"创建重置密码任务成功，任务id为：" + task.getId());
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }
+        // 添加任务流程
+        this.addVmHostTask(vmhost.getId(), task.getId());
+
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_PASSWORD_FAILED, null);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 增加虚拟机任务流程
+    * @DateTime: 2023/9/29 16:49
+    * @Params: Long hostId 虚拟机id，Long taskId 任务id
+    * @Return Boolean 增加任务是否成功
+    */
+    @Override
+    public Boolean addVmHostTask(Object hostId, Object taskId){
+        // 转换为Long类型
+        long hostid  = Long.parseLong(hostId.toString());
+
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(hostid);
+        // 判空
+        if (vmhost == null){
+            return false;
+        }
+        Map<Object,Object> nowTask;
+        if (vmhost.getTask() == null){
+            nowTask = new HashMap<>();
+        }else{
+            nowTask = vmhost.getTask();
+        }
+        // 追加任务
+        nowTask.put(System.currentTimeMillis(),taskId);
+        vmhost.setTask(nowTask);
+        // 更新任务
+        return this.updateById(vmhost);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 修改到期时间
+    * @DateTime: 2023/9/29 18:08
+    * @Params: renewalParams 到期时间参数
+    * @Return  UnifiedResultDto<Object> 统一返回结果
+    */
+    @Override
+    public UnifiedResultDto<Object> updateVmhostExpireTime(RenewalParams renewalParams) {
+        // 判断虚拟机ID是否为空
+        if (renewalParams.getHostId() == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        Vmhost vmhost = this.getById(renewalParams.getHostId());
+        if (vmhost == null){
+            // 将vmHostId作为为vmid
+            vmhost = this.getVmhostByVmId(Math.toIntExact(renewalParams.getHostId()));
+        }
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        // 判断虚拟机是否为禁用状态
+        if (vmhost.getStatus() == 4){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        // 修改到期时间
+        vmhost.setExpirationTime(renewalParams.getExpirationTime());
+        // 更新到期时间
+        if (this.updateById(vmhost)){
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RENEWAL_FAILED, null);
     }
 }
 

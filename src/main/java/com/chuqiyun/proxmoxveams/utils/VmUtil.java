@@ -539,4 +539,14 @@ public class VmUtil {
         }
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取恢复中状态列表
+    * @DateTime: 2023/9/29 15:58
+    * @Return List<Integer> 恢复中状态列表
+    */
+    public static List<Integer> getRecoveringStatusList(){
+        return Arrays.asList(3, 7, 8, 9, 10, 11, 12, 13, 14);
+    }
+
 }
