@@ -9,11 +9,12 @@ create table area
 
 create table config
 (
-    id                     int                      not null
+    id                     int                         not null
         primary key,
-    token                  varchar(255) default '0' not null,
-    linux_system_disk_size int          default 40  null,
-    win_system_disk_size   int          default 60  null
+    token                  varchar(255) default '0'    not null,
+    linux_system_disk_size int          default 40     null,
+    win_system_disk_size   int          default 60     null,
+    bwlimit                bigint       default 512000 null comment '默认io限制'
 );
 
 create table configuretemplate
@@ -31,6 +32,7 @@ create table configuretemplate
     nested           int                         null,
     cpu              varchar(255)                null,
     cpu_units        int                         null,
+    bwlimit          bigint                      null,
     arch             varchar(255)                null,
     acpi             int          default 1      null,
     memory           int          default 512    null,
@@ -192,48 +194,52 @@ create table task
 
 create table vmhost
 (
-    id               int auto_increment
+    id                    int auto_increment
         primary key,
-    nodeid           int                                        not null,
-    vmid             int                                        null,
-    name             varchar(255)                               not null,
-    sockets          int                                        null,
-    cores            int                                        not null,
-    threads          int                                        null,
-    devirtualization int                                        null,
-    kvm              int                                        null,
-    cpu_model        int                                        null,
-    model_group      int                                        null,
-    cpu              varchar(255)                               null,
-    cpu_units        int                                        null,
-    args             text                                       null,
-    arch             varchar(20)                                null,
-    acpi             int                                        null,
-    memory           int                                        not null,
-    swap             int                                        null,
-    agent            int          default 1                     not null,
-    username         varchar(255)                               null,
-    password         varchar(255)                               null,
-    ide0             varchar(255)                               null,
-    ide2             varchar(255) default 'local-lvm:cloudinit' null comment 'cloud-init',
-    net0             varchar(255) default 'virtio,bridge=vmbr0' null,
-    net1             varchar(255)                               null,
-    os               varchar(255)                               null,
-    os_type          varchar(20)                                null,
-    iso              varchar(255)                               null,
-    template         varchar(255)                               null,
-    on_boot          int                                        null,
-    bandwidth        int                                        null,
-    storage          varchar(255)                               null,
-    system_disk_size int                                        null,
-    data_disk        json                                       null,
-    bridge           varchar(255)                               null,
-    ip_config        json                                       null,
-    nested           int          default 0                     not null comment '嵌套虚拟化',
-    task             json                                       null comment '任务流',
-    status           int          default 0                     not null,
-    create_time      mediumtext                                 not null comment '创建时间',
-    expiration_time  mediumtext                                 not null comment '到期时间'
+    nodeid                int                                        not null,
+    vmid                  int                                        null,
+    name                  varchar(255)                               not null,
+    configure_template_id int                                        null,
+    sockets               int                                        null,
+    cores                 int                                        not null,
+    threads               int                                        null,
+    devirtualization      int                                        null,
+    kvm                   int                                        null,
+    cpu_model             int                                        null,
+    model_group           int                                        null,
+    cpu                   varchar(255)                               null,
+    cpu_units             int                                        null,
+    bwlimit               bigint                                     null,
+    args                  text                                       null,
+    arch                  varchar(20)                                null,
+    acpi                  int                                        null,
+    memory                int                                        not null,
+    swap                  int                                        null,
+    agent                 int          default 1                     not null,
+    username              varchar(255)                               null,
+    password              varchar(255)                               null,
+    ide0                  varchar(255)                               null,
+    ide2                  varchar(255) default 'local-lvm:cloudinit' null comment 'cloud-init',
+    net0                  varchar(255) default 'virtio,bridge=vmbr0' null,
+    net1                  varchar(255)                               null,
+    os                    varchar(255)                               null,
+    os_name               varchar(255)                               null,
+    os_type               varchar(20)                                null,
+    iso                   varchar(255)                               null,
+    template              varchar(255)                               null,
+    on_boot               int                                        null,
+    bandwidth             int                                        null,
+    storage               varchar(255)                               null,
+    system_disk_size      int                                        null,
+    data_disk             json                                       null,
+    bridge                varchar(255)                               null,
+    ip_config             json                                       null,
+    ip_data               text                                       null,
+    nested                int          default 0                     not null comment '嵌套虚拟化',
+    task                  json                                       null comment '任务流',
+    status                int          default 0                     not null,
+    create_time           mediumtext                                 not null comment '创建时间',
+    expiration_time       mediumtext                                 not null comment '到期时间'
 );
 
 
