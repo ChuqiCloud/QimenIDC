@@ -24,6 +24,10 @@ public interface AreaService extends IService<Area> {
 
     Page<Area> selectGroupPage(Integer page, Integer limit, QueryWrapper<Area> queryWrapper);
 
+    Page<Area> selectGroupPageByParent(Integer page, Integer limit, Integer parent);
+
+    Page<Area> selectGroupPageByParent(Integer page, Integer limit, Integer parent, QueryWrapper<Area> queryWrapper);
+
     boolean isExistName(String name);
 
     boolean isExistId(Integer id);

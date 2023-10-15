@@ -208,4 +208,23 @@ public class SysGroupController {
         }
         return ResponseResult.ok(masterPage);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定父级地区的子地区列表
+    * @DateTime: 2023/10/15 23:47
+    */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/getAreaListByParent")
+    public ResponseResult<Object> getAreaListByParent(@PathVariable("adminPath") String adminPath,
+                                                      @RequestParam(name = "parent") Integer parent,
+                                                      @RequestParam(name = "page", defaultValue = "1") Integer page,
+                                                      @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Page<Area> areaPage = areaService.selectGroupPageByParent(page,size,parent);
+        return ResponseResult.ok(areaPage);
+    }
 }

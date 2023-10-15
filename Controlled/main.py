@@ -101,6 +101,25 @@ def import_disk_to_vm(vmid, image_path, save_path):
         return True
     except subprocess.CalledProcessError as e:
         return False
+    
+'''
+读取指定目录下文件的内容
+Read the contents of the file in the specified directory
+'''
+def read_file(path,filename):
+    # 判断路径是否存在
+    if not os.path.exists(path):
+        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
+    # 判断是否是目录
+    if not os.path.isdir(path):
+        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
+    # 判断文件是否存在
+    if not os.path.exists(os.path.join(path,filename)):
+        return common_response(CodeEnum.NOT_FOUND,'file not found',{})
+    # 读取文件内容
+    with open(os.path.join(path,filename),'r') as f:
+        data=f.read()
+    return data
 
 '''
 设置拦截器,验证token是否正确
@@ -270,6 +289,22 @@ async def importDisk(item: ImportDisk):
     thread = threading.Thread(target=import_disk_to_vm, args=(item.vmid,item.image_path,item.save_path))  
     thread.start()
     return common_response(CodeEnum.SUCCESS,'success',{})
+
+'''
+定义读取文件参数实体
+Define read file parameter entity
+'''
+class ReadFile(BaseModel):
+    path:str
+    filename:str
+
+'''
+读取指定目录下文件的内容
+Read the contents of the file in the specified directory
+'''
+@app.post('/readFile')
+async def readFile(item:ReadFile):
+    return common_response(CodeEnum.SUCCESS,'success',{'data':read_file(item.path,item.filename)})
 
 
 if __name__ == '__main__':

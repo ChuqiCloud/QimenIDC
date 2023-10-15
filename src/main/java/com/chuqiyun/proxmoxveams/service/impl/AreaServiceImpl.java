@@ -110,6 +110,34 @@ public class AreaServiceImpl extends ServiceImpl<AreaDao, Area> implements AreaS
 
     /**
     * @Author: mryunqi
+    * @Description: 分页查询指定父级ID下的子地区
+    * @DateTime: 2023/10/15 23:36
+    * @Params: Integer page 页数, Integer limit 每页数量, Integer parent 父级id
+    * @Return Page<Area> 分页查询结果
+    */
+    @Override
+    public Page<Area> selectGroupPageByParent(Integer page, Integer limit, Integer parent) {
+        Page<Area> areaPage = new Page<>(page,limit);
+        QueryWrapper<Area> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("parent",parent);
+        return page(areaPage,queryWrapper);
+    }
+    /**
+    * @Author: mryunqi
+    * @Description: 带条件分页查询指定父级ID下的子地区
+    * @DateTime: 2023/10/15 23:40
+    * @Params: Integer page 页数, Integer limit 每页数量, Integer parent 父级id, QueryWrapper<Group> queryWrapper 条件
+    * @Return Page<Area> 分页查询结果
+    */
+    @Override
+    public Page<Area> selectGroupPageByParent(Integer page, Integer limit, Integer parent, QueryWrapper<Area> queryWrapper) {
+        Page<Area> areaPage = new Page<>(page,limit);
+        queryWrapper.eq("parent",parent);
+        return page(areaPage,queryWrapper);
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 判断是否存在指定名称的地区
     * @DateTime: 2023/8/16 22:35
     * @Params:  String name 地区名称
