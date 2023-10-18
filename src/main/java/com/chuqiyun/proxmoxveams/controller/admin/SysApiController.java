@@ -125,4 +125,38 @@ public class SysApiController {
         return ResponseResult.fail("停用失败");
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 启用指定API
+    * @DateTime: 2023/10/18 22:42
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/{adminPath}/enableApi/{id}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<Object> enableApi(@PathVariable("adminPath") String adminPath,
+                                            @PathVariable("id") Integer id) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        // 判断id是否为空
+        if (Objects.isNull(id)){
+            return ResponseResult.fail("id不能为空");
+        }
+        // 判断是否存在该id
+        Sysapi sysapi = sysapiService.getById(id);
+        if (Objects.isNull(sysapi)){
+            return ResponseResult.fail("不存在该API");
+        }
+        // 判断是否已经启用
+        if (sysapi.getStatus() == 0){
+            return ResponseResult.fail("该API已经启用");
+        }
+        // 启用API
+        sysapi.setStatus(0);
+        if (sysapiService.updateById(sysapi)){
+            return ResponseResult.ok("启用成功");
+        }
+        return ResponseResult.fail("启用失败");
+    }
+
 }
