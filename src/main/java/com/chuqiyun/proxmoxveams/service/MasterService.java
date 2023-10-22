@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 
@@ -65,5 +66,7 @@ public interface MasterService extends IService<Master> {
     void updateNodeCookie(Integer nodeId);
 
     Integer getVmStatusCode(Integer nodeId, Integer vmid);
+
+    UnifiedResultDto<Object> deleteNode(Integer nodeId);
 }
 

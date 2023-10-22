@@ -60,7 +60,10 @@ public enum UnifiedResultCode {
     ERROR_RESET_PASSWORD_FAILED(1023, "Failed to reset password"),
     // 虚拟机续期失败
     ERROR_RENEWAL_FAILED(1024, "Failed to renew virtual machine"),
-
+    // 该节点还有虚拟机存在，请先删除虚拟机
+    ERROR_NODE_HAS_VM(1025, "There are still virtual machines on this node, please delete the virtual machine first"),
+    // 虚拟机删除失败，未知错误
+    ERROR_DELETE_VM_UNKNOWN(1026, "Failed to delete virtual machine, unknown error"),
     /*pve错误码范围：2xxx*/
 
     /*成功*/

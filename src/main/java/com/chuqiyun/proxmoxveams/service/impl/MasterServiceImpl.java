@@ -5,19 +5,19 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.MasterDao;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
-import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.Resource;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -29,6 +29,8 @@ import java.util.List;
  */
 @Service("masterService")
 public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements MasterService {
+    @Resource
+    private VmhostService vmhostService;
     /**
     * @Author: mryunqi
     * @Description: 获取ProxmoxVE集群节点列表
@@ -253,5 +255,35 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         return initStatus;
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 删除指定节点
+    * @DateTime: 2023/10/22 22:44
+    * @Params:  Integer nodeId 节点ID
+    * @Return UnifiedResultDto<Object> 删除结果
+    */
+    @Override
+    public UnifiedResultDto<Object> deleteNode(Integer nodeId) {
+        // 获取节点实例
+        Master node = this.getById(nodeId);
+        // 判断是否存在
+        if (node == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        // 获取节点下所有虚拟机
+        Page<Vmhost> vmhostPage = vmhostService.selectPage(1, 1, new QueryWrapper<Vmhost>().eq("nodeid", nodeId));
+        List<Vmhost> vmhostList = vmhostPage.getRecords();
+        // 判断节点下是否存在虚拟机
+        if (vmhostList.size() > 0){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_HAS_VM, null);
+        }
+        // 删除节点
+        boolean deleteNode = this.removeById(nodeId);
+        if (deleteNode){
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        }else {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_VM_UNKNOWN, null);
+        }
+    }
 }
 

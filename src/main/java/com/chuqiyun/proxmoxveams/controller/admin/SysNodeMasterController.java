@@ -2,6 +2,8 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
@@ -84,5 +86,25 @@ public class SysNodeMasterController {
         } else {
             return ResponseResult.fail("修改失败！");
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除指定id节点
+    * @DateTime: 2023/10/22 22:54
+    */
+    @AdminApiCheck
+    @DeleteMapping("/{adminPath}/deleteNodeById")
+    public ResponseResult<Object> deleteNodeById(@PathVariable("adminPath") String adminPath,
+                                                 @RequestParam("nodeId") Integer nodeId) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        UnifiedResultDto<Object> resultDto = masterService.deleteNode(nodeId);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
     }
 }
