@@ -20,6 +20,7 @@ stages:
         gradleVersion: 4.4
         commands:
           - chmod +x ./gradlew
+          - ls
           - ./gradlew build
         artifacts:
           - name: BUILD_ARTIFACT
