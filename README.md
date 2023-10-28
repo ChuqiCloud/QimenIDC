@@ -16,8 +16,6 @@
 
 本项目是一个开源、免费、云原生的多云管理及混合云融合系统，它致力于简化多云环境下的资源管理和操作，提高管理多云的效率。
 
-项目主要托管于码云，地址为：[https://gitee.com/chuqicloud/QimenIDC](https://gitee.com/chuqicloud/QimenIDC)。
-
 ## 主要特性
 
 - **多云管理**：通过隐藏不同云服务商的数据模型和 API 差异，QimenIDC 提供了一套统一的 API，让用户能够像使用单一云平台一样访问多个云服务商。
@@ -130,7 +128,7 @@ QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
     ./gradlew build # 编译
    ```
 
-你可以在项目的根目录找到输出的jar。
+你可以在项目根目录下的/build/lib找到输出的jar。
 
 
 
@@ -138,9 +136,7 @@ QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
 
 如果您有任何问题、建议或反馈，可以发送至我们的邮箱：
 
-- 邮件列表：cloud@chuqis.com
-
-您可以在我们的 [GitHub Issues](https://github.com/your-username/QimenIDC/issues) 页面报告问题或提出功能请求。
+- 邮件列表：434658198@qq.com
 
 ## 许可证
 
