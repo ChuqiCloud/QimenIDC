@@ -185,4 +185,20 @@ public class ClientApiUtil {
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 获取节点网卡配置信息
+    * @DateTime: 2023/10/28 22:00
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+    * @Return JSONObject 网卡配置信息
+    */
+    public static JSONObject getNetworkInfo(String ip, String token){
+        String url = "http://"+ip+":7600/readFile";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("path","/etc/network");
+        paramMap.put("filename","interfaces");
+        return postControllerApi(url, paramMap, token);
+    }
 }

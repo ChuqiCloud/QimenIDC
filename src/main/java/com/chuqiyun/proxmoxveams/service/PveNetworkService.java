@@ -9,4 +9,6 @@ import com.alibaba.fastjson2.JSONObject;
  */
 public interface PveNetworkService {
     JSONArray getPveNetworkInfo(long nodeId);
+
+    String getPveInterfaces(long nodeId);
 }

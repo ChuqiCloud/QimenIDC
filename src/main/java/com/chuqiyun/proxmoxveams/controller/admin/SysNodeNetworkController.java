@@ -43,4 +43,24 @@ public class SysNodeNetworkController {
         }
         return ResponseResult.ok(pveNetworkService.getPveNetworkInfo(nodeId));
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取节点网卡配置文件信息
+    * @DateTime: 2023/10/28 22:10
+    */
+    @AdminApiCheck
+    @GetMapping(value = "/{adminPath}/getPveNodeInterfaces")
+    public Object getPveNodeInterfaces(@PathVariable("adminPath") String adminPath,
+                                       Long nodeId) {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        // 判断nodeId是否存在
+        if (masterService.getById(nodeId) == null) {
+            return ResponseResult.fail("该节点不存在！");
+        }
+        return ResponseResult.ok(pveNetworkService.getPveInterfaces(nodeId));
+    }
 }
