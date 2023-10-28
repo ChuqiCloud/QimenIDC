@@ -29,8 +29,6 @@ import java.util.List;
  */
 @Service("masterService")
 public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements MasterService {
-    @Resource
-    private VmhostService vmhostService;
     /**
     * @Author: mryunqi
     * @Description: 获取ProxmoxVE集群节点列表
@@ -263,7 +261,7 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     * @Return UnifiedResultDto<Object> 删除结果
     */
     @Override
-    public UnifiedResultDto<Object> deleteNode(Integer nodeId) {
+    public UnifiedResultDto<Object> deleteNode(VmhostService vmhostService,Integer nodeId) {
         // 获取节点实例
         Master node = this.getById(nodeId);
         // 判断是否存在

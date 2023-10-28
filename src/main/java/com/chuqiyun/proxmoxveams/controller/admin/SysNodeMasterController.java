@@ -8,6 +8,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +24,8 @@ public class SysNodeMasterController {
     private String ADMIN_PATH;
     @Resource
     private MasterService masterService;
+    @Resource
+    private VmhostService vmhostService;
 
     @AdminApiCheck
     @PostMapping("/{adminPath}/insertNodeMaster")
@@ -101,7 +104,7 @@ public class SysNodeMasterController {
             //判断后台路径是否正确
             return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
         }
-        UnifiedResultDto<Object> resultDto = masterService.deleteNode(nodeId);
+        UnifiedResultDto<Object> resultDto = masterService.deleteNode(vmhostService,nodeId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }
