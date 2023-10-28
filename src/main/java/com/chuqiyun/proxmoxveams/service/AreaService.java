@@ -16,6 +16,16 @@ public interface AreaService extends IService<Area> {
 
     Page<Master> selectGroupInNode(Integer areaId, Integer page, Integer limit);
 
+    /**
+    * @Author: mryunqi
+    * @Description: 分页获取父级地区
+    * @DateTime: 2023/10/28 13:34
+    * @Params: Integer page 页数
+     * @Params: Integer limit 每页数据
+    * @Return  Page<Area>
+    */
+    Page<Area> selectParentPage(Integer page, Integer limit);
+
     void updateGroupBindNode(Integer id);
 
     boolean isExistChild(Integer id);

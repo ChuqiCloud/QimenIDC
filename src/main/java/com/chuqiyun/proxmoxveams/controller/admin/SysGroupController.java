@@ -227,4 +227,22 @@ public class SysGroupController {
         Page<Area> areaPage = areaService.selectGroupPageByParent(page,size,parent);
         return ResponseResult.ok(areaPage);
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页获取纯父级地区
+    * @DateTime: 2023/10/28 13:38
+    */
+    @AdminApiCheck
+    @GetMapping("/{adminPath}/getAreaListByParentIsNull")
+    public ResponseResult<Object> getAreaListByParentIsNull(@PathVariable("adminPath") String adminPath,
+                                                            @RequestParam(name = "page", defaultValue = "1") Integer page,
+                                                            @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)){
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        Page<Area> areaPage = areaService.selectParentPage(page,size);
+        return ResponseResult.ok(areaPage);
+    }
 }

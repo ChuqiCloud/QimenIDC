@@ -38,6 +38,22 @@ public class AreaServiceImpl extends ServiceImpl<AreaDao, Area> implements AreaS
         return masterService.page(groupPage,queryWrapper);
     }
 
+    /**
+     * @Author: mryunqi
+     * @Description: 分页获取父级地区
+     * @DateTime: 2023/10/28 13:34
+     * @Params: Integer page 页数
+     * @Params: Integer limit 每页数据
+     * @Return  Page<Area>
+     */
+    @Override
+    public Page<Area> selectParentPage(Integer page, Integer limit) {
+        Page<Area> areaPage = new Page<>(page,limit);
+        QueryWrapper<Area> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("realm",0);
+        return page(areaPage,queryWrapper);
+    }
+
 
     /**
     * @Author: mryunqi
