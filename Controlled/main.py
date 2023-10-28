@@ -1,23 +1,29 @@
-import os
-import subprocess
-import threading
-from pydantic import BaseModel
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-app=FastAPI()
-# 版本号
-version='1.0.1'
+from common.UnicornException import UnicornException
+from common.CodeEnum import CodeEnum
 
-'''
-自定义异常
-Custom exception
-'''
-class UnicornException(Exception):
-    def __init__(self, code: int, msg: str):
-        self.code = code
-        self.msg = msg
+from service.Authentication import get_token
+
+app=FastAPI(
+    title="QimenIDC公有云管理系统 - 被控端API接口文档",
+    description="开源、免费、云原生的多云管理及混合云融合系统。 Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system.",
+    version="1.0.1",
+    docs_url="/docs",
+    openapi_url="/openapi.json"
+)
+
+# 路由
+from controller import update,changePassword,importDisk,status,file
+
+# 挂载路由
+app.include_router(update.update_router,tags=["update"])
+app.include_router(changePassword.changePassword_router,tags=["changePassword"])
+app.include_router(importDisk.importDisk_router,tags=["importDisk"])
+app.include_router(status.status_router,tags=["status"])
+app.include_router(file.file_router,tags=["file"])
 
 '''
 自定义错误处理
@@ -29,97 +35,6 @@ async def unicorn_exception_handler(request, exc):
         status_code=exc.code,
         content={"code":exc.code,"message": exc.msg},
     )
-
-'''
-定义枚举状态码
-Define enumeration status code
-'''
-class CodeEnum:
-    SUCCESS = 200
-    FAIL = 500
-    UNAUTHORIZED = 401
-    FORBIDDEN = 403
-    NOT_FOUND = 404
-    METHOD_NOT_ALLOWED = 405
-    REQUEST_TIMEOUT = 408
-    TOO_MANY_REQUESTS = 429
-    INTERNAL_SERVER_ERROR = 500
-    BAD_GATEWAY = 502
-    SERVICE_UNAVAILABLE = 503
-    GATEWAY_TIMEOUT = 504
-
-'''
-定义通用返回值
-Define common return values
-'''
-def common_response(code:int,message:str,data:dict):
-    return {
-        'code':code,
-        'message':message,
-        'data':data
-    }
-
-'''
-获取token值
-Get token value
-'''
-def get_token():
-    # 判断是否存在token.key文件，否则创建
-    if not os.path.exists(os.path.join('/home/software/Controller','token.key')):
-        with open(os.path.join('/home/software/Controller','token.key'),'w') as f:
-            f.write('token')
-    # 读取token.key文件中的token值
-    with open(os.path.join('/home/software/Controller','token.key'),'r') as f:
-        token=f.read()
-    # 删除结尾的换行符
-    token=token.strip()
-    return token
-
-def run_wget(url, path):  
-    process = subprocess.Popen(['wget', '-P', path, url])  
-    return process  
-
-'''
-执行修改密码脚本
-Execute the change password script
-'''
-def run_change_password(id:int,username:str,password:str):  
-    process = subprocess.Popen(['expect', '/home/software/Controller/change_password.sh',id,username,password])
-    return process
-
-'''
-导入磁盘镜像调用函数
-Import disk image call function
-'''
-def import_disk_to_vm(vmid, image_path, save_path):
-    # 构建命令
-    command = f"qm importdisk {vmid} {image_path} {save_path}"
-
-    # 执行命令
-    try:
-        subprocess.run(command, shell=True, check=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        return False
-    
-'''
-读取指定目录下文件的内容
-Read the contents of the file in the specified directory
-'''
-def read_file(path,filename):
-    # 判断路径是否存在
-    if not os.path.exists(path):
-        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
-    # 判断是否是目录
-    if not os.path.isdir(path):
-        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
-    # 判断文件是否存在
-    if not os.path.exists(os.path.join(path,filename)):
-        return common_response(CodeEnum.NOT_FOUND,'file not found',{})
-    # 读取文件内容
-    with open(os.path.join(path,filename),'r') as f:
-        data=f.read()
-    return data
 
 '''
 设置拦截器,验证token是否正确
@@ -149,162 +64,6 @@ async def add_process_time_header(request: Request, call_next):
             status_code=ex.code,
             content={"code":ex.code,"message": ex.msg},
         )
-
-'''
-获取运行状态
-Get running status
-'''
-@app.get('/status')
-async def status():
-    return common_response(CodeEnum.SUCCESS,'success',{'status':'running'})
-
-'''
-获取指定目录下的文件列表
-Get the file list under the specified directory
-'''
-@app.get('/pathFile')
-async def pathFile(path:str):
-    # 判断路径是否存在
-    if not os.path.exists(path):
-        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
-    # 判断是否是目录
-    if not os.path.isdir(path):
-        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
-    # 获取目录下的文件列表
-    files=os.listdir(path)
-    return common_response(CodeEnum.SUCCESS,'success',{'files':files})
-
-'''
-获取版本号
-Get version number
-'''
-@app.get('/version')
-async def version():
-    return common_response(CodeEnum.SUCCESS,'success',{'version':version})
-
-'''
-执行wget命令下载文件到指定目录
-重复url调用将返回下载进度
-Execute the wget command to download the file to the specified directory
-Repeated url calls will return the download progress
-'''
-@app.get('/wget')
-async def wget(url:str,path:str):
-    # 判断路径是否存在
-    if not os.path.exists(path):
-        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
-    # 判断是否是目录
-    if not os.path.isdir(path):
-        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
-    # 判断文件是否存在
-    if os.path.exists(os.path.join(path,url.split('/')[-1])):
-        # 获取文件大小
-        size=os.path.getsize(os.path.join(path,url.split('/')[-1]))
-        # 获取文件总大小
-        total_size=int(os.popen('curl -I -s -L "{}" | grep Content-Length | awk \'{{print $2}}\''.format(url)).read().strip())
-        # 计算下载进度
-        progress=str(round(size/total_size*100,2))+'%'
-        return common_response(CodeEnum.SUCCESS,'success',{'file':url.split('/')[-1],'progress':progress})
-    # 创建一个线程执行wget命令
-    thread = threading.Thread(target=run_wget, args=(url, path))  
-    thread.start()
-    return common_response(CodeEnum.SUCCESS,'success',{})
-
-'''
-定义删除文件参数实体
-Define delete file parameter entity
-'''
-class DeleteFile(BaseModel):
-    path:str
-    file:str
-
-'''
-删除指定目录下的指定文件
-Delete the specified file under the specified directory
-'''
-@app.post('/deleteFile')
-async def deleteFile(item:DeleteFile):
-    # 判断路径是否存在
-    if not os.path.exists(item.path):
-        return common_response(CodeEnum.NOT_FOUND,'path not found',{})
-    # 判断是否是目录
-    if not os.path.isdir(item.path):
-        return common_response(CodeEnum.NOT_FOUND,'path is not a directory',{})
-    # 判断文件是否存在
-    if not os.path.exists(os.path.join(item.path,item.file)):
-        return common_response(CodeEnum.NOT_FOUND,'file not found',{})
-    # 删除文件
-    os.remove(os.path.join(item.path,item.file))
-    return common_response(CodeEnum.SUCCESS,'success',{})
-
-'''
-定义修改密码参数实体
-Define change password parameter entity
-'''
-class ChangePassword(BaseModel):
-    id: int
-    username: str
-    password: str
-
-'''
-通过qemu修改虚拟机密码
-Change the virtual machine password through qemu
-'''
-@app.post('/changePassword')
-async def changePassword(item: ChangePassword):
-    # 创建一个线程执行修改密码脚本
-    thread = threading.Thread(target=run_change_password, args=(item.id,item.username,item.password))  
-    thread.start()
-    return common_response(CodeEnum.SUCCESS,'success',{})
-
-'''
-更新程序
-Update program
-'''
-@app.post('/update')
-async def update():
-    # 执行更新脚本
-    os.system('sh /home/software/Controller/update.sh')
-    return common_response(CodeEnum.SUCCESS,'success',{})
-
-
-    
-'''
-定义导入磁盘镜像参数实体
-Define import disk image parameter entity
-'''
-class ImportDisk(BaseModel):
-    vmid: int
-    image_path: str
-    save_path: str
-
-
-'''
-导入磁盘镜像
-Import disk image
-'''
-@app.post('/importDisk')
-async def importDisk(item: ImportDisk):
-    # 创建一个线程执行导入磁盘镜像脚本
-    thread = threading.Thread(target=import_disk_to_vm, args=(item.vmid,item.image_path,item.save_path))  
-    thread.start()
-    return common_response(CodeEnum.SUCCESS,'success',{})
-
-'''
-定义读取文件参数实体
-Define read file parameter entity
-'''
-class ReadFile(BaseModel):
-    path:str
-    filename:str
-
-'''
-读取指定目录下文件的内容
-Read the contents of the file in the specified directory
-'''
-@app.post('/readFile')
-async def readFile(item:ReadFile):
-    return common_response(CodeEnum.SUCCESS,'success',{'data':read_file(item.path,item.filename)})
 
 
 if __name__ == '__main__':
