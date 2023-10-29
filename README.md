@@ -55,7 +55,7 @@
 或者可以运行以下命令：
 
 ```shell
-wget -O install.sh http://mirror.chuqiyun.com/software/Controller/install.sh && bash install.sh
+wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash install.sh
 ```
 
 ### 节点端口开放
