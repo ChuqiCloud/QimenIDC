@@ -15,13 +15,13 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl expect
+    apt-get install -y wget curl expect openvswitch-switch ifupdown2
 }
 # 初始化系统软件目录
 function init_system_dir(){
     mkdir -p /home/images
     mkdir -p /home/software
-    mkdir -p /home/software/Controller
+    mkdir -p /home/software/QAgent
     mkdir -p /home/software/python3.10.5
 }
 # 安装必须环境依赖
@@ -35,8 +35,8 @@ function install_python(){
         echo "python3.10.5 has been installed!"
     else
         cd /home/software
-        wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-        # wget http://mirror.chuqiyun.com/software/python/Python-3.10.5.tgz
+        # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
+        wget http://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz
         tar -zxvf Python-3.10.5.tgz
         cd Python-3.10.5
         ./configure --prefix=/home/software/python3.10.5
@@ -51,25 +51,22 @@ function install_python(){
 
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
-    cd /home/software/Controller
-    wget http://mirror.chuqiyun.com/software/Controller/main.py
-    wget http://mirror.chuqiyun.com/software/Controller/requirements.txt
-    wget http://mirror.chuqiyun.com/software/Controller/importdisk.sh
-    wget http://mirror.chuqiyun.com/software/Controller/change_password.sh
-    wget http://mirror.chuqiyun.com/software/Controller/update.sh
+    cd /home/software
+    wget http://mirror.chuqiyun.com/software/QAgent.tar.gz
+    tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
 # 安装QimenIDC Controller依赖
 function install_qimenidc_controller_source(){
-    pip3.10 install -r /home/software/Controller/requirements.txt
+    pip3.10 install -r /home/software/QAgent/requirements.txt
 }
 
 # 配置QimenIDC Controller token文件
 function config_qimenidc_controller_token(){
     # 黄色字体
-    echo -e "\033[33m-->Please input QimenIDS Master token:\033[0m"
+    echo -e "\033[33m--->Please input QimenIDS Master token:\033[0m"
     read token
-    echo $token > /home/software/Controller/token.key
+    echo $token > /home/software/QAgent/token.key
 }
 
 # 配置程序开机自启动以及systemd服务
@@ -79,20 +76,28 @@ Description=QimenIDC Controller
 After=network.target
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3.10 /home/software/Controller/main.py
+ExecStart=/usr/bin/python3.10 /home/software/QAgent/main.py
 Restart=on-failure
 User=root
 [Install]
-WantedBy=multi-user.target" > /etc/systemd/system/qimenidc_controller.service
+WantedBy=multi-user.target" > /etc/systemd/system/qagent.service
     systemctl daemon-reload
-    systemctl enable qimenidc_controller.service
-    systemctl start qimenidc_controller.service
+    systemctl enable qagent.service
+    systemctl start qagent.service
 }
 
 # 删除安装文件
 function delete_install_file(){
     rm -rf /home/software/Python-3.10.5
     rm -rf /home/software/Python-3.10.5.tgz
+}
+
+# 安装命令菜单脚本
+function install_qa(){
+    # 将qa.sh文件移动到/usr/local/bin/目录下
+    mv /home/software/QAgent/qa.sh /usr/local/bin/qa
+    # 给qa文件添加可执行权限
+    chmod +x /usr/local/bin/qa
 }
 
 # 开始安装
@@ -105,13 +110,15 @@ function start_install(){
     install_qimenidc_controller_source
     config_qimenidc_controller_token
     config_qimenidc_controller_service
+    install_qa
     delete_install_file
-    systemctl status qimenidc_controller.service
+    systemctl status qagent.service
     echo -e "\033[32mQimenIDC Controller install success!\033[0m"
-    echo -e "\033[32m-->start: systemctl start qimenidc_controller.service\033[0m"
-    echo -e "\033[32m-->stop: systemctl stop qimenidc_controller.service\033[0m"
-    echo -e "\033[32m-->restart: systemctl restart qimenidc_controller.service\033[0m"
-    echo -e "\033[32m-->status: systemctl status qimenidc_controller.service\033[0m"
+    echo -e "\033[32m-->start: systemctl start qagent.service\033[0m"
+    echo -e "\033[32m-->stop: systemctl stop qagent.service\033[0m"
+    echo -e "\033[32m-->restart: systemctl restart qagent.service\033[0m"
+    echo -e "\033[32m-->status: systemctl status qagent.service\033[0m"
+    echo -e "\033[32m可通过发送 qa 命令唤起快捷操作面板 \033[0m"
 }
 
 # 判断是否为root用户
