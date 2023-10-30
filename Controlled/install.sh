@@ -15,7 +15,7 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl expect openvswitch-switch ifupdown2
+    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo
 }
 # 初始化系统软件目录
 function init_system_dir(){
@@ -52,7 +52,7 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software
-    wget http://mirror.chuqiyun.com/software/QAgent.tar.gz
+    wget http://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz
     tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
@@ -90,6 +90,7 @@ WantedBy=multi-user.target" > /etc/systemd/system/qagent.service
 function delete_install_file(){
     rm -rf /home/software/Python-3.10.5
     rm -rf /home/software/Python-3.10.5.tgz
+    rm -rf /home/software/QAgent.tar.gz
 }
 
 # 安装命令菜单脚本

@@ -16,6 +16,12 @@ reset_token() {
     echo $token > /home/software/QAgent/token.key
 }
 
+# 输出/home/software/QAgent/token.key文件内容
+cat_token() {
+    echo -e "\033[33m--->QAgent token:\033[0m"
+    cat /home/software/QAgent/token.key
+}
+
 # 菜单循环
 while true; do
     clear
@@ -24,8 +30,10 @@ while true; do
     echo "2. 重启 QAgent"
     echo "3. 停止 QAgent"
     echo "4. 检查 QAgent 状态"
-    echo "5. 重置 QAgent token"
-    echo "6. 更新被控端程序"
+    echo "5. 查看 QAgent 运行状态"
+    echo "6. 查看 QAgent token"
+    echo "7. 重置 QAgent token"
+    echo "8. 更新被控端程序"
     echo "q. 退出"
     read -p "请选择序号操作: " choice
 
@@ -52,15 +60,23 @@ while true; do
             check_qagent_status
             ;;
         5)
-            reset_token
+            sudo systemctl status qagent.service
             ;;
         6)
+            cat_token
+            ;;
+        7)
+            reset_token
+            ;;
+        8)
             echo "---> 5秒后将更新最新版被控程序..."
             sleep 5
             # 运行/home/software/QAgent中的update.sh文件
             chmod +x /home/software/QAgent/update.sh
             # 执行update.sh文件
-            sh /home/software/QAgent/update.sh
+            /home/software/QAgent/update.sh
+            echo -e "\033[33m--->QAgent update success!\033[0m"
+            exit 0 && qa
             ;;
         q)
             echo "退出菜单"
