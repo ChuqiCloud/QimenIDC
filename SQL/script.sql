@@ -239,7 +239,8 @@ create table vmhost
     task                  json                                       null comment '任务流',
     status                int          default 0                     not null,
     create_time           mediumtext                                 not null comment '创建时间',
-    expiration_time       mediumtext                                 not null comment '到期时间'
+    expiration_time       mediumtext                                 not null comment '到期时间',
+    ip_list               text                                       null
 );
 
 
