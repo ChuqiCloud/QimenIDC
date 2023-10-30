@@ -101,6 +101,15 @@ function install_qa(){
     chmod +x /usr/local/bin/qa
 }
 
+# 替换虚拟机启动公屏图片
+function replace_start_image(){
+    # 将bootsplash.jpg文件f覆盖到/usr/share/qemu-server/bootsplash.jpg
+    rm -rf /usr/share/qemu-server/bootsplash.jpg
+    mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
+    # 重启pve 服务
+    systemctl restart pvedaemon.service
+}
+
 # 开始安装
 function start_install(){
     update_source
@@ -114,6 +123,7 @@ function start_install(){
     install_qa
     delete_install_file
     systemctl status qagent.service
+    replace_start_image
     echo -e "\033[32mQimenIDC Controller install success!\033[0m"
     echo -e "\033[32m-->start: systemctl start qagent.service\033[0m"
     echo -e "\033[32m-->stop: systemctl stop qagent.service\033[0m"
