@@ -2,9 +2,11 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -16,7 +18,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+
 import java.util.HashMap;
+import java.util.List;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.DELETE_VM;
 import static com.chuqiyun.proxmoxveams.constant.TaskType.RESET_PASSWORD;
@@ -34,6 +38,8 @@ public class DeleteVmCron {
     private VmhostService vmhostService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private IppoolService ippoolService;
 
     /**
     * @Author: mryunqi
@@ -67,6 +73,16 @@ public class DeleteVmCron {
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
+
+        List<String> ipList = vmhost.getIpList();
+        for (String ip : ipList) {
+            Ippool ippool = ippoolService.getIppoolByIp(ip);
+            if (ippool != null) {
+                ippool.setStatus(0);
+                ippool.setVmId(0);
+                ippoolService.updateById(ippool);
+            }
+        }
         // 删除数据库中的虚拟机信息
         vmhostService.removeById(task.getHostid());
         // 修改任务状态为2

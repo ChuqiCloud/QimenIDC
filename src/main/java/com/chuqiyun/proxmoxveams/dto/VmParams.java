@@ -154,4 +154,6 @@ public class VmParams {
     private Map<Object, Object> task;
     private String status;
     private Long expirationTime;
+    // 临时ip list
+    private List<String> ipList;
 }

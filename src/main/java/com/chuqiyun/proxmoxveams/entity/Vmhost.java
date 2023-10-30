@@ -144,6 +144,8 @@ public class Vmhost extends Model<Vmhost> {
     private Integer status;
     private Long createTime;
     private Long expirationTime;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> ipList;
 
 
 

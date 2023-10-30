@@ -175,6 +175,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setOnBoot(vmParams.getOnBoot());
         vmhost.setBandwidth(vmParams.getBandwidth());
         vmhost.setIpConfig(vmParams.getIpConfig());
+        vmhost.setIpList(vmParams.getIpList());
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
         }

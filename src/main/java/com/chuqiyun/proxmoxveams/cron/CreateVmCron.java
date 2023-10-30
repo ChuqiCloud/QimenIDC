@@ -4,13 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
-import com.chuqiyun.proxmoxveams.service.CreateVmService;
-import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.TaskService;
-import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -20,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -38,6 +37,8 @@ public class CreateVmCron {
     private TaskService taskService;
     @Resource
     private CreateVmService createVmService;
+    @Resource
+    private IppoolService ippoolService;
 
     /**
      * 创建虚拟机
@@ -99,6 +100,17 @@ public class CreateVmCron {
                 task.setVmid(vmIdInit);
                 task.setHostid(vmhostId);
                 taskService.updateById(task);
+            }
+
+            List<String> ipList = vmParams.getIpList();
+            for (String ip : ipList){
+                // 根据ip查询ip实体类
+                Ippool ippool = ippoolService.getIppoolByIp(ip);
+                if (ippool != null){
+                    ippool.setVmId(vmIdInit);
+                    ippool.setStatus(1);
+                    ippoolService.updateById(ippool);
+                }
             }
 
             int vmId = createVmService.createPveVm(vmParams,vmIdInit);

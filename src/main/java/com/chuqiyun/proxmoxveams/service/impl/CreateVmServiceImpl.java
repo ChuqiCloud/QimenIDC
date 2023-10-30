@@ -11,7 +11,9 @@ import com.chuqiyun.proxmoxveams.utils.*;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
 
@@ -268,6 +270,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 获取可用ip最多的ip池
         Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
+        List<String> ipList = new ArrayList<>();
         if (vmParams.getIpConfig() == null || vmParams.getIpConfig().size() <= 1){
             HashMap<String,String> ipConfig = new HashMap<>();
             if (ipPool == null) {
@@ -287,6 +290,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             if (vmParams.getHostname() == null) {
                 vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
             }
+            ipList.add(ipEntity.getIp());
         }
         else {
             int count = vmParams.getIpConfig().size();
@@ -311,11 +315,13 @@ public class CreateVmServiceImpl implements CreateVmService {
                     if (vmParams.getHostname() == null) {
                         vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
                     }
+                    ipList.add(ipEntity.getIp());
                 }
             }
             // 设置ip地址
             vmParams.setIpConfig(ipConfigMap);
         }
+        vmParams.setIpList(ipList);
         // 设置dns
         if (vmParams.getDns1() == null) {
             vmParams.setDns1(ipPool.getDns1());

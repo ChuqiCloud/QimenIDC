@@ -38,5 +38,7 @@ public interface IppoolService extends IService<Ippool> {
     Long getIpCountByPoolId(Integer ippoolId);
 
     Ippool getOneOkIpByPoolId(Integer ippoolId);
+
+    Ippool getIppoolByIp(String ip);
 }
 

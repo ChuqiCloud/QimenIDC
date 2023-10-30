@@ -153,5 +153,17 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
         return this.lambdaQuery().eq(Ippool::getPoolId,ippoolId).eq(Ippool::getStatus,0).last("limit 1").one();
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 根据ip地址查询ip实体类
+    * @DateTime: 2023/10/30 19:40
+    * @Params: String ip ip地址
+    * @Return Ippool ip实体类
+    */
+    @Override
+    public Ippool getIppoolByIp(String ip) {
+        return this.lambdaQuery().eq(Ippool::getIp, ip).one();
+    }
+
 }
 
