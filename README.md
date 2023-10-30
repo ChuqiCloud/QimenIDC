@@ -58,6 +58,12 @@
 wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash install.sh
 ```
 
+注意：如何你不是pve的企业订阅用户，需要先删除pve官方的企业源，否则会导致安装失败。
+
+更换源教程：
+
+[https://www.mryunqi.com/archives/576](https://www.mryunqi.com/archives/576)
+
 ### 节点端口开放
     
     7600/tcp
