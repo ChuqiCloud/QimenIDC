@@ -165,5 +165,16 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
         return this.lambdaQuery().eq(Ippool::getIp, ip).one();
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 批量删除指定条件的所有IP
+    * @DateTime: 2023/10/31 22:37
+    * @Params: QueryWrapper<Ippool> ippool 条件
+    * @Return  boolean 是否成功
+    */
+    @Override
+    public boolean deleteIppoolByCondition(QueryWrapper<Ippool> ippool) {
+        return this.remove(ippool);
+    }
 }
 

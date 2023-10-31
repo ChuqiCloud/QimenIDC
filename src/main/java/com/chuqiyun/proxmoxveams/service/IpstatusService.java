@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.dto.IpParams;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 
 import java.util.List;
@@ -27,5 +28,7 @@ public interface IpstatusService extends IService<Ipstatus> {
     List<Integer> getAllId();
 
     Ipstatus getIpStatusMaxByNodeId(Integer nodeId);
+
+    UnifiedResultDto<Object> deleteIppoolById(Long id);
 }
 

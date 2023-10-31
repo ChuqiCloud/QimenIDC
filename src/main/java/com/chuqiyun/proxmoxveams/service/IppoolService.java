@@ -40,5 +40,7 @@ public interface IppoolService extends IService<Ippool> {
     Ippool getOneOkIpByPoolId(Integer ippoolId);
 
     Ippool getIppoolByIp(String ip);
+
+    boolean deleteIppoolByCondition(QueryWrapper<Ippool> ippool);
 }
 

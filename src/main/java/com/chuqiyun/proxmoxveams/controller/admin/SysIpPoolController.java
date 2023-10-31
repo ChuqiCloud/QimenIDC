@@ -2,7 +2,9 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.IpParams;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
@@ -262,6 +264,26 @@ public class SysIpPoolController {
         } else {
             return ResponseResult.fail("修改失败！");
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除指定IP池
+    * @DateTime: 2023/10/31 22:43
+    */
+    @AdminApiCheck
+    @DeleteMapping("/{adminPath}/deleteIpPool/{poolId}")
+    public ResponseResult<Object> deleteIpPool(@PathVariable("adminPath") String adminPath,
+                                               @PathVariable("poolId") Long poolId) throws UnauthorizedException {
+        if (!adminPath.equals(ADMIN_PATH)) {
+            //判断后台路径是否正确
+            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
+        }
+        UnifiedResultDto<Object> resultDto = ipstatusService.deleteIppoolById(poolId);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
     }
 
 }

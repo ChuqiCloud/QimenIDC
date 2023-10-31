@@ -3,12 +3,17 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.IpstatusDao;
 import com.chuqiyun.proxmoxveams.dto.IpParams;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
+import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.Resource;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,6 +25,8 @@ import java.util.stream.Collectors;
  */
 @Service("ipstatusService")
 public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> implements IpstatusService {
+    @Resource
+    private IppoolService ippoolService;
     /**
     * @Author: mryunqi
     * @Description: 插入IP组信息
@@ -95,6 +102,46 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     public Ipstatus getIpStatusMaxByNodeId(Integer nodeId) {
         return this.lambdaQuery().eq(Ipstatus::getNodeid,nodeId).orderByDesc(Ipstatus::getAvailable).last("limit 1").one();
     }
+
+    /**
+     * @Author: mryunqi
+     * @Description: 根据id删除ip池
+     * @DateTime: 2023/10/31 22:17
+     * @Params: Long id IP池id
+     * @Return UnifiedResultDto<Object> 删除结果
+     */
+    @Override
+    public UnifiedResultDto<Object> deleteIppoolById(Long id) {
+        QueryWrapper<Ipstatus> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("id", id);
+        // 判断是否存在
+        Ipstatus ipStatus = this.getOne(queryWrapper);
+        if (ipStatus == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
+        }
+        QueryWrapper<Ippool> ippoolQueryWrapper = new QueryWrapper<>();
+        ippoolQueryWrapper.eq("status", 1); // 1为被使用
+        int count = ippoolService.getIpCountByCondition(ippoolQueryWrapper); // 获取被使用的IP数量
+        if (count > 0) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_HAS_USED, null);
+        }
+        ippoolQueryWrapper.clear(); // 清空条件
+        ippoolQueryWrapper.eq("pool_id", ipStatus.getId()); // 匹配该IP池下的所有IP
+        // 删除该IP池下的所有IP
+        try {
+            ippoolService.deleteIppoolByCondition(ippoolQueryWrapper);
+        } catch (Exception e) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_IP_POOL_IP_LIST_FAILED, e.getMessage());
+        }
+
+        boolean remove = this.remove(queryWrapper);
+        if (remove) {
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+        } else {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_IP_POOL_FAILED, null);
+        }
+    }
+
 
 }
 
