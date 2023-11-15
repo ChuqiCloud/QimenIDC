@@ -125,6 +125,14 @@ public class VmInfoServiceImpl implements VmInfoService {
         vmHostDto.setVmhost(vmhost);
         Integer nodeId = vmhost.getNodeid();
         Master node = masterService.getById(nodeId);
+        if (node.getArea() == null){
+            vmHostDto.setArea(null);
+        }else {
+            Area area = areaService.getById(node.getArea());
+            vmHostDto.setArea(area.getName());
+        }
+        Os os = osService.selectOsByFileName(vmhost.getOs());
+        vmHostDto.setOs(os);
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
