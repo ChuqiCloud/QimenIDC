@@ -67,7 +67,7 @@ public class Configuretemplate extends Model<Configuretemplate> {
     
     private Integer bandwidth;
     
-    private Integer onboot;
+    private Integer onBoot;
 
     /**
      * 获取主键值

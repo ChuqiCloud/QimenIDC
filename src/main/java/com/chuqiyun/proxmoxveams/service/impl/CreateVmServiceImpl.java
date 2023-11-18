@@ -108,7 +108,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             }
             vmParams.setDataDisk(map);
             vmParams.setBandwidth(configuretemplate.getBandwidth());
-            vmParams.setOnBoot(configuretemplate.getOnboot());
+            vmParams.setOnBoot(configuretemplate.getOnBoot());
         }
         // 判断带宽是否为空
         if (vmParams.getBandwidth() == null) {
@@ -289,6 +289,11 @@ public class CreateVmServiceImpl implements CreateVmService {
             // 判断hostname是否为空
             if (vmParams.getHostname() == null) {
                 vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
+            }else {
+                // 判断是否为中文
+                if (ModUtil.isChinese(vmParams.getHostname())) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_NOT_CHINESE, null);
+                }
             }
             ipList.add(ipEntity.getIp());
         }

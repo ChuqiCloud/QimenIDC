@@ -9,6 +9,7 @@ import org.springframework.cglib.beans.BeanMap;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -180,5 +181,18 @@ public class ModUtil {
             map.put(key+"",beanMap.get(key));
         }
         return map;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 判断字符串是否为中文
+    * @DateTime: 2023/11/18 15:44
+    * @Params:  String str 字符串
+    * @Return  boolean  true:是中文  false:不是中文
+    */
+    public static boolean isChinese(String str) {
+        Pattern pattern = Pattern.compile("[\u4e00-\u9fa5]");
+        Matcher matcher = pattern.matcher(str);
+        return matcher.find();
     }
 }

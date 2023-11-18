@@ -105,7 +105,6 @@ public class OsCron {
                         Object osNodeStatusObj = map.get(key);
                         // 转换为OsNodeStatus对象
                         OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
-
                         // 判断节点状态
                         Master node = masterService.getById(osNodeStatus.getNodeId());
                         if (node == null) {
@@ -114,8 +113,8 @@ public class OsCron {
                         if (node.getControllerStatus() != 0) {
                             continue;
                         }
-                        // 如果节点状态为0,2,3，则直接跳过
-                        if (osNodeStatus.getStatus() == 0 || osNodeStatus.getStatus() == 2 || osNodeStatus.getStatus() == 3) {
+                        // 如果节点状态为0,2，则直接跳过 0=未下载;1=下载中;2=已下载;3=下载失败
+                        if (osNodeStatus.getStatus() == 0 || osNodeStatus.getStatus() == 2) {
                             continue;
                         }
                         JSONObject downloadInfo;
@@ -123,9 +122,14 @@ public class OsCron {
                             // 获取节点下载进度
                             downloadInfo = osService.getDownloadProgress(os.getId(), osNodeStatus.getNodeId());
                         } catch (Exception e) {
+                            e.printStackTrace();
                             continue;
                         }
                         String progress = downloadInfo.getString("progress");
+                        if (progress == null) {
+                            continue;
+                        }
+
                         // 将progress转换为double类型
                         double progressDouble = Double.parseDouble(progress.substring(0, progress.length() - 1));
                         // 如果进度为100.0%，则设置节点状态为1，1为下载完成

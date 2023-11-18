@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
@@ -35,6 +37,8 @@ public class ResetSystemCron {
     private VmhostService vmhostService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private OsService osService;
 
     /**
      * 重装系统
@@ -77,6 +81,14 @@ public class ResetSystemCron {
 
         boolean resetDataDisk = Boolean.parseBoolean(systemMap.get("resetDataDisk").toString());
 
+        // 获取os别称
+        Os os = osService.isExistOs(osName);
+        vmhost.setOsName(os.getFileName());
+        vmhost.setOsType(os.getOsType());
+        vmhost.setOs(os.getName());
+        // 修改vm信息
+        vmhostService.updateById(vmhost);
+
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
 
         // 删除系统盘
@@ -104,7 +116,7 @@ public class ResetSystemCron {
         importTask.setCreateDate(time);
         HashMap<Object,Object> importParams = new HashMap<>();
         importParams.put("os", osName);
-        importParams.put("size", vmhost.getSystemDiskSize());
+        importParams.put("systemDiskSize", vmhost.getSystemDiskSize());
         importTask.setParams(importParams);
         if (!taskService.insertTask(importTask)) {
             UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建导入操作系统任务失败");
@@ -142,7 +154,7 @@ public class ResetSystemCron {
         updateSystemDiskTask.setVmid(vmhost.getVmid());
         updateSystemDiskTask.setType(UPDATE_SYSTEM_DISK_SIZE);
         updateSystemDiskTask.setStatus(0);
-        updateSystemDiskTask.setParams(task.getParams());
+        updateSystemDiskTask.setParams(importParams);
         updateSystemDiskTask.setCreateDate(time);
         if (!taskService.save(updateSystemDiskTask)){
             UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());

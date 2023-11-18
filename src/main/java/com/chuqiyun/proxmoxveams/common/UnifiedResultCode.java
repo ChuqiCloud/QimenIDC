@@ -72,6 +72,8 @@ public enum UnifiedResultCode {
     ERROR_DELETE_IP_POOL_IP_LIST_FAILED(1029, "Failed to delete IP list corresponding to IP pool"),
     // 删除IP池失败
     ERROR_DELETE_IP_POOL_FAILED(1030, "Failed to delete IP pool"),
+    // hostname不能为中文
+    ERROR_HOSTNAME_NOT_CHINESE(1031, "Hostname cannot be Chinese"),
     /*pve错误码范围：2xxx*/
 
     /*成功*/
