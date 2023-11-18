@@ -24,7 +24,7 @@ spring:
     active: ${config.profiles}
   application:
     # 应用名称
-    name: ProxmoxVE-AMS
+    name: QimenIDC
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
@@ -59,6 +59,8 @@ springfox:
 
 #health: http://localhost:8081/actuator/health 监控检查
 #info: http://localhost:8081/actuator/info 项目信息
+#metrics: http://localhost:8081/actuator/metrics 监控指标
+#prometheus: http://localhost:8081/actuator/prometheus prometheus监控指标
 info:
   application:
     name: "QimenIDC Community Edition"
@@ -72,6 +74,24 @@ management:
     web:
       exposure:
         include: "*"
+
+  endpoint:
+    health:
+      show-details: always # 显示详细信息
+    prometheus: # prometheus监控指标
+      enabled: true
+    shutdown:
+      enabled: true # 是否启用shutdown监控点
+    metrics:
+        enabled: true # 是否启用metrics监控点
+
+  metrics:
+    tags:
+      application: ${info.application.name}
+    export:
+      prometheus:
+        enabled: true
+
   info:
     env:
       enabled: true
