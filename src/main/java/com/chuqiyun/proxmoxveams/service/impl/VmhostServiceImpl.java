@@ -741,6 +741,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
         // 设置虚拟机状态为重装系统中
         vmhost.setStatus(13);
+        vmhost.setOsName(os.getFileName());
+        vmhost.setOsType(os.getType());
+        vmhost.setOs(os.getName());
+
         this.updateById(vmhost);
 
         // 创建重置虚拟机系统的任务
@@ -943,6 +947,34 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RENEWAL_FAILED, null);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 更新虚拟机OS数据
+    * @DateTime: 2023/11/18 18:29
+    * @Params: vmId 虚拟机id，os 虚拟机OS数据
+     * @Return void 无返回值
+    */
+    @Override
+    public void updateVmhostOsData(long vmId, Os os) {
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmId);
+        // 判空
+        if (vmhost == null){
+            return;
+        }
+        // 更新虚拟机OS数据
+        vmhost.setOsName(os.getFileName());
+        vmhost.setOsType(os.getType());
+        vmhost.setOs(os.getName());
+
+        // 更新虚拟机信息
+        if (this.updateById(vmhost)){
+            UnifiedLogger.log(UnifiedLogger.LogType.VMHOST_UPDATE_OS,"更新虚拟机OS数据成功，虚拟机id为：" + vmId);
+        }else{
+            UnifiedLogger.log(UnifiedLogger.LogType.VMHOST_UPDATE_OS,"更新虚拟机OS数据失败，虚拟机id为：" + vmId);
+        }
     }
 }
 

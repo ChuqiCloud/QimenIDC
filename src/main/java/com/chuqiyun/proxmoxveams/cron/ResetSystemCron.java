@@ -61,8 +61,6 @@ public class ResetSystemCron {
         // 获取node信息
         Master node = masterService.getById(task.getNodeid());
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-        // 获取vm信息
-        Vmhost vmhost = vmhostService.getById(task.getHostid());
         // 获取系统信息
         Map<Object, Object> systemMap = task.getParams();
         // 判断是否为空
@@ -81,13 +79,11 @@ public class ResetSystemCron {
 
         boolean resetDataDisk = Boolean.parseBoolean(systemMap.get("resetDataDisk").toString());
 
-        // 获取os别称
-        Os os = osService.isExistOs(osName);
-        vmhost.setOsName(os.getFileName());
-        vmhost.setOsType(os.getOsType());
-        vmhost.setOs(os.getName());
-        // 修改vm信息
-        vmhostService.updateById(vmhost);
+//        // 获取os别称
+//        Os os = osService.isExistOs(osName);
+//        vmhostService.updateVmhostOsData(task.getHostid(), os);
+
+        Vmhost vmhost = vmhostService.getById(task.getHostid());
 
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
 

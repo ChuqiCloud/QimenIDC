@@ -78,7 +78,7 @@ public class CreateVmCron {
             }
             Map<Object, Object> taskMap = new HashMap<>();
             taskMap.put(String.valueOf(System.currentTimeMillis()), task.getId());
-            vmParams.setTask(params);
+            //vmParams.setTask(params);
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
 
             // 将创建的虚拟机信息存入数据库

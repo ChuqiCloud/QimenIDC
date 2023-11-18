@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 
 import java.util.HashMap;
@@ -50,5 +51,7 @@ public interface VmhostService extends IService<Vmhost> {
     Boolean addVmHostTask(Object hostId, Object taskId);
 
     UnifiedResultDto<Object> updateVmhostExpireTime(RenewalParams renewalParams);
+
+    void updateVmhostOsData(long vmId, Os os);
 }
 

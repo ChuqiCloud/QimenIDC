@@ -35,6 +35,8 @@ public class UnifiedLogger {
         TASK_START_VM("[Task-StartVm]"),
         // 删除虚拟机
         TASK_DELETE_VM("[Task-DeleteVm]"),
+        // 更新虚拟机系统
+        VMHOST_UPDATE_OS("[Vmhost-UpdateOs]"),
         // 需要时添加更多日志类型
         ;
 
