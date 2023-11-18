@@ -131,7 +131,7 @@ public class VmInfoServiceImpl implements VmInfoService {
             Area area = areaService.getById(node.getArea());
             vmHostDto.setArea(area.getName());
         }
-        Os os = osService.selectOsByFileName(vmhost.getOs());
+        Os os = osService.isExistOs(vmhost.getOsName());
         vmHostDto.setOs(os);
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
@@ -213,7 +213,7 @@ public class VmInfoServiceImpl implements VmInfoService {
                 Area area = areaService.getById(node.getArea());
                 vmHostDto.setArea(area.getName());
             }
-            Os os = osService.selectOsByFileName(vmhost.getOs());
+            Os os = osService.isExistOs(vmhost.getOsName());
             vmHostDto.setOs(os);
         }
         // 将Page对象转换为Map
