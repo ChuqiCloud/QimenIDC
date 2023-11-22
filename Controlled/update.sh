@@ -5,7 +5,8 @@
 function get_url(){
     local url=$(curl -s https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/update.txt)
     # 下载
-    wget -P /home/software/ $url
+    wget -P /home/software/ $url --no-check-certificate
+
 }
 
 get_url

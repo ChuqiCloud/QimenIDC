@@ -50,8 +50,13 @@ async def wget(url:str,path:str):
     if os.path.exists(os.path.join(path,url.split('/')[-1])):
         # 获取文件大小
         size=os.path.getsize(os.path.join(path,url.split('/')[-1]))
-        # 获取文件总大小
-        total_size=int(os.popen('curl -I -s -L "{}" | grep Content-Length | awk \'{{print $2}}\''.format(url)).read().strip())
+        # 获取文件总大小 curl -I -s -L "https://mirror.chuqiyun.com/cloud-images/ubuntu/Ubuntu-22.04-x64.qcow2" | grep -i "Content-Length" | awk '{print $2}'
+        size_command = f"curl -I -s -L {url} | grep -i 'Content-Length' | awk '{{print $2}}'"
+        size_output = os.popen(size_command).read().strip()
+        if size_output.isdigit():  # 检查输出是否是有效的数字
+            total_size = int(size_output)
+        else:
+            total_size = 0
         # 计算下载进度
         progress=str(round(size/total_size*100,2))+'%'
         return common_response(CodeEnum.SUCCESS,'success',{'file':url.split('/')[-1],'progress':progress})

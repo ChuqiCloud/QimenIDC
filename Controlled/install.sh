@@ -21,8 +21,12 @@ function update_source(){
 function init_system_dir(){
     mkdir -p /home/images
     mkdir -p /home/software
+    mkdir -p /home/software/websocketd
+    mkdir -p /home/software/noVNC
     mkdir -p /home/software/QAgent
     mkdir -p /home/software/python3.10.5
+    # 创建空文件vnc
+    touch /home/software/vnc
 }
 # 安装必须环境依赖
 function install_python_source(){
@@ -36,7 +40,7 @@ function install_python(){
     else
         cd /home/software
         # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-        wget http://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz
+        wget http://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz --no-check-certificate
         tar -zxvf Python-3.10.5.tgz
         cd Python-3.10.5
         ./configure --prefix=/home/software/python3.10.5
@@ -52,7 +56,7 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software
-    wget http://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz
+    wget http://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz --no-check-certificate
     tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
@@ -110,6 +114,65 @@ function replace_start_image(){
     systemctl restart pvedaemon.service
 }
 
+# 判断系统是64位还是32位或者ARM
+function check_system(){
+    if [ $(uname -m) == "x86_64" ];then
+        echo "64"
+    elif [ $(uname -m) == "i386" ];then
+        echo "32"
+    elif [ $(uname -m) == "aarch64" ];then
+        echo "arm"
+    fi
+}
+
+# 下载websocketd程序
+function download_websocketd(){
+    cd /home/software/websocketd
+
+    url="http://mirror.chuqiyun.com/software/websocketd/$(check_system())/websocketd"
+
+    wget "$url" --no-check-certificate
+    chmod +x /home/software/websocketd/websocketd
+}
+
+# 下载noVNC程序
+function download_noVNC(){
+    cd /home/software/noVNC
+
+    url="http://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz"
+
+    wget "$url" --no-check-certificate
+    tar -zxvf noVNC.tar.gz
+    rm -rf noVNC.tar.gz
+    # 赋予start_novnc权限
+    chmod +x /home/software/noVNC/start_novnc.sh
+}
+
+# 安装websockify
+function install_websockify(){
+    cd /home/software/noVNC/utils/websockify
+    python3.10 setup.py install
+    chmod +x /home/software/noVNC/utils/websockify/run
+}
+
+# 配置noVNC开机自启动以及systemd服务
+function config_noVNC_service(){
+    echo "[Unit]
+Description=noVNC Service
+After=network.target
+[Service]
+Type=simple
+ExecStart=/home/software/noVNC/utils/websockify/run --web /home/software/noVNC --target-config /home/software/vnc 6080
+Restart=on-failure
+User=root
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/noVNC.service
+    systemctl daemon-reload
+    systemctl enable noVNC.service
+    systemctl start noVNC.service
+}
+
+
 # 开始安装
 function start_install(){
     update_source
@@ -121,6 +184,10 @@ function start_install(){
     config_qimenidc_controller_token
     config_qimenidc_controller_service
     install_qa
+    download_websocketd
+    download_noVNC
+    install_websockify
+    config_noVNC_service
     delete_install_file
     systemctl status qagent.service
     replace_start_image

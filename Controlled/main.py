@@ -16,7 +16,7 @@ app=FastAPI(
 )
 
 # 路由
-from controller import update,changePassword,importDisk,status,file
+from controller import update,changePassword,importDisk,status,file,vnc
 
 # 挂载路由
 app.include_router(update.update_router,tags=["update"])
@@ -24,6 +24,7 @@ app.include_router(changePassword.changePassword_router,tags=["changePassword"])
 app.include_router(importDisk.importDisk_router,tags=["importDisk"])
 app.include_router(status.status_router,tags=["status"])
 app.include_router(file.file_router,tags=["file"])
+app.include_router(vnc.vnc_router,tags=["vnc"])
 
 '''
 自定义错误处理
