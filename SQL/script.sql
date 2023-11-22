@@ -14,7 +14,8 @@ create table config
     token                  varchar(255) default '0'    not null,
     linux_system_disk_size int          default 40     null,
     win_system_disk_size   int          default 60     null,
-    bwlimit                bigint       default 512000 null comment '默认io限制'
+    bwlimit                bigint       default 512000 null comment '默认io限制',
+    vnc_time               int          default 120    null comment 'vnc失效时间，单位分钟'
 );
 
 create table configuretemplate
@@ -40,7 +41,7 @@ create table configuretemplate
     system_disk_size int                         null,
     data_disk        json                        null,
     bandwidth        int                         null,
-    onBoot           int          default 0      null
+    on_boot          int          default 0      null
 )
     comment '配置模板';
 
@@ -71,6 +72,7 @@ create table ippool
     ip          varchar(15)   not null,
     subnet_mask varchar(15)   not null,
     gateway     varchar(15)   not null,
+    mac         varchar(255)  null,
     dns1        varchar(15)   null,
     dns2        varchar(15)   null,
     status      int default 0 not null
@@ -241,6 +243,39 @@ create table vmhost
     create_time           mediumtext                                 not null comment '创建时间',
     expiration_time       mediumtext                                 not null comment '到期时间',
     ip_list               text                                       null
+);
+
+create table vncdata
+(
+    id              bigint auto_increment
+        primary key,
+    vnc_id          bigint        null,
+    status          int default 0 not null comment '0=正常；1=失效',
+    create_date     bigint        null,
+    expiration_time bigint        null comment '失效时间'
+);
+
+create table vncinfo
+(
+    id       bigint auto_increment
+        primary key,
+    host_id  bigint       null,
+    vmid     bigint       null,
+    host     varchar(255) null comment '控制器连接地址',
+    port     int          null comment 'vnc端口',
+    password varchar(255) null comment 'vnc密码'
+);
+
+create table vncnode
+(
+    id          bigint auto_increment
+        primary key,
+    name        varchar(255)  not null comment '别称',
+    host        varchar(255)  null,
+    port        int           null comment '控制器端口',
+    domain      varchar(255)  null,
+    status      int default 0 not null comment '0=true；1=false',
+    create_date bigint        null comment '创建日期'
 );
 
 

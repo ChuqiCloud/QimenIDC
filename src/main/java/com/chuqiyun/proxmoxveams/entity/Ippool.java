@@ -32,6 +32,7 @@ public class Ippool extends Model<Ippool> {
     
     private String subnetMask;
     private String gateway;
+    private String mac;
     private String dns1;
     private String dns2;
     

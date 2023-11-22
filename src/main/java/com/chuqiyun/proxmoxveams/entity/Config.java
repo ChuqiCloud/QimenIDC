@@ -30,6 +30,11 @@ public class Config extends Model<Config> {
      */
     private Long bwlimit;
     /**
+     * vnc过期时间(单位:分钟)
+     */
+    private Integer vncTime;
+
+    /**
      * 获取主键值
      *
      * @return 主键值
