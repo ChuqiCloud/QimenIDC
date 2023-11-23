@@ -23,6 +23,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Objects;
 
 import static com.chuqiyun.proxmoxveams.utils.Base64Decoder.decodeBase64;
@@ -108,6 +109,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                 }
             } else if (method.isAnnotationPresent(AdminApiCheck.class)) {
                 AdminApiCheck apiCheck = method.getAnnotation(AdminApiCheck.class);
+
                 //如果存在该注解
                 if (null != apiCheck) {
                     //获得名为member的对象

@@ -5,6 +5,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -12,9 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
  * @date 2023/9/4
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysTestController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
 
     /**
     * @Author: mryunqi
@@ -22,11 +22,8 @@ public class SysTestController {
     * @DateTime: 2023/9/4 20:53
     */
     @AdminApiCheck
-    @GetMapping(value = "/{adminPath}/test")
-    public Object test(@PathVariable("adminPath") String adminPath){
-        if (!ADMIN_PATH.equals(adminPath)){
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @GetMapping(value = "/test")
+    public Object test(){
         return ResponseResult.ok("通讯正常");
     }
 }

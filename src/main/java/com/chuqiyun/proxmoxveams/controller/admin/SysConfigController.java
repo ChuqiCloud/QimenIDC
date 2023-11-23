@@ -17,9 +17,8 @@ import java.util.Map;
  * @date 2023/8/12
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysConfigController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private ConfigService configService;
     
@@ -29,13 +28,9 @@ public class SysConfigController {
     * @DateTime: 2023/8/12 14:33
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getControlledSecretKey")
-    public ResponseResult<Object> getControlledSecretKey(@PathVariable("adminPath") String adminPath)
+    @GetMapping("/getControlledSecretKey")
+    public ResponseResult<Object> getControlledSecretKey()
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(configService.getToken());
     }
 
@@ -45,13 +40,9 @@ public class SysConfigController {
     * @DateTime: 2023/8/12 14:41
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getVmDefaultDiskSize")
-    public ResponseResult<Object> getVmDefaultDiskSize(@PathVariable("adminPath") String adminPath)
+    @GetMapping("/getVmDefaultDiskSize")
+    public ResponseResult<Object> getVmDefaultDiskSize()
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Map<String,Integer> result = new HashMap<>();
         result.put("Linux",configService.getLinuxSystemDiskSize());
         result.put("Windows",configService.getWinSystemDiskSize());
@@ -64,14 +55,9 @@ public class SysConfigController {
     * @DateTime: 2023/8/12 14:45
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateVmDefaultDiskSize",method = {RequestMethod.POST, RequestMethod.PUT})
-    public ResponseResult<Object> updateVmDefaultDiskSize(@PathVariable("adminPath") String adminPath,
-                                                          @RequestBody Map<String,Integer> diskSize)
+    @RequestMapping(value = "/updateVmDefaultDiskSize",method = {RequestMethod.POST, RequestMethod.PUT})
+    public ResponseResult<Object> updateVmDefaultDiskSize(@RequestBody Map<String,Integer> diskSize)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Config config = configService.getById(1);
         config.setLinuxSystemDiskSize(diskSize.get("Linux"));
         config.setWinSystemDiskSize(diskSize.get("Windows"));

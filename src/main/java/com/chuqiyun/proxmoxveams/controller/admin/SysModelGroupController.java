@@ -20,9 +20,8 @@ import javax.annotation.Resource;
  * @date 2023/8/20
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysModelGroupController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private ModelgroupService modelgroupService;
     @Resource
@@ -36,13 +35,8 @@ public class SysModelGroupController {
     * @DateTime: 2023/8/20 16:20
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/addModelGroup")
-    public ResponseResult<String> addModelGroup(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody Modelgroup modelgroup) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/addModelGroup")
+    public ResponseResult<String> addModelGroup(@RequestBody Modelgroup modelgroup) throws UnauthorizedException {
         Long nowTime = System.currentTimeMillis();
         modelgroup.setCreateDate(nowTime);
         String args = null;
@@ -86,13 +80,8 @@ public class SysModelGroupController {
     * @DateTime: 2023/8/20 18:34
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/deleteModelGroup",method = {RequestMethod.DELETE,RequestMethod.POST})
-    public ResponseResult<String> deleteModelGroup(@PathVariable("adminPath") String adminPath,
-                                                   @RequestBody Modelgroup modelgroup) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/deleteModelGroup",method = {RequestMethod.DELETE,RequestMethod.POST})
+    public ResponseResult<String> deleteModelGroup(@RequestBody Modelgroup modelgroup) throws UnauthorizedException {
         if (modelgroupService.removeById(modelgroup.getId())){
             return ResponseResult.ok("删除成功");
         }
@@ -105,13 +94,8 @@ public class SysModelGroupController {
     * @DateTime: 2023/8/20 18:54
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateModelGroup",method = {RequestMethod.PUT,RequestMethod.POST})
-    public ResponseResult<String> updateModelGroup(@PathVariable("adminPath") String adminPath,
-                                                   @RequestBody Modelgroup modelgroup) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/updateModelGroup",method = {RequestMethod.PUT,RequestMethod.POST})
+    public ResponseResult<String> updateModelGroup(@RequestBody Modelgroup modelgroup) throws UnauthorizedException {
         String args = null;
         // 判断cpuModel是否为空
         if (modelgroup.getCpuModel() != null){
@@ -153,13 +137,8 @@ public class SysModelGroupController {
     * @DateTime: 2023/8/20 18:57
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getModelGroup")
-    public ResponseResult<Modelgroup> getModelGroup(@PathVariable("adminPath") String adminPath,
-                                                    @RequestParam("modelGroupId") Long modelGroupId) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @GetMapping("/getModelGroup")
+    public ResponseResult<Modelgroup> getModelGroup(@RequestParam("modelGroupId") Long modelGroupId) throws UnauthorizedException {
         Modelgroup modelgroup = modelgroupService.getById(modelGroupId);
         if (modelgroup == null){
             return ResponseResult.fail("模型组不存在");
@@ -173,14 +152,9 @@ public class SysModelGroupController {
     * @DateTime: 2023/8/20 18:57
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getModelGroupPage")
-    public ResponseResult<Object> getModelGroupPage(@PathVariable("adminPath") String adminPath,
-                                                              @RequestParam("page") Integer page,
+    @GetMapping("/getModelGroupPage")
+    public ResponseResult<Object> getModelGroupPage(@RequestParam("page") Integer page,
                                                               @RequestParam("size") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Page<Modelgroup> modelgroupPage = new Page<>(page, size);
         modelgroupPage = modelgroupService.page(modelgroupPage);
         return ResponseResult.ok(modelgroupPage);

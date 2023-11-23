@@ -15,9 +15,8 @@ import javax.annotation.Resource;
  * @date 2023/9/21
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysConfigureTemplateController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private ConfiguretemplateService configuretemplateService;
 
@@ -27,14 +26,9 @@ public class SysConfigureTemplateController {
     * @DateTime: 2023/9/21 22:59
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/addConfiguretemplate")
-    public ResponseResult<String> addConfiguretemplate(@PathVariable("adminPath") String adminPath,
-                                                       @RequestBody Configuretemplate configuretemplate)
+    @PostMapping("/addConfiguretemplate")
+    public ResponseResult<String> addConfiguretemplate(@RequestBody Configuretemplate configuretemplate)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (configuretemplateService.addConfiguretemplate(configuretemplate)){
             return ResponseResult.ok("增加配置模板成功");
         }
@@ -47,14 +41,9 @@ public class SysConfigureTemplateController {
     * @DateTime: 2023/9/21 23:08
     */
     @AdminApiCheck
-    @DeleteMapping(value = "/{adminPath}/deleteConfiguretemplate/{id}")
-    public ResponseResult<String> deleteConfiguretemplate(@PathVariable("adminPath") String adminPath,
-                                                          @PathVariable("id") Integer id)
+    @DeleteMapping(value = "/deleteConfiguretemplate/{id}")
+    public ResponseResult<String> deleteConfiguretemplate(@PathVariable("id") Integer id)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (configuretemplateService.deleteConfiguretemplateById(id)){
             return ResponseResult.ok("删除配置模板成功");
         }
@@ -67,14 +56,9 @@ public class SysConfigureTemplateController {
     * @DateTime: 2023/9/21 23:09
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateConfiguretemplate",method = {RequestMethod.PUT,RequestMethod.POST})
-    public ResponseResult<String> updateConfiguretemplate(@PathVariable("adminPath") String adminPath,
-                                                          @RequestBody Configuretemplate configuretemplate)
+    @RequestMapping(value = "/updateConfiguretemplate",method = {RequestMethod.PUT,RequestMethod.POST})
+    public ResponseResult<String> updateConfiguretemplate(@RequestBody Configuretemplate configuretemplate)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (configuretemplateService.updateConfiguretemplate(configuretemplate)){
             return ResponseResult.ok("修改配置模板成功");
         }
@@ -87,15 +71,10 @@ public class SysConfigureTemplateController {
     * @DateTime: 2023/9/21 23:10
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getConfiguretemplateByPage")
-    public ResponseResult<Object> getConfiguretemplateByPage(@PathVariable("adminPath") String adminPath,
-                                                                        @RequestParam("page") Integer page,
-                                                                        @RequestParam("limit") Integer limit)
+    @GetMapping("/getConfiguretemplateByPage")
+    public ResponseResult<Object> getConfiguretemplateByPage(@RequestParam("page") Integer page,
+                                                             @RequestParam("limit") Integer limit)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(configuretemplateService.selectConfiguretemplatePage(page,limit));
     }
 }

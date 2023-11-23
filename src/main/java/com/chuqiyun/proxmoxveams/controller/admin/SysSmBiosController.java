@@ -15,9 +15,8 @@ import javax.annotation.Resource;
  * @date 2023/8/20
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysSmBiosController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private SmbiosService smbiosService;
 
@@ -27,14 +26,9 @@ public class SysSmBiosController {
     * @DateTime: 2023/8/20 14:51
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/addSmbiosInfo")
-    public ResponseResult<Object> addSmbiosInfo(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody Smbios smbios)
+    @PostMapping("/addSmbiosInfo")
+    public ResponseResult<Object> addSmbiosInfo(@RequestBody Smbios smbios)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Long nowTime = System.currentTimeMillis();
         // 判断type是否合规，小于128
         if (smbios.getType() > 128){
@@ -53,14 +47,9 @@ public class SysSmBiosController {
     * @DateTime: 2023/8/20 15:18
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/deleteSmbiosInfo",method = {RequestMethod.POST,RequestMethod.DELETE})
-    public ResponseResult<String> deleteSmbiosInfo(@PathVariable("adminPath") String adminPath,
-                                                   @RequestBody Smbios smbios)
+    @RequestMapping(value = "/deleteSmbiosInfo",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<String> deleteSmbiosInfo(@RequestBody Smbios smbios)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (smbiosService.removeById(smbios.getId())){
             return ResponseResult.ok("删除成功");
         }
@@ -73,14 +62,9 @@ public class SysSmBiosController {
     * @DateTime: 2023/8/20 15:19
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateSmbiosInfo",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<String> updateSmbiosInfo(@PathVariable("adminPath") String adminPath,
-                                                   @RequestBody Smbios smbios)
+    @RequestMapping(value = "/updateSmbiosInfo",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<String> updateSmbiosInfo(@RequestBody Smbios smbios)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (smbiosService.updateById(smbios)){
             return ResponseResult.ok("修改成功");
         }
@@ -93,14 +77,9 @@ public class SysSmBiosController {
     * @DateTime: 2023/8/20 15:20
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getSmbiosInfo")
-    public ResponseResult<Smbios> getSmbiosInfo(@PathVariable("adminPath") String adminPath,
-                                                 @RequestParam("id") Long id)
+    @GetMapping("/getSmbiosInfo")
+    public ResponseResult<Smbios> getSmbiosInfo(@RequestParam("id") Long id)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Smbios smbios = smbiosService.getById(id);
         if (smbios != null){
             return ResponseResult.ok(smbios);
@@ -114,15 +93,10 @@ public class SysSmBiosController {
     * @DateTime: 2023/8/20 15:20
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getSmbiosInfoList")
-    public ResponseResult<Object> getSmbiosInfoList(@PathVariable("adminPath") String adminPath,
-                                                     @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/getSmbiosInfoList")
+    public ResponseResult<Object> getSmbiosInfoList(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                      @RequestParam(name = "limit",defaultValue = "20") Integer limit)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(smbiosService.selectSmbiosInfoPage(page,limit));
     }
 }

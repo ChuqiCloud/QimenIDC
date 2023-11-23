@@ -17,10 +17,8 @@ import java.util.UUID;
  * @date 2023/5/8
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysApiController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
-
     @Resource
     private SysapiService sysapiService;
 
@@ -30,13 +28,8 @@ public class SysApiController {
     * @DateTime: 2023/5/8 17:19
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/insertApiKey")
-    public ResponseResult<Object> insertApiKey(@PathVariable("adminPath") String adminPath,
-                                       @RequestBody Sysapi params)throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/insertApiKey")
+    public ResponseResult<Object> insertApiKey(@RequestBody Sysapi params)throws UnauthorizedException {
         String appId = String.valueOf(System.currentTimeMillis());
         String appKey = UUID.randomUUID().toString().replace("-", "") + Thread.currentThread().getId();
         Sysapi sysapi = new Sysapi();
@@ -57,14 +50,9 @@ public class SysApiController {
     * @DateTime: 2023/7/24 22:11
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectApiByPage")
-    public ResponseResult<Object> selectApiByPage(@PathVariable("adminPath") String adminPath,
-                                                  @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectApiByPage")
+    public ResponseResult<Object> selectApiByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                   @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(sysapiService.selectSysapiPage(page,size));
     }
 
@@ -74,13 +62,8 @@ public class SysApiController {
     * @DateTime: 2023/7/24 22:27
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/deleteApi",method = {RequestMethod.POST,RequestMethod.DELETE})
-    public ResponseResult<Object> deleteApi(@PathVariable("adminPath") String adminPath,
-                                            @RequestParam(name = "id") Integer id) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/deleteApi",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<Object> deleteApi(@RequestParam(name = "id") Integer id) throws UnauthorizedException {
         if (Objects.isNull(id)){
             return ResponseResult.fail("id不能为空");
         }
@@ -97,13 +80,8 @@ public class SysApiController {
     * @Return
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/disableApi/{id}",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<Object> disableApi(@PathVariable("adminPath") String adminPath,
-                                             @PathVariable("id") Integer id) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/disableApi/{id}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<Object> disableApi(@PathVariable("id") Integer id) throws UnauthorizedException {
         // 判断id是否为空
         if (Objects.isNull(id)){
             return ResponseResult.fail("id不能为空");
@@ -131,13 +109,8 @@ public class SysApiController {
     * @DateTime: 2023/10/18 22:42
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/enableApi/{id}",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<Object> enableApi(@PathVariable("adminPath") String adminPath,
-                                            @PathVariable("id") Integer id) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/enableApi/{id}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<Object> enableApi(@PathVariable("id") Integer id) throws UnauthorizedException {
         // 判断id是否为空
         if (Objects.isNull(id)){
             return ResponseResult.fail("id不能为空");

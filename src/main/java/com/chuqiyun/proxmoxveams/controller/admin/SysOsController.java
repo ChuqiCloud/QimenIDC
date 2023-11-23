@@ -30,10 +30,8 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysOsController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
-
     @Value("${config.secret}")
     private String secret;
     @Value("${config.os_url}")
@@ -44,18 +42,13 @@ public class SysOsController {
     private MasterService masterService;
     /**
      * 获取所有在线os
-     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @param page 页数 size 每页大小
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectOsByOnline")
-    public ResponseResult<JSONObject> selectOsByOnline(@PathVariable("adminPath") String adminPath,
-                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectOsByOnline")
+    public ResponseResult<JSONObject> selectOsByOnline(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                            @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         JSONObject osOnlineResult = ClientApiUtil.getNetOs(osUrl);
         // 分页，获取分页数据
         osOnlineResult = ModUtil.jsonObjectPage(osOnlineResult,page,size);
@@ -77,17 +70,12 @@ public class SysOsController {
     }
     /**
      * 插入新的OS
-     * @param adminPath 后台路径 osParams os参数
+     * @param osParams os参数
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/insertOs")
-    public ResponseResult<Object> downloadOs(@PathVariable("adminPath") String adminPath,
-                                     @RequestBody OsParams osParams) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/insertOs")
+    public ResponseResult<Object> downloadOs(@RequestBody OsParams osParams) throws UnauthorizedException {
         HashMap<String,Object> result = osService.insertOs(osParams);
         if (result.get("code").equals(0)){
             return ResponseResult.ok(result.get("msg"));
@@ -98,37 +86,27 @@ public class SysOsController {
 
     /**
      * 分页获取已添加os
-     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @param page 页数 size 每页大小
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectOsByPage")
-    public ResponseResult<Object> selectOsByPage(@PathVariable("adminPath") String adminPath,
-                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectOsByPage")
+    public ResponseResult<Object> selectOsByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                            @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Page<Os> osPage = osService.selectOsByPage(page,size);
         return ResponseResult.ok(osPage);
     }
     /**
      * 分页带条件获取已添加os
-     * @param adminPath 后台路径 page 页数 size 每页大小
+     * @param page 页数 size 每页大小
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectOsByPageAndCondition")
-    public ResponseResult<Object> selectOsByPageAndCondition(@PathVariable("adminPath") String adminPath,
-                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectOsByPageAndCondition")
+    public ResponseResult<Object> selectOsByPageAndCondition(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                            @RequestParam(name = "size", defaultValue = "20") Integer size,
                                            @RequestParam(name = "param") String param,
                                            @RequestParam(name = "value") String value) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         QueryWrapper<Os> queryWrapper = new QueryWrapper<>();
         param = OsTypeUtil.getOsEntityDbName(param);
         queryWrapper.like(param,value);
@@ -138,17 +116,11 @@ public class SysOsController {
 
     /**
      * 激活在线os
-     * @param adminPath 后台路径 osId osId
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/activeOsByOnline")
-    public ResponseResult<Object> activeOsByOnline(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody OsParams params) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/activeOsByOnline")
+    public ResponseResult<Object> activeOsByOnline(@RequestBody OsParams params) throws UnauthorizedException {
         String fileName = params.getFileName();
         // 获取全部在线os
         JSONObject osOnlineResult = ClientApiUtil.getNetOs(osUrl);
@@ -193,17 +165,11 @@ public class SysOsController {
 
     /**
      * 下载os到节点
-     * @param adminPath 后台路径 osId osId
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/downloadOs")
-    public ResponseResult<Object> downloadOs(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody JSONObject params) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/downloadOs")
+    public ResponseResult<Object> downloadOs(@RequestBody JSONObject params) throws UnauthorizedException {
         Integer osId = params.getInteger("osId");
         Integer nodeId = params.getInteger("nodeId");
         Os os = osService.getById(osId);
@@ -259,17 +225,11 @@ public class SysOsController {
 
     /**
      * 删除os
-     * @param adminPath 后台路径 osId osId
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @DeleteMapping("/{adminPath}/deleteOs")
-    public ResponseResult<Object> deleteOs(@PathVariable("adminPath") String adminPath,
-                                           @RequestBody JSONObject params) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @DeleteMapping("/deleteOs")
+    public ResponseResult<Object> deleteOs(@RequestBody JSONObject params) throws UnauthorizedException {
         Integer osId = params.getInteger("osId");
         Os os = osService.getById(osId);
         if (os == null){
@@ -284,17 +244,11 @@ public class SysOsController {
 
     /**
      * 修改os
-     * @param adminPath 后台路径
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateOs",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<Object> updateOs(@PathVariable("adminPath") String adminPath,
-                                           @RequestBody Os os) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/updateOs",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<Object> updateOs(@RequestBody Os os) throws UnauthorizedException {
         boolean result = osService.updateById(os);
         if (result){
             return ResponseResult.ok("修改成功");

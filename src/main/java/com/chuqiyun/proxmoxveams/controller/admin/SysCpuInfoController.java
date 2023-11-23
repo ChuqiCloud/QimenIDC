@@ -15,9 +15,8 @@ import javax.annotation.Resource;
  * @date 2023/8/19
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysCpuInfoController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private CpuinfoService cpuinfoService;
 
@@ -27,14 +26,9 @@ public class SysCpuInfoController {
     * @DateTime: 2023/8/19 23:10
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/addCpuInfo")
-    public ResponseResult<String> addCpuInfo(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody Cpuinfo cpuinfo)
+    @PostMapping("/addCpuInfo")
+    public ResponseResult<String> addCpuInfo(@RequestBody Cpuinfo cpuinfo)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Long nowTime = System.currentTimeMillis();
         cpuinfo.setCreateDate(nowTime);
         if (cpuinfoService.addCpuInfo(cpuinfo)){
@@ -49,14 +43,9 @@ public class SysCpuInfoController {
     * @DateTime: 2023/8/19 23:16
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/deleteCpuInfo",method = {RequestMethod.POST,RequestMethod.DELETE})
-    public ResponseResult<String> deleteCpuInfo(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody Cpuinfo cpuinfo)
+    @RequestMapping(value = "/deleteCpuInfo",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<String> deleteCpuInfo(@RequestBody Cpuinfo cpuinfo)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (cpuinfoService.removeById(cpuinfo.getId())){
             return ResponseResult.ok("删除成功");
         }
@@ -69,14 +58,9 @@ public class SysCpuInfoController {
     * @DateTime: 2023/8/19 23:20
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateCpuInfo",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<String> updateCpuInfo(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody Cpuinfo cpuinfo)
+    @RequestMapping(value = "/updateCpuInfo",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<String> updateCpuInfo(@RequestBody Cpuinfo cpuinfo)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         if (cpuinfoService.updateById(cpuinfo)){
             return ResponseResult.ok("修改成功");
         }
@@ -89,14 +73,9 @@ public class SysCpuInfoController {
     * @DateTime: 2023/8/20 15:26
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectCpuInfo")
-    public ResponseResult<Object> selectCpuInfo(@PathVariable("adminPath") String adminPath,
-                                                @RequestParam("id") Integer id)
+    @GetMapping("/selectCpuInfo")
+    public ResponseResult<Object> selectCpuInfo(@RequestParam("id") Integer id)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(cpuinfoService.getById(id));
     }
 
@@ -106,15 +85,10 @@ public class SysCpuInfoController {
     * @DateTime: 2023/8/19 23:23
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectCpuInfoPage")
-    public ResponseResult<Object> selectCpuInfoPage(@PathVariable("adminPath") String adminPath,
-                                                     @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectCpuInfoPage")
+    public ResponseResult<Object> selectCpuInfoPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                      @RequestParam(name = "limit",defaultValue = "20") Integer limit)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(cpuinfoService.selectCpuInfoPage(page,limit));
     }
 }

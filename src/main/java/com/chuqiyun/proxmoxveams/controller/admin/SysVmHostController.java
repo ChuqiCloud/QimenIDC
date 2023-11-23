@@ -18,9 +18,8 @@ import java.util.HashMap;
  * @date 2023/8/31
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysVmHostController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private VmhostService vmhostService;
 
@@ -30,13 +29,9 @@ public class SysVmHostController {
     * @DateTime: 2023/8/31 20:15
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
-    public Object power(@PathVariable("adminPath") String adminPath,
-                        @PathVariable("hostId") Integer hostId,
+    @RequestMapping(value = "/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object power(@PathVariable("hostId") Integer hostId,
                         @PathVariable("action") String action) throws UnauthorizedException {
-        if (!ADMIN_PATH.equals(adminPath)){
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         // 判断虚拟机是否存在
         if (vmhostService.getById(hostId) == null) {
             return ResponseResult.fail("虚拟机不存在");
@@ -63,12 +58,8 @@ public class SysVmHostController {
     * @DateTime: 2023/9/2 0:10
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
-    public Object reinstall(@PathVariable("adminPath") String adminPath,
-                            @RequestBody JSONObject params) throws UnauthorizedException {
-        if (!ADMIN_PATH.equals(adminPath)){
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object reinstall(@RequestBody JSONObject params) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("vmHostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
@@ -82,12 +73,8 @@ public class SysVmHostController {
     * @DateTime: 2023/9/2 16:15
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
-    public Object delete(@PathVariable("adminPath") String adminPath,
-                         @PathVariable("hostId") Long hostId) throws UnauthorizedException {
-        if (!ADMIN_PATH.equals(adminPath)){
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object delete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());

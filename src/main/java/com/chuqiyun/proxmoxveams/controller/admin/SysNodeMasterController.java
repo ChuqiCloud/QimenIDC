@@ -19,22 +19,16 @@ import javax.annotation.Resource;
  * @date 2023/6/18
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysNodeMasterController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private MasterService masterService;
     @Resource
     private VmhostService vmhostService;
 
     @AdminApiCheck
-    @PostMapping("/{adminPath}/insertNodeMaster")
-    public ResponseResult<String> insertNodeMaster(@PathVariable("adminPath") String adminPath,
-                                           @RequestBody Master master) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/insertNodeMaster")
+    public ResponseResult<String> insertNodeMaster(@RequestBody Master master) throws UnauthorizedException {
         // 将master信息存入数据库
         if (masterService.save(master)) {
             // 更新该master的csrfToken与ticket
@@ -51,14 +45,9 @@ public class SysNodeMasterController {
     * @DateTime: 2023/7/22 22:10
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectNodeByPage")
-    public ResponseResult<Object> selectNodeByPage(@PathVariable("adminPath") String adminPath,
-                                                   @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/selectNodeByPage")
+    public ResponseResult<Object> selectNodeByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                    @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Page<Master> masterPage = masterService.getMasterList(page,size);
         // 将每个master的csrfToken与ticket加***处理
         /*for (Master master : masterPage.getRecords()) {
@@ -76,13 +65,8 @@ public class SysNodeMasterController {
     * @DateTime: 2023/7/24 22:45
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateNodeInfo",method = {RequestMethod.POST,RequestMethod.PUT})
-    public ResponseResult<String> updateNodeInfo(@PathVariable("adminPath") String adminPath,
-                                                 @RequestBody Master master) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/updateNodeInfo",method = {RequestMethod.POST,RequestMethod.PUT})
+    public ResponseResult<String> updateNodeInfo(@RequestBody Master master) throws UnauthorizedException {
         // 将master信息存入数据库
         if (masterService.updateById(master)) {
             return ResponseResult.ok("修改成功！");
@@ -97,13 +81,8 @@ public class SysNodeMasterController {
     * @DateTime: 2023/10/22 22:54
     */
     @AdminApiCheck
-    @DeleteMapping("/{adminPath}/deleteNodeById")
-    public ResponseResult<Object> deleteNodeById(@PathVariable("adminPath") String adminPath,
-                                                 @RequestParam("nodeId") Integer nodeId) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @DeleteMapping("/deleteNodeById")
+    public ResponseResult<Object> deleteNodeById(@RequestParam("nodeId") Integer nodeId) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = masterService.deleteNode(vmhostService,nodeId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());

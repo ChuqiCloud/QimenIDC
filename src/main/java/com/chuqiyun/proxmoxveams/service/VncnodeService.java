@@ -1,5 +1,7 @@
 package com.chuqiyun.proxmoxveams.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.entity.Vncnode;
 
@@ -11,5 +13,14 @@ import com.chuqiyun.proxmoxveams.entity.Vncnode;
  */
 public interface VncnodeService extends IService<Vncnode> {
 
+    boolean addVncnode(Vncnode vncnode);
+
+    boolean deleteVncnode(Long id);
+
+    boolean updateVncnode(Vncnode vncnode);
+
+    Page<Vncnode> selectVncnodePage(Integer page, Integer limit);
+
+    Page<Vncnode> selectVncnodePage(Integer page, Integer limit, QueryWrapper<Vncnode> queryWrapper);
 }
 

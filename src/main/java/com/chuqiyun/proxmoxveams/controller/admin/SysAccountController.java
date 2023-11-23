@@ -24,29 +24,21 @@ import java.util.Objects;
  * @date 2023/4/15
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysAccountController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
-
     @Value("${config.secret}")
     private String secret;
     @Resource
     private SysuserService sysuserService;
     /**
      * 管理员登录接口
-     * @param adminPath 自定义后台路径
      * @param param JSONObject
      * @return ResponseResult<String>
      */
-    @PostMapping("/{adminPath}/loginDo")
-    public ResponseResult<String> loginDo(@PathVariable("adminPath") String adminPath,
-                                          @RequestBody JSONObject param,
+    @PostMapping("/loginDo")
+    public ResponseResult<String> loginDo(@RequestBody JSONObject param,
                                           HttpServletResponse response)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         // 判断username是否同时为空
         if (StringUtils.isBlank(param.getString("username"))){
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
@@ -80,19 +72,13 @@ public class SysAccountController {
     * @Author: mryunqi
     * @Description: 添加超管账号接口
     * @DateTime: 2023/4/16 11:48
-    * @Params: adminPath 自定义后台路径
     * @Params: param JSONObject
     * @Return ResponseResult<String>
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/registerDo")
-    public ResponseResult<String> registerDo(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody JSONObject param)
+    @PostMapping("/registerDo")
+    public ResponseResult<String> registerDo(@RequestBody JSONObject param)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Sysuser sysuser = sysuserService.getSysuserByUsername(param.getString("username"));
         if (!Objects.isNull(sysuser)){
             //判断用户是否存在
@@ -116,18 +102,13 @@ public class SysAccountController {
     * @Author: mryunqi
     * @Description: 查询超管账号接口
     * @DateTime: 2023/8/5 9:28
-    * @Params: adminPath 自定义后台路径 page 页码 size 每页数量
+    * @Params: page 页码 size 每页数量
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getSysuser")
-    public ResponseResult<Page<Sysuser>> getSysuser(@PathVariable("adminPath") String adminPath,
-                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
+    @GetMapping("/getSysuser")
+    public ResponseResult<Page<Sysuser>> getSysuser(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                            @RequestParam(name = "size",defaultValue = "20") Integer size)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(sysuserService.selectUserPage(page,size));
     }
 
@@ -135,18 +116,13 @@ public class SysAccountController {
     * @Author: mryunqi
     * @Description: 修改超管账号接口
     * @DateTime: 2023/8/5 10:33
-    * @Params: adminPath 自定义后台路径 param JSONObject
+    * @Params: param JSONObject
     * @Return  ResponseResult<String>
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/updateSysuser")
-    public ResponseResult<String> updateSysuser(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody JSONObject param)
+    @PostMapping("/updateSysuser")
+    public ResponseResult<String> updateSysuser(@RequestBody JSONObject param)
             throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Sysuser sysuser = sysuserService.getById(param.getLong("id"));
         if (Objects.isNull(sysuser)){
             //判断用户是否存在

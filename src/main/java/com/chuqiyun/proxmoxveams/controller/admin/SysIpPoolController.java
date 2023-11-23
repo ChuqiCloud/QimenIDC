@@ -25,9 +25,8 @@ import java.util.List;
  * @date 2023/7/2
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysIpPoolController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private MasterService masterService;
     @Resource
@@ -37,19 +36,13 @@ public class SysIpPoolController {
 
     /**
      * 根据掩码位批量添加IP池
-     * @param adminPath 后台路径
      * @param ipParams IP池参数
      * @return ResponseResult<String>
      * @throws UnauthorizedException
      */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/insertIpPoolByMask")
-    public ResponseResult<String> insertIpPool(@PathVariable("adminPath") String adminPath,
-                                               @RequestBody IpParams ipParams) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/insertIpPoolByMask")
+    public ResponseResult<String> insertIpPool(@RequestBody IpParams ipParams) throws UnauthorizedException {
         // 创建所有掩码位列表
         List<Integer> maskList = List.of(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32);
         // 判断掩码位是否合法
@@ -98,13 +91,8 @@ public class SysIpPoolController {
     * @DateTime: 2023/7/3 23:25
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/insertIpPoolByRange")
-    public ResponseResult<String> insertIpPoolByRange(@PathVariable("adminPath") String adminPath,
-                                                      @RequestBody IpParams ipParams) throws UnauthorizedException{
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/insertIpPoolByRange")
+    public ResponseResult<String> insertIpPoolByRange(@RequestBody IpParams ipParams) throws UnauthorizedException{
         // 判断是否有空参数
         if(ipParams.getPoolId() == null || ipParams.getDns1() == null
                 || ipParams.getDns2() == null || ipParams.getStartIp() == null || ipParams.getEndIp() == null){
@@ -126,13 +114,10 @@ public class SysIpPoolController {
         }
         // 获取该网关下IP池中的所有IP
         List<String> ipList = ippoolService.getIpListByPoolId(ipParams.getPoolId());
-        System.out.println("IP池中："+ipList);
         // 获取该范围内的所有IP
         List<String> allIpList = IpUtil.getAllIPsInRange(ipParams.getStartIp(),ipParams.getEndIp());
-        System.out.println("新IP："+allIpList);
         // 删除allIpList中存在于ipList中的IP地址
         allIpList.removeAll(ipList);
-        System.out.println("删除后："+allIpList);
         // 获取IpStatus对象
         Ipstatus ipstatus = ipstatusService.getById(ipParams.getPoolId());
         // 循环创建Ippool对象
@@ -162,14 +147,9 @@ public class SysIpPoolController {
     * @DateTime: 2023/7/4 16:20
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectIpPoolList")
-    public ResponseResult<Page<Ipstatus>> selectIpPoolList(@PathVariable("adminPath") String adminPath,
-                                           @RequestParam(name = "page",defaultValue = "1") Integer page,
-                                           @RequestParam(name = "size",defaultValue = "20") Integer size) throws UnauthorizedException{
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @GetMapping("/selectIpPoolList")
+    public ResponseResult<Page<Ipstatus>> selectIpPoolList(@RequestParam(name = "page",defaultValue = "1") Integer page,
+                                                           @RequestParam(name = "size",defaultValue = "20") Integer size) throws UnauthorizedException{
         Page<Ipstatus> ipstatusPage = ipstatusService.getIpstatusPage(page,size);
         return ResponseResult.ok(ipstatusPage);
     }
@@ -179,15 +159,10 @@ public class SysIpPoolController {
     * @DateTime: 2023/7/4 16:26
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/selectIpListByPoolId")
-    public ResponseResult<Page<Ippool>> selectIpListByPoolId(@PathVariable("adminPath") String adminPath,
-                                               @RequestParam(name = "poolid") Integer poolid,
+    @GetMapping("/selectIpListByPoolId")
+    public ResponseResult<Page<Ippool>> selectIpListByPoolId(@RequestParam(name = "poolid") Integer poolid,
                                                @RequestParam(name = "page",defaultValue = "1") Integer page,
                                                @RequestParam(name = "size",defaultValue = "20") Integer size) throws UnauthorizedException{
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         // 判断poolId是否存在
         if (ipstatusService.getById(poolid) == null){
             return ResponseResult.fail("IP池不存在！");
@@ -202,14 +177,9 @@ public class SysIpPoolController {
     * @DateTime: 2023/7/4 16:39
     */
     @AdminApiCheck
-    @PutMapping("/{adminPath}/updateIpPool")
-    @PostMapping("/{adminPath}/updateIpPool")
-    public ResponseResult<String> updateIpPool(@PathVariable("adminPath") String adminPath,
-                                               @RequestBody Ipstatus ipstatus) throws UnauthorizedException{
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PutMapping("/updateIpPool")
+    @PostMapping("/updateIpPool")
+    public ResponseResult<String> updateIpPool(@RequestBody Ipstatus ipstatus) throws UnauthorizedException{
         // 判断pool是否存在
         if (ipstatusService.getById(ipstatus.getId()) == null){
             return ResponseResult.fail("IP池不存在！");
@@ -251,14 +221,9 @@ public class SysIpPoolController {
     * @DateTime: 2023/7/4 17:04
     */
     @AdminApiCheck
-    @PutMapping("/{adminPath}/updateIp")
-    @PostMapping("/{adminPath}/updateIp")
-    public ResponseResult<String> updateIp(@PathVariable("adminPath") String adminPath,
-                                           @RequestBody List<Ippool> ipList) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)) {
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PutMapping("/updateIp")
+    @PostMapping("/updateIp")
+    public ResponseResult<String> updateIp(@RequestBody List<Ippool> ipList) throws UnauthorizedException {
         if (ippoolService.updateBatchById(ipList)) {
             return ResponseResult.ok("修改成功！");
         } else {
@@ -272,13 +237,8 @@ public class SysIpPoolController {
     * @DateTime: 2023/10/31 22:43
     */
     @AdminApiCheck
-    @DeleteMapping("/{adminPath}/deleteIpPool/{poolId}")
-    public ResponseResult<Object> deleteIpPool(@PathVariable("adminPath") String adminPath,
-                                               @PathVariable("poolId") Long poolId) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)) {
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @DeleteMapping("/deleteIpPool/{poolId}")
+    public ResponseResult<Object> deleteIpPool(@PathVariable("poolId") Long poolId) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = ipstatusService.deleteIppoolById(poolId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());

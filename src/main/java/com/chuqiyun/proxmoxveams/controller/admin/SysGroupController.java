@@ -21,9 +21,8 @@ import java.util.List;
  * @date 2023/8/14
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysGroupController {
-    @Value("${config.admin_path}")
-    private String ADMIN_PATH;
     @Resource
     private AreaService areaService;
     @Resource
@@ -35,13 +34,8 @@ public class SysGroupController {
     * @DateTime: 2023/8/15 23:16
     */
     @AdminApiCheck
-    @PostMapping("/{adminPath}/addArea")
-    public ResponseResult<String> addArea(@PathVariable("adminPath") String adminPath,
-                                          @RequestBody JSONObject params) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @PostMapping("/addArea")
+    public ResponseResult<String> addArea(@RequestBody JSONObject params) throws UnauthorizedException {
         String name = params.getString("name");
         // 判断name是否存在
         if (areaService.isExistName(name)){
@@ -80,13 +74,8 @@ public class SysGroupController {
     * @DateTime: 2023/8/15 23:20
     */
     @AdminApiCheck
-    @DeleteMapping("/{adminPath}/deleteArea/{id}")
-    public ResponseResult<String> deleteArea(@PathVariable("adminPath") String adminPath,
-                                             @PathVariable("id") Integer id) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @DeleteMapping("/deleteArea/{id}")
+    public ResponseResult<String> deleteArea(@PathVariable("id") Integer id) throws UnauthorizedException {
         // 判断是否有子节点
         if (areaService.isExistChild(id)){
             return ResponseResult.fail("该地区下存在子地区，无法删除");
@@ -105,13 +94,8 @@ public class SysGroupController {
     * @DateTime: 2023/8/15 23:40
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/updateArea",method = {RequestMethod.PUT,RequestMethod.POST})
-    public ResponseResult<String> updateArea(@PathVariable("adminPath") String adminPath,
-                                             @RequestBody Area area) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/updateArea",method = {RequestMethod.PUT,RequestMethod.POST})
+    public ResponseResult<String> updateArea(@RequestBody Area area) throws UnauthorizedException {
         // 修改地区
         if (areaService.updateById(area)){
             return ResponseResult.ok("修改成功");
@@ -125,14 +109,9 @@ public class SysGroupController {
     * @DateTime: 2023/8/15 23:43
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getAreaList")
-    public ResponseResult<Object> getAreaList(@PathVariable("adminPath") String adminPath,
-                                              @RequestParam(value = "page",defaultValue = "1") Integer page,
+    @GetMapping("/getAreaList")
+    public ResponseResult<Object> getAreaList(@RequestParam(value = "page",defaultValue = "1") Integer page,
                                               @RequestParam(value = "limit",defaultValue = "20") Integer limit) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         return ResponseResult.ok(areaService.selectGroupPage(page,limit));
     }
 
@@ -142,13 +121,8 @@ public class SysGroupController {
     * @DateTime: 2023/8/15 23:44
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getArea")
-    public ResponseResult<Object> getArea(@PathVariable("adminPath") String adminPath,
-                                          @RequestParam(name = "id") Integer id) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @GetMapping("/getArea")
+    public ResponseResult<Object> getArea(@RequestParam(name = "id") Integer id) throws UnauthorizedException {
         return ResponseResult.ok(areaService.getById(id));
     }
 
@@ -158,13 +132,8 @@ public class SysGroupController {
     * @DateTime: 2023/8/16 16:36
     */
     @AdminApiCheck
-    @RequestMapping(value = "/{adminPath}/addNodeToArea",method = {RequestMethod.PUT,RequestMethod.POST})
-    public ResponseResult<String> addNodeToArea(@PathVariable("adminPath") String adminPath,
-                                                @RequestBody Master node) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
+    @RequestMapping(value = "/addNodeToArea",method = {RequestMethod.PUT,RequestMethod.POST})
+    public ResponseResult<String> addNodeToArea(@RequestBody Master node) throws UnauthorizedException {
         // 判断节点是否存在
         Integer nodeId = node.getId();
         if (masterService.getById(nodeId) == null){
@@ -188,15 +157,10 @@ public class SysGroupController {
     * @DateTime: 2023/8/17 21:56
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getNodeListByArea")
-    public ResponseResult<Object> getNodeListByArea(@PathVariable("adminPath") String adminPath,
-                                                    @RequestParam(name = "area") Integer area,
+    @GetMapping("/getNodeListByArea")
+    public ResponseResult<Object> getNodeListByArea(@RequestParam(name = "area") Integer area,
                                                     @RequestParam(name = "page", defaultValue = "1") Integer page,
                                                     @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("area",area);
         Page<Master> masterPage = masterService.getMasterList(page,size,queryWrapper);
@@ -215,15 +179,10 @@ public class SysGroupController {
     * @DateTime: 2023/10/15 23:47
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getAreaListByParent")
-    public ResponseResult<Object> getAreaListByParent(@PathVariable("adminPath") String adminPath,
-                                                      @RequestParam(name = "parent") Integer parent,
+    @GetMapping("/getAreaListByParent")
+    public ResponseResult<Object> getAreaListByParent(@RequestParam(name = "parent") Integer parent,
                                                       @RequestParam(name = "page", defaultValue = "1") Integer page,
                                                       @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Page<Area> areaPage = areaService.selectGroupPageByParent(page,size,parent);
         return ResponseResult.ok(areaPage);
     }
@@ -234,14 +193,9 @@ public class SysGroupController {
     * @DateTime: 2023/10/28 13:38
     */
     @AdminApiCheck
-    @GetMapping("/{adminPath}/getAreaListByParentIsNull")
-    public ResponseResult<Object> getAreaListByParentIsNull(@PathVariable("adminPath") String adminPath,
-                                                            @RequestParam(name = "page", defaultValue = "1") Integer page,
+    @GetMapping("/getAreaListByParentIsNull")
+    public ResponseResult<Object> getAreaListByParentIsNull(@RequestParam(name = "page", defaultValue = "1") Integer page,
                                                             @RequestParam(name= "size", defaultValue = "20") Integer size) throws UnauthorizedException {
-        if (!adminPath.equals(ADMIN_PATH)){
-            //判断后台路径是否正确
-            return ResponseResult.fail(ResponseResult.RespCode.NOT_PERMISSION);
-        }
         Page<Area> areaPage = areaService.selectParentPage(page,size);
         return ResponseResult.ok(areaPage);
     }
