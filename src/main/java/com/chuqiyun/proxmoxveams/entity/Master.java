@@ -43,6 +43,7 @@ public class Master extends Model<Master> {
     private String sshUsername;
     private String sshPassword;
     private Integer controllerStatus;
+    private Integer controllerPort;
 
     /**
      * 获取主键值

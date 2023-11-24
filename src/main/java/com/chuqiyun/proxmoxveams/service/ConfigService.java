@@ -18,5 +18,7 @@ public interface ConfigService extends IService<Config> {
     Integer getWinSystemDiskSize();
 
     Long getBwlimit();
+
+    Integer getVncExpire();
 }
 

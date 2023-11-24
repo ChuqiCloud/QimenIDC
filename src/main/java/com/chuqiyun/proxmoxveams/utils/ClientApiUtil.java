@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.swagger.models.auth.In;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -200,5 +201,85 @@ public class ClientApiUtil {
         paramMap.put("path","/etc/network");
         paramMap.put("filename","interfaces");
         return postControllerApi(url, paramMap, token);
+    }
+    
+    /**
+    * @Author: mryunqi
+    * @Description: 创建vnc服务
+    * @DateTime: 2023/11/23 18:15
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: vmid 虚拟机id
+     * @Params: vncPort vnc端口
+     * @Params: vncPassword vnc密码
+     * @Params: controllerPort 被控端端口
+     * @Params: vncHost 被控端ip
+     * @Params: time 超时时间
+    * @Return Boolean 是否创建成功
+    */
+    public static Boolean createVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
+        String url = "http://"+ip+":"+controllerPort+"/vnc";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vnc_file_path","/home/software/vnc");
+        paramMap.put("vmid",vmid);
+        paramMap.put("username",username);
+        paramMap.put("password",vncPassword);
+        paramMap.put("port",vncPort);
+        paramMap.put("host",vncHost);
+        paramMap.put("time",time);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 导入VNC配置信息
+    * @DateTime: 2023/11/24 20:48
+     * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: vmid 虚拟机id
+     * @Params: vncPort vnc端口
+     * @Params: vncPassword vnc密码
+     * @Params: controllerPort 被控端端口
+     * @Params: vncHost 被控端ip
+     * @Params: time 超时时间
+    * @Return Boolean 是否导入成功
+    */
+    public static Boolean importVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
+        String url = "http://"+ip+":"+controllerPort+"/vnc/import";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vnc_file_path","/home/software/vnc");
+        paramMap.put("vmid",vmid);
+        paramMap.put("username",username);
+        paramMap.put("password",vncPassword);
+        paramMap.put("port",vncPort);
+        paramMap.put("host",vncHost);
+        paramMap.put("time",time);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 停止指定VNC服务
+    * @DateTime: 2023/11/24 22:35
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: vncPort vnc端口
+     * @Params: controllerPort 被控端端口
+    * @Return Boolean 是否停止成功
+    */
+    public static Boolean stopVncService(String ip, String token, Integer vncPort,Integer controllerPort){
+        String url = "http://"+ip+":"+controllerPort+"/vnc/stop";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vnc_file_path","/home/software/vnc");
+        paramMap.put("vmid",null);
+        paramMap.put("username",null);
+        paramMap.put("password",null);
+        paramMap.put("port",vncPort);
+        paramMap.put("host",null);
+        paramMap.put("time",null);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
     }
 }

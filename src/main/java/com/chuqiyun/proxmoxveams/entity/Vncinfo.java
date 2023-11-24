@@ -1,5 +1,7 @@
 package com.chuqiyun.proxmoxveams.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import lombok.Data;
@@ -17,8 +19,8 @@ import java.io.Serializable;
 @EqualsAndHashCode(callSuper = true)
 @TableName(value = "vncinfo")
 public class Vncinfo extends Model<Vncinfo> {
-    
-    private Long id;
+    @TableId(value = "id", type = IdType.AUTO)
+    private Integer id;
     
     private Long hostId;
     
@@ -27,6 +29,7 @@ public class Vncinfo extends Model<Vncinfo> {
     private String host;
     //vnc端口
     private Integer port;
+    private String username;
     //vnc密码
     private String password;
 

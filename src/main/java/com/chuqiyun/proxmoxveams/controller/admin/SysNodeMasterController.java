@@ -9,6 +9,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +26,8 @@ public class SysNodeMasterController {
     private MasterService masterService;
     @Resource
     private VmhostService vmhostService;
+    @Resource
+    private VncnodeService vncnodeService;
 
     @AdminApiCheck
     @PostMapping("/insertNodeMaster")
@@ -33,6 +36,8 @@ public class SysNodeMasterController {
         if (masterService.save(master)) {
             // 更新该master的csrfToken与ticket
             masterService.updateNodeCookie(master.getId());
+            // 添加VNC控制器
+            vncnodeService.addHostVncnode(master);
             return ResponseResult.ok("添加成功！");
         } else {
             return ResponseResult.fail("添加失败！");

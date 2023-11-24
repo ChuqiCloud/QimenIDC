@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vncnode;
 
 /**
@@ -22,5 +23,9 @@ public interface VncnodeService extends IService<Vncnode> {
     Page<Vncnode> selectVncnodePage(Integer page, Integer limit);
 
     Page<Vncnode> selectVncnodePage(Integer page, Integer limit, QueryWrapper<Vncnode> queryWrapper);
+
+    boolean addHostVncnode(Master master);
+
+    Vncnode selectVncnodeByHost(String host);
 }
 

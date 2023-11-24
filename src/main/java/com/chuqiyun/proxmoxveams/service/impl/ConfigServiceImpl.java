@@ -57,5 +57,16 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     public Long getBwlimit(){
         return this.getById(1).getBwlimit();
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取全局默认VNC有效期
+    * @DateTime: 2023/11/24 19:01
+    * @Return Integer vncTime
+    */
+    @Override
+    public Integer getVncExpire(){
+        return this.getById(1).getVncTime();
+    }
 }
 

@@ -1,5 +1,7 @@
 package com.chuqiyun.proxmoxveams.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.entity.Vncdata;
 
@@ -11,5 +13,18 @@ import com.chuqiyun.proxmoxveams.entity.Vncdata;
  */
 public interface VncdataService extends IService<Vncdata> {
 
+    boolean addVncdata(Vncdata vncdata);
+
+    boolean deleteVncdata(Long id);
+
+    boolean updateVncdata(Vncdata vncdata);
+
+    Page<Vncdata> selectVncdataPage(Integer page, Integer limit);
+
+    Page<Vncdata> selectVncdataPage(Integer page, Integer limit, QueryWrapper<Vncdata> queryWrapper);
+
+    Vncdata selectVncdataByVncinfoId(Long vncinfoId);
+
+    Vncdata selectVncdataByVncinfoIdAndStatusOk(Long vncinfoId);
 }
 

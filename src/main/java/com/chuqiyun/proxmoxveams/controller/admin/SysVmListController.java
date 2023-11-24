@@ -5,10 +5,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.service.VmInfoService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
@@ -18,6 +15,7 @@ import java.util.HashMap;
  * @date 2023/8/23
  */
 @RestController
+@RequestMapping("/{adminPath}")
 public class SysVmListController {
     @Resource
     private VmInfoService vmInfoService;

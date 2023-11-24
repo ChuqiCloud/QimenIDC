@@ -1,7 +1,10 @@
 package com.chuqiyun.proxmoxveams.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import io.swagger.models.auth.In;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -17,10 +20,13 @@ import java.io.Serializable;
 @EqualsAndHashCode(callSuper = true)
 @TableName(value = "vncdata")
 public class Vncdata extends Model<Vncdata> {
-    
-    private Long id;
+    @TableId(value = "id", type = IdType.AUTO)
+    private Integer id;
     
     private Long vncId;
+    private Integer hostId;
+    private Integer nodeId;
+    private Integer port;
     //0=正常；1=失效
     private Integer status;
     

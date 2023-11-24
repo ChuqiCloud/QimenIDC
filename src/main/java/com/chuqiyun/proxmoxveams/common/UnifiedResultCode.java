@@ -74,6 +74,12 @@ public enum UnifiedResultCode {
     ERROR_DELETE_IP_POOL_FAILED(1030, "Failed to delete IP pool"),
     // hostname不能为中文
     ERROR_HOSTNAME_NOT_CHINESE(1031, "Hostname cannot be Chinese"),
+    // 虚拟机未开机
+    ERROR_VM_IS_NOT_RUNNING(1032, "Virtual machine is not turned on"),
+    // vnc控制节点不存在
+    ERROR_VNC_NODE_NOT_EXIST(1033, "VNC control node does not exist"),
+    // 创建VNC连接失败
+    ERROR_CREATE_VNC_CONNECTION(1034, "Failed to create VNC connection"),
     /*pve错误码范围：2xxx*/
 
     /*成功*/
