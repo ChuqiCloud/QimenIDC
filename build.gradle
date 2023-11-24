@@ -5,8 +5,12 @@ plugins {
 }
 
 group = 'com.chuqiyun'
-version = '1.0.6'
 sourceCompatibility = '17'
+
+bootJar {
+    archiveFileName = 'QimenIDC-Server.jar'
+    version = '1.0.7'
+}
 
 configurations {
     compileOnly {
