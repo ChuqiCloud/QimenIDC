@@ -61,5 +61,16 @@ public class SysNodeInfoController {
         return ResponseResult.ok(nodeStatus.getJSONArray("data"));
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取节点总数
+    * @DateTime: 2023/11/26 21:13
+    */
+    @AdminApiCheck
+    @GetMapping("/getNodeCount")
+    public ResponseResult<Object> getNodeCount() throws UnauthorizedException {
+        return ResponseResult.ok(masterService.getMasterCount());
+    }
+
 
 }

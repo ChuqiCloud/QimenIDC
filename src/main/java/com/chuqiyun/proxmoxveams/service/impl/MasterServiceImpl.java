@@ -16,7 +16,6 @@ import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +28,17 @@ import java.util.List;
  */
 @Service("masterService")
 public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements MasterService {
+    /**
+    * @Author: mryunqi
+    * @Description: 获取节点总数
+    * @DateTime: 2023/11/26 21:09
+    * @Return Long 节点总数
+    */
+    @Override
+    public Long getMasterCount() {
+        return this.count();
+    }
+
     /**
     * @Author: mryunqi
     * @Description: 获取ProxmoxVE集群节点列表

@@ -18,6 +18,8 @@ import java.util.HashMap;
  * @since 2023-06-10 01:18:17
  */
 public interface MasterService extends IService<Master> {
+    Long getMasterCount();
+
     /**
      * @Author: mryunqi
      * @Description: 获取ProxmoxVE集群节点列表
