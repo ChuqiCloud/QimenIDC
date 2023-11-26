@@ -14,6 +14,7 @@ import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
@@ -28,12 +29,13 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1")
 public class CreateVm {
     @Resource
     private CreateVmService createVmService;
     @ApiOperation(value = "创建虚拟机", notes = "创建虚拟机")
     @PublicSysApiCheck
-    @PostMapping("/api/v1/pve/cerateVM")
+    @PostMapping("/pve/cerateVM")
     public ResponseResult<Object> createVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = createVmService.createPveVmToParams(vmParams,true);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {

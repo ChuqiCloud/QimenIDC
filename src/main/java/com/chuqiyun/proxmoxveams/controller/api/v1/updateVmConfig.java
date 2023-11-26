@@ -21,6 +21,7 @@ import javax.annotation.Resource;
  * @date 2023/9/29
  */
 @RestController
+@RequestMapping("/api/v1")
 public class updateVmConfig {
     @Resource
     private VmhostService vmhostService;
@@ -31,7 +32,7 @@ public class updateVmConfig {
     * @DateTime: 2023/9/29 15:05
     */
     @PublicSysApiCheck
-    @RequestMapping(value = "/api/v1/pve/updateVmConfig/restPassword",method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/pve/updateVmConfig/restPassword",method = {RequestMethod.POST, RequestMethod.PUT})
     public ResponseResult<Object> restPassword(@RequestBody JSONObject params) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.resetVmPassword(params.getLong("hostId"),params.getString("newPassword"));
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
@@ -46,7 +47,7 @@ public class updateVmConfig {
     * @DateTime: 2023/9/29 18:14
     */
     @PublicSysApiCheck
-    @RequestMapping(value = "/api/v1/pve/updateVmConfig/renewal",method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/pve/updateVmConfig/renewal",method = {RequestMethod.POST, RequestMethod.PUT})
     public ResponseResult<Object> renewal(@RequestBody RenewalParams params) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.updateVmhostExpireTime(params);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {

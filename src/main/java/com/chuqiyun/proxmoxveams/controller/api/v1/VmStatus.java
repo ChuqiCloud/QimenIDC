@@ -19,6 +19,7 @@ import java.util.HashMap;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1")
 public class VmStatus {
     @Resource
     private VmhostService vmhostService;
@@ -29,7 +30,7 @@ public class VmStatus {
     * @DateTime: 2023/9/22 23:43
     */
     @PublicSysApiCheck
-    @RequestMapping(value = "/api/v1/pve/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
+    @RequestMapping(value = "/pve/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
     public ResponseResult<String> putVmStatus(@PathVariable(name = "hostId") Integer hostId,
                                               @PathVariable(name = "action") String action) throws UnauthorizedException {
         // 判断虚拟机是否存在
@@ -58,7 +59,7 @@ public class VmStatus {
     * @DateTime: 2023/9/22 23:43
     */
     @PublicSysApiCheck
-    @RequestMapping(value = "/api/v1/pve/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
+    @RequestMapping(value = "/pve/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object reinstall(@RequestBody JSONObject params) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("vmHostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
@@ -73,7 +74,7 @@ public class VmStatus {
     * @DateTime: 2023/9/22 23:45
     */
     @PublicSysApiCheck
-    @RequestMapping(value = "/api/v1/pve/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    @RequestMapping(value = "/pve/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
     public Object delete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {

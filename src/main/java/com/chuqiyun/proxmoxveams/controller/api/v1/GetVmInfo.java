@@ -11,6 +11,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,12 +24,13 @@ import java.util.HashMap;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1")
 public class GetVmInfo {
     @Resource
     private VmInfoService vmInfoService;
 
     @PublicSysApiCheck
-    @GetMapping("/api/v1/pve/getVmInfo")
+    @GetMapping("/pve/getVmInfo")
     public ResponseResult<Object> getNode(@RequestParam(name = "hostId") Integer hostId) throws UnauthorizedException {
         if (hostId == 0) {
             return ResponseResult.fail("参数不能为空");
