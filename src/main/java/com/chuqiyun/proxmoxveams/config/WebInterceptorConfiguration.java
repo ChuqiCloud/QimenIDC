@@ -52,6 +52,7 @@ public class WebInterceptorConfiguration implements WebMvcConfigurer {
         // 拦截路径
         registry.addInterceptor(requestHandlerInterceptor()).addPathPatterns("/**")
                 .excludePathPatterns("/"+ADMIN_PATH+"/loginDo")
+                .excludePathPatterns("/api/common/**") // 公共接口
                 .excludePathPatterns("/user/loginDo")
                 .excludePathPatterns("/user/registerDo")
                 .excludePathPatterns("/doc.html")
