@@ -57,5 +57,11 @@ public interface VmhostService extends IService<Vmhost> {
     UnifiedResultDto<Object> updateVmhostExpireTime(RenewalParams renewalParams);
 
     void updateVmhostOsData(long vmId, Os os);
+
+    Page<Vmhost> getVmhostByStatus(Long page, Long size, int status);
+
+    Long selectCount(QueryWrapper<Vmhost> queryWrapper);
+
+    Long getVmhostCountByStatus(int status);
 }
 

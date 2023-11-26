@@ -27,10 +27,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -1001,6 +998,49 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }else{
             UnifiedLogger.log(UnifiedLogger.LogType.VMHOST_UPDATE_OS,"更新虚拟机OS数据失败，虚拟机id为：" + vmId);
         }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页获取指定状态的虚拟机
+    * @DateTime: 2023/11/26 21:58
+    * @Params: page 当前页，size 每页显示数量，status 虚拟机状态
+    * @Return Page<Vmhost> 分页虚拟机数据
+    */
+    @Override
+    public Page<Vmhost> getVmhostByStatus(Long page, Long size, int status) {
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status",status);
+        return this.selectPage(Math.toIntExact(page), Math.toIntExact(size),queryWrapper);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 带参数获取虚拟机数量
+    * @DateTime: 2023/11/26 22:06
+    * @Params: QueryWrapper<Vmhost> queryWrapper 查询条件
+    * @Return Long 虚拟机数量
+    */
+    @Override
+    public Long selectCount(QueryWrapper<Vmhost> queryWrapper) {
+        // 获取所有符合条件的虚拟机
+        List<Vmhost> vmhosts = this.list(queryWrapper);
+        // 返回虚拟机数量
+        return (long) vmhosts.size();
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取指定状态的虚拟机数量
+    * @DateTime: 2023/11/26 22:05
+    * @Params: status 虚拟机状态
+    * @Return Long 虚拟机数量
+    */
+    @Override
+    public Long getVmhostCountByStatus(int status) {
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status",status);
+        return this.selectCount(queryWrapper);
     }
 }
 
