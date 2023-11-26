@@ -50,4 +50,18 @@ public class SysVmListController {
         return ResponseResult.ok(vmByParam);
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机分页列表,根据创建时间降序排列
+    * @DateTime: 2023/11/26 20:15
+    */
+    @AdminApiCheck
+    @GetMapping(value = "/getVmByPageOrderByCreateTime")
+    public ResponseResult<Object> getVmByPageOrderByCreateTime(@RequestParam(name = "page",defaultValue = "1") Integer page,
+                                                               @RequestParam(name = "size",defaultValue = "20") Integer size)
+            throws UnauthorizedException{
+        HashMap<String, Object> vmByPage = vmInfoService.getVmByPageOrderByCreateTime(page, size);
+        return ResponseResult.ok(vmByPage);
+    }
+
 }

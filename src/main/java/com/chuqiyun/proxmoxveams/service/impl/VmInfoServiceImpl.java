@@ -49,6 +49,32 @@ public class VmInfoServiceImpl implements VmInfoService {
 
     /**
     * @Author: mryunqi
+    * @Description: 获取虚拟机分页列表,根据创建时间降序排列
+    * @DateTime: 2023/11/26 20:13
+    * @Params: Integer page 页码，Integer size 每页数量
+    * @Return  HashMap<String, Object> 分页列表
+    */
+    @Override
+    public HashMap<String, Object> getVmByPageOrderByCreateTime(Integer page, Integer size) {
+        Page<Vmhost> vmhostPage = vmhostService.selectPageByCreateTime(page, size);
+        HashMap<String, Object> pageMap = new HashMap<>();
+        buildVmHostDto(vmhostPage,pageMap);
+        return pageMap;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机总数
+    * @DateTime: 2023/11/26 20:21
+    * @Return Long 虚拟机总数
+    */
+    @Override
+    public Long getVmCount() {
+        return vmhostService.count();
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 分页查询指定参数的虚拟机
     * @DateTime: 2023/8/24 16:07
     * @Params: Integer page 页码，Integer size 每页数量，String param 查询参数，String value 查询值

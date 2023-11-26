@@ -26,6 +26,10 @@ public interface VmhostService extends IService<Vmhost> {
 
     Page<Vmhost> selectPage(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper);
 
+    Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit);
+
+    Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper);
+
     Page<Vmhost> selectPageByIp(Integer page, Integer limit, String ip);
 
     Vmhost getVmhostByName(String name);

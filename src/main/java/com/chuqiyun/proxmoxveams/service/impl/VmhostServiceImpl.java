@@ -85,6 +85,32 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     /**
     * @Author: mryunqi
+    * @Description: 分页查询虚拟机实例信息，按照创建时间降序排列
+    * @DateTime: 2023/11/26 20:09
+    * @Params: Integer page 页码，Integer limit 每页数量
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().orderByDesc("create_time"));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页查询虚拟机实例信息，按照创建时间降序排列，附加条件
+    * @DateTime: 2023/11/26 20:11
+    * @Params: Integer page 页码，Integer limit 每页数量，QueryWrapper<Vmhost> queryWrapper 附加条件
+    * @Return Page<Vmhost> 分页数据
+    */
+    @Override
+    public Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,queryWrapper.orderByDesc("create_time"));
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 模糊查询指定IP地址的虚拟机实例信息
     * @DateTime: 2023/8/24 16:05
     * @Params: Integer page 页码，Integer limit 每页数量，String ip IP地址

@@ -12,6 +12,10 @@ import java.util.HashMap;
 public interface VmInfoService {
     HashMap<String, Object> getVmByPage(Integer page, Integer size);
 
+    HashMap<String, Object> getVmByPageOrderByCreateTime(Integer page, Integer size);
+
+    Long getVmCount();
+
     Object getVmHostPageByParam(Integer page, Integer size, String param, String value);
 
     VmHostDto getVmHostById(Integer vmId);

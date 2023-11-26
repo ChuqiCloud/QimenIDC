@@ -46,4 +46,15 @@ public class SysVmHostInfoController {
                                    @RequestParam(name = "cf",defaultValue = "AVERAGE") String cf) throws UnauthorizedException {
         return ResponseResult.ok(vmInfoService.getVmInfoRrdData(hostId,timeframe, cf).getJSONArray("data"));
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取虚拟机总数
+    * @DateTime: 2023/11/26 20:20
+    */
+    @AdminApiCheck
+    @GetMapping(value = "/getVmCount")
+    public Object getVmCount() throws UnauthorizedException {
+        return ResponseResult.ok(vmInfoService.getVmCount());
+    }
 }
