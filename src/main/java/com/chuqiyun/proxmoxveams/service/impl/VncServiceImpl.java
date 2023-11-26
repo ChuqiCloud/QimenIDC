@@ -90,7 +90,7 @@ public class VncServiceImpl implements VncService {
             vncinfo.setVmid(Long.valueOf(vmhost.getVmid()));
             vncinfo.setHost(node.getHost());
             vncinfo.setPort(this.calculateVncPort(node.getHost()));
-            vncinfo.setUsername(vmhost.getName());
+            vncinfo.setUsername(vmhost.getHostname());
             vncinfo.setPassword(vmhost.getPassword());
             vncinfoService.addVncinfo(vncinfo);
         }
