@@ -1,106 +1,34 @@
-package com.chuqiyun.proxmoxveams.controller.admin;
+package com.chuqiyun.proxmoxveams.controller.api.v1;
 
-import com.alibaba.fastjson2.JSONObject;
-import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.entity.Vncinfo;
-import com.chuqiyun.proxmoxveams.entity.Vncnode;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.service.VncService;
 import com.chuqiyun.proxmoxveams.service.VncinfoService;
-import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 
 /**
  * @author mryunqi
- * @date 2023/11/22
+ * @date 2023/11/25
  */
 @RestController
-@RequestMapping("/{adminPath}")
-public class SysVncController {
-    @Resource
-    private VncnodeService vncnodeService;
+@RequestMapping("/api/v1")
+public class GetVnc {
     @Resource
     private VncService vncService;
     @Resource
     private VmhostService vmhostService;
     @Resource
     private VncinfoService vncinfoService;
-    /**
-    * @Author: mryunqi
-    * @Description: 增加vnc控制器节点
-    * @DateTime: 2023/11/23 15:21
-    */
-    @AdminApiCheck
-    @PostMapping(value = "/addVncNode")
-    public ResponseResult<Object> addVncNode(@RequestBody Vncnode vncnode) throws UnauthorizedException {
-        long createTime = System.currentTimeMillis();
-        vncnode.setCreateDate(createTime);
-        if (vncnodeService.addVncnode(vncnode)) {
-            return ResponseResult.ok("添加成功");
-        }
-        else {
-            return ResponseResult.fail("添加失败");
-        }
-    }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 删除vnc控制器节点
-    * @DateTime: 2023/11/23 16:40
-    */
-    @AdminApiCheck
-    @DeleteMapping(value = "/deleteVncNode")
-    public ResponseResult<Object> deleteVncNode(@RequestParam(name="id") Long id) throws UnauthorizedException {
-        if (vncnodeService.deleteVncnode(id)) {
-            return ResponseResult.ok("删除成功");
-        }
-        else {
-            return ResponseResult.fail("删除失败");
-        }
-    }
-
-    /**
-    * @Author: mryunqi
-    * @Description: 修改vnc控制器节点
-    * @DateTime: 2023/11/23 16:41
-    */
-    @AdminApiCheck
-    @PostMapping(value = "/updateVncNode")
-    @PutMapping(value = "/updateVncNode")
-    public ResponseResult<Object> updateVncNode(@RequestBody Vncnode vncnode) throws UnauthorizedException {
-        if (vncnodeService.updateVncnode(vncnode)) {
-            return ResponseResult.ok("修改成功");
-        }
-        else {
-            return ResponseResult.fail("修改失败");
-        }
-    }
-
-    /**
-    * @Author: mryunqi
-    * @Description: 分页查询vnc控制器节点
-    * @DateTime: 2023/11/23 16:42
-    */
-    @AdminApiCheck
-    @GetMapping(value = "/selectVncNodePage")
-    public ResponseResult<Object> selectVncNodePage(@RequestParam(name = "page",defaultValue = "1") Integer page,
-                                                    @RequestParam(name = "size",defaultValue = "20") Integer size) throws UnauthorizedException {
-        return ResponseResult.ok(vncnodeService.selectVncnodePage(page, size));
-    }
-
-    /**
-    * @Author: mryunqi
-    * @Description: 获取指定虚拟机的vnc地址
-    * @DateTime: 2023/11/24 23:01
-    */
-    @AdminApiCheck
+    @PublicSysApiCheck
     @GetMapping(value = "/{node}/getVnc")
     public ResponseResult<Object> getVnc(@PathVariable(name = "node") String node,
                                          @RequestParam(name = "hostId") Long hostId,
@@ -121,9 +49,9 @@ public class SysVncController {
     /**
     * @Author: mryunqi
     * @Description: 修改指定虚拟机的VNC密码
-    * @DateTime: 2023/11/26 15:17
+    * @DateTime: 2023/11/26 16:27
     */
-    @AdminApiCheck
+    @PublicSysApiCheck
     @RequestMapping(value = "/{node}/updateVncPassword",method = {RequestMethod.POST,RequestMethod.PUT})
     public ResponseResult<Object> updateVncPassword(@PathVariable(name = "node") String node,
                                                     @RequestBody Vncinfo vncinfo) throws UnauthorizedException {
@@ -165,5 +93,4 @@ public class SysVncController {
             return ResponseResult.fail("暂不支持该节点");
         }
     }
-
 }
