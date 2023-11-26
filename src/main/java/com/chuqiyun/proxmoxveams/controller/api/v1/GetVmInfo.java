@@ -35,6 +35,6 @@ public class GetVmInfo {
         if (hostId == 0) {
             return ResponseResult.fail("参数不能为空");
         }
-        return ResponseResult.ok(vmInfoService.getVmHostByVmId(hostId));
+        return ResponseResult.ok(vmInfoService.getVmHostById(hostId));
     }
 }

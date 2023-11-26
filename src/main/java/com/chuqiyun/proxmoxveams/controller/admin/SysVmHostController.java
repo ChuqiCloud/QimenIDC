@@ -60,7 +60,7 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object reinstall(@RequestBody JSONObject params) throws UnauthorizedException {
-        UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("vmHostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
+        UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("hostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

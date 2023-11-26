@@ -101,12 +101,12 @@ public class VmInfoServiceImpl implements VmInfoService {
     * @Return VmHostDto 虚拟机信息
     */
     @Override
-    public VmHostDto getVmHostByVmId(Integer vmId) {
-        Vmhost vmhost = vmhostService.getVmhostByVmId(vmId);
+    public VmHostDto getVmHostById(Integer hostId) {
+        Vmhost vmhost = vmhostService.getById(hostId);
         // 如果虚拟机不存在
         if (vmhost == null){
-            // 将vmId作为hostId
-            vmhost = vmhostService.getById(vmId);
+            // 将hostId作为vmid查询
+            vmhost = vmhostService.getVmhostByVmId(hostId);
             // 如果虚拟机不存在
             if (vmhost == null){
                 return null;
@@ -138,7 +138,7 @@ public class VmInfoServiceImpl implements VmInfoService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 获取虚拟机信息
         try{
-            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmhost.getVmid(),"hour","AVERAGE"));
+            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmhost.getVmid(),"day","AVERAGE"));
         }catch (Exception e){
             vmHostDto.setRrddata(null);
         }
@@ -158,11 +158,16 @@ public class VmInfoServiceImpl implements VmInfoService {
     * @Return JSONObject 虚拟机历史负载
     */
     @Override
-    public JSONObject getVmInfoRrdData(Integer vmId,String timeframe, String cf){
-        Vmhost vmhost = vmhostService.getVmhostByVmId(vmId);
-        // 判断是否存在
+    public JSONObject getVmInfoRrdData(Integer hostId,String timeframe, String cf){
+        Vmhost vmhost = vmhostService.getById(hostId);
+        // 如果虚拟机不存在
         if (vmhost == null){
-            return null;
+            // 将hostId作为vmid查询
+            vmhost = vmhostService.getVmhostByVmId(hostId);
+            // 如果虚拟机不存在
+            if (vmhost == null){
+                return null;
+            }
         }
         Integer nodeId = vmhost.getNodeid();
         Master node = masterService.getById(nodeId);
@@ -171,7 +176,7 @@ public class VmInfoServiceImpl implements VmInfoService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // 获取虚拟机信息
         try{
-            return proxmoxApiUtil.getVmRrd(node, cookieMap, vmId,timeframe,cf);
+            return proxmoxApiUtil.getVmRrd(node, cookieMap, vmhost.getVmid(),timeframe,cf);
         }catch (Exception e){
             return null;
         }

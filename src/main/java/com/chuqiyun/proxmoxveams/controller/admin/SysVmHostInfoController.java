@@ -26,12 +26,12 @@ public class SysVmHostInfoController {
     */
     @AdminApiCheck
     @GetMapping(value = "/getVmHostInfo")
-    public Object getVmHostInfo(@RequestParam(name = "vmId",defaultValue="0") Integer vmId) throws UnauthorizedException {
+    public Object getVmHostInfo(@RequestParam(name = "hostId",defaultValue="0") Integer hostId) throws UnauthorizedException {
         // 判断参数是否为0
-        if (vmId == 0) {
+        if (hostId == 0) {
             return ResponseResult.fail("参数不能为空");
         }
-        return ResponseResult.ok(vmInfoService.getVmHostByVmId(vmId));
+        return ResponseResult.ok(vmInfoService.getVmHostById(hostId));
     }
 
     /**
@@ -41,9 +41,9 @@ public class SysVmHostInfoController {
     */
     @AdminApiCheck
     @GetMapping(value = "/getVmHostRrdData")
-    public Object getVmHostRrdData(@RequestParam(name = "vmId") Integer vmId,
+    public Object getVmHostRrdData(@RequestParam(name = "hostId") Integer hostId,
                                    @RequestParam(name = "timeframe",defaultValue = "hour") String timeframe,
                                    @RequestParam(name = "cf",defaultValue = "AVERAGE") String cf) throws UnauthorizedException {
-        return ResponseResult.ok(vmInfoService.getVmInfoRrdData(vmId,timeframe, cf).getJSONArray("data"));
+        return ResponseResult.ok(vmInfoService.getVmInfoRrdData(hostId,timeframe, cf).getJSONArray("data"));
     }
 }

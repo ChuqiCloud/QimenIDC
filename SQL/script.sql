@@ -112,7 +112,8 @@ create table master
     ssh_port          int                        null,
     ssh_username      varchar(255)               null,
     ssh_password      varchar(255)               null,
-    controller_status int                        null
+    controller_status int                        null,
+    controller_port   int          default 7600  null comment '被控端口'
 );
 
 create table modelgroup
@@ -200,7 +201,7 @@ create table vmhost
         primary key,
     nodeid                int                                        not null,
     vmid                  int                                        null,
-    name                  varchar(255)                               not null,
+    hostname              varchar(255)                               not null,
     configure_template_id int                                        null,
     sockets               int                                        null,
     cores                 int                                        not null,
@@ -247,9 +248,12 @@ create table vmhost
 
 create table vncdata
 (
-    id              bigint auto_increment
+    id              int auto_increment
         primary key,
     vnc_id          bigint        null,
+    host_id         int           null,
+    node_id         int           null,
+    port            int           null,
     status          int default 0 not null comment '0=正常；1=失效',
     create_date     bigint        null,
     expiration_time bigint        null comment '失效时间'
@@ -257,23 +261,25 @@ create table vncdata
 
 create table vncinfo
 (
-    id       bigint auto_increment
+    id       int auto_increment
         primary key,
     host_id  bigint       null,
     vmid     bigint       null,
     host     varchar(255) null comment '控制器连接地址',
     port     int          null comment 'vnc端口',
+    username varchar(255) null,
     password varchar(255) null comment 'vnc密码'
 );
 
 create table vncnode
 (
-    id          bigint auto_increment
+    id          int auto_increment
         primary key,
     name        varchar(255)  not null comment '别称',
     host        varchar(255)  null,
     port        int           null comment '控制器端口',
     domain      varchar(255)  null,
+    protocol    int default 0 not null comment '0=false;1=true',
     status      int default 0 not null comment '0=true；1=false',
     create_date bigint        null comment '创建日期'
 );

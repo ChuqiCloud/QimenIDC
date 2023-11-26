@@ -31,7 +31,7 @@ public class Vmhost extends Model<Vmhost> {
     
     private Integer vmid;
     
-    private String name;
+    private String hostname;
     /**
      * 配置模板ID
      */

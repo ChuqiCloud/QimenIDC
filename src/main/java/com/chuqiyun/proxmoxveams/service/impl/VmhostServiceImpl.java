@@ -144,7 +144,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Vmhost vmhost = new Vmhost();
         vmhost.setNodeid(vmParams.getNodeid());
         vmhost.setVmid(vmId);
-        vmhost.setName(vmParams.getHostname());
+        vmhost.setHostname(vmParams.getHostname());
         vmhost.setConfigureTemplateId(vmParams.getConfigureTemplateId());
         vmhost.setSockets(vmParams.getSockets());
         vmhost.setCores(vmParams.getCores());

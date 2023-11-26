@@ -14,7 +14,7 @@ public interface VmInfoService {
 
     Object getVmHostPageByParam(Integer page, Integer size, String param, String value);
 
-    VmHostDto getVmHostByVmId(Integer vmId);
+    VmHostDto getVmHostById(Integer vmId);
 
     JSONObject getVmInfoRrdData(Integer vmId, String timeframe, String cf);
 }
