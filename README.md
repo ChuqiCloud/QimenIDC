@@ -32,7 +32,12 @@
 
 ## 开发者API文档
 
+离线文档：
+[开发者API文档](/docs/API.md)
+
+最新在线文档：
 [https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd](https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd)
+
 
 ## 快速开始
 
@@ -48,70 +53,24 @@
 - 内存：4G
 - 硬盘：20G
 
-### 节点部署
-
-被控程序在Controlled目录下，请将Controlled目录下的install.sh文件上传到被控服务器上，然后执行该脚本即可。
-
-或者可以运行以下命令：
-
-```shell
-wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash install.sh
-```
-
-注意：如何你不是pve的企业订阅用户，需要先删除pve官方的企业源，否则会导致安装失败。
-
-更换源教程：
-
-[https://www.mryunqi.com/archives/576](https://www.mryunqi.com/archives/576)
-
-### 节点端口开放
-    
-    7600/tcp
-
-宿主机上的端口开放：
-
-    22/tcp
-    8006/tcp
-
-宿主机需开启SSH服务
-
-### 主控部署
-
 ### 程序获取
+
+**前置环境：**
+
+- [Java SE Development Kits - 17](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html)或更高版本
+- [MySQL - 5.7](https://dev.mysql.com/downloads/mysql/5.7.html)或更高版本
+
+> 注意：请务必使用MySQL 5.7+与JDK17+版本，否则会导致程序无法正常运行。
 
 你可以直接下载已经构建好的 QimenIDC 发行版
 
 或者，你也可以从源代码构建 QimenIDC，下方有构建指南。
 
-请将config目录与jar包放在同一目录下。
-
-配置文件说明：
-
-主配置文件：application.yml
-
-```yaml
-config:
-   profiles: prod # 配置文件环境，可选值：dev、prod、test
-```
-profiles的内容与config目录下的文件名对应，例如：profiles为prod时，会加载application-prod.yml文件。
-
-可根据自己的需要修改配置文件。
-
-使用命令行运行：
-
-```shell
-java -jar QimenIDC.jar
-```
-
-可根据自己服务器的配置修改启动参数。
-
-### 自行构建
+#### 自行构建
 
 QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
 
 **前置：**
-
-- [Java SE Development Kits - 17](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html)或更高版本
 - [Git](https://git-scm.com/downloads)
 
 **步骤：**
@@ -136,14 +95,61 @@ QimenIDC 使用 Gradle 进行构建，并且需要在 JDK 17 环境下运行。
 
 你可以在项目根目录下的/build/lib找到输出的jar。
 
+### 主控部署
 
+请将config目录与jar包放在同一目录下。
+
+配置文件说明：
+
+主配置文件：application.yml
+
+```yaml
+config:
+   profiles: prod # 配置文件环境，可选值：dev、prod、test
+```
+profiles的内容与config目录下的文件名对应，例如：profiles为prod时，会加载application-prod.yml文件。
+
+可根据自己的需要修改配置文件。
+
+使用命令行运行：
+
+```shell
+java -jar QimenIDC.jar
+```
+
+可根据自己服务器的配置修改启动参数。
+
+### 节点部署
+
+被控程序在Controlled目录下，请将Controlled目录下的install.sh文件上传到被控服务器上，然后执行该脚本即可。
+
+或者可以运行以下命令：
+
+```shell
+wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash install.sh
+```
+
+注意：如何你不是pve的企业订阅用户，需要先删除pve官方的企业源，否则会导致安装失败。
+
+更换源教程：
+
+[https://www.mryunqi.com/archives/576](https://www.mryunqi.com/archives/576)
+
+### 节点端口开放（宿主机）
+    
+    7600/tcp
+    22/tcp
+    8006/tcp
+    6080/tcp
+    59000-65535/tcp
+
+> 注意需要开启SSH服务
 
 ## 社区和支持
 
-如果您有任何问题、建议或反馈，可以发送至我们的邮箱：
+如果您有任何问题、建议或反馈，可以加入QQ群：
 
-- 邮件列表：434658198@qq.com
-
+![qq.jpg](/screenshot/qq.jpg)
 ## 许可证
 
 QimenIDC 使用 [AGPL-3.0 License](https://www.gnu.org/licenses/agpl-3.0.html) 进行许可。
@@ -151,3 +157,25 @@ QimenIDC 使用 [AGPL-3.0 License](https://www.gnu.org/licenses/agpl-3.0.html) �
 ---
 
 感谢您对 QimenIDC 项目的关注和支持！我们期待您的贡献，希望 QimenIDC 能为您提供便捷的多云管理和混合云融合体验。如果您对该项目有任何疑问或需要帮助，请随时与我们联系。
+
+## 项目截图
+
+![01.png](/screenshot/01.png)
+
+![02.png](/screenshot/02.png)
+
+![03.png](/screenshot/03.png)
+
+![04.png](/screenshot/04.png)
+
+![05.png](/screenshot/05.png)
+
+![06.png](/screenshot/06.png)
+
+![07.png](/screenshot/07.png)
+
+![08.png](/screenshot/08.png)
+
+![10.png](/screenshot/10.png)
+
+![11.png](/screenshot/11.png)
