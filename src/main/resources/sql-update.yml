@@ -1,0 +1,5 @@
+build: # 内部构建版本信息
+  1.0.7: # 版本号
+    3: # 迭代号
+      - "alter table config
+             add installed int default 1 not null comment '0=否;1=是';"

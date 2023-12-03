@@ -195,4 +195,32 @@ public class ModUtil {
         Matcher matcher = pattern.matcher(str);
         return matcher.find();
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 十六进制转十进制
+    * @DateTime: 2023/12/3 13:44
+    * @Params: String hex 十六进制
+    * @Return int 十进制
+    */
+    public static int hexToDecimal(String hex){
+        return Integer.parseInt(hex,16);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将整数版号转换为字符串版号
+    * @DateTime: 2023/12/3 14:18
+    * @Params: int version 整型版号
+    * @Return String 字符串版号
+    */
+    public static String versionToString(int version) {
+        // 规则：如107 --> 1.0.7，1007 --> 10.0.7，10077 --> 100.7.7，也就是只有后两位是小数点后面的
+        String versionStr = String.valueOf(version);
+        // 在倒数第一位前插入小数点
+        versionStr = versionStr.substring(0,versionStr.length()-1)+"."+versionStr.substring(versionStr.length()-1);
+        // 在倒数第三位前插入小数点
+        versionStr = versionStr.substring(0,versionStr.length()-3)+"."+versionStr.substring(versionStr.length()-3);
+        return versionStr;
+    }
 }

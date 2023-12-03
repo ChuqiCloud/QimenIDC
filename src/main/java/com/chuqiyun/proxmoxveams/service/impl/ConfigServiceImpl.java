@@ -68,5 +68,67 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     public Integer getVncExpire(){
         return this.getById(1).getVncTime();
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取正式版号
+    * @DateTime: 2023/11/28 18:23
+    * @Return String version
+    */
+    @Override
+    public String getVersion(){
+        return this.getById(1).getVersion();
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获去内部构建号
+    * @DateTime: 2023/11/28 18:24
+    * @Return String build
+    */
+    @Override
+    public String getBuild(){
+        return this.getById(1).getBuild();
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 获取是否已导入数据库
+    * @DateTime: 2023/12/3 16:37
+    * @Return Boolean true:已导入  false:未导入
+    */
+    @Override
+    public Boolean getInstalled(){
+        return this.getById(1).getInstalled() == 1;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 设置是否已导入数据库
+    * @DateTime: 2023/12/3 16:38
+    * @Params: Boolean installed true:已导入  false:未导入
+    * @Return Boolean true:成功  false:失败
+    */
+    @Override
+    public Boolean setInstalled(Boolean installed){
+        Config config = this.getById(1);
+        config.setInstalled(installed ? 1 : 0);
+        return this.updateById(config);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 设置内部构件号
+    * @DateTime: 2023/12/3 17:03
+    * @Params: String build
+    * @Return Boolean true:成功  false:失败
+    */
+    @Override
+    public Boolean setBuild(String build){
+        Config config = this.getById(1);
+        config.setBuild(build);
+        return this.updateById(config);
+    }
+
 }
 

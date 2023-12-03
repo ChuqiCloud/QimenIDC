@@ -33,6 +33,18 @@ public class Config extends Model<Config> {
      * vnc过期时间(单位:分钟)
      */
     private Integer vncTime;
+    /**
+     * 正式版号
+     */
+    private String version;
+    /**
+     * 内部构建号
+     */
+    private String build;
+    /**
+     * 是否已导入数据库
+     */
+    private Integer installed;
 
     /**
      * 获取主键值

@@ -20,5 +20,15 @@ public interface ConfigService extends IService<Config> {
     Long getBwlimit();
 
     Integer getVncExpire();
+
+    String getVersion();
+
+    String getBuild();
+
+    Boolean getInstalled();
+
+    Boolean setInstalled(Boolean installed);
+
+    Boolean setBuild(String build);
 }
 
