@@ -64,7 +64,11 @@ public class SmbiosServiceImpl extends ServiceImpl<SmbiosDao, Smbios> implements
             if (fieldName != null) {
                 builder.append(fieldName).append('=');
             }
-            builder.append(fieldValue).append(',');
+
+            //builder.append(fieldValue).append(',');
+            // 带上单引号
+            builder.append("'").append(fieldValue).append("'").append(',');
+
         }
     }
 

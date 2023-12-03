@@ -51,7 +51,7 @@ public class CpuinfoServiceImpl extends ServiceImpl<CpuinfoDao, Cpuinfo> impleme
     public String cpuinfoToString(Cpuinfo cpuinfo) {
         StringBuilder args = new StringBuilder();
 
-        appendField(args, "model_id", cpuinfo.getName());
+        appendField(args, "model_id", "'"+cpuinfo.getName()+"'");
         appendIntegerField(args, "family", cpuinfo.getFamily());
         appendIntegerField(args, "model", cpuinfo.getModel());
         appendIntegerField(args, "stepping", cpuinfo.getStepping());
