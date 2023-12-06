@@ -1,5 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
@@ -8,6 +10,7 @@ import com.chuqiyun.proxmoxveams.dto.VncInfoDto;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import org.apache.tomcat.util.codec.binary.Base64;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -152,7 +155,14 @@ public class VncServiceImpl implements VncService {
             if (domain == null || domain.equals("")){
                 domain = vncnode.getHost();
             }
-            String url = http + domain + ":6080" + "/vnc.html?path=websockify/?token=" + vncinfo.getUsername()+"&port="+vncinfo.getPort();
+
+            JSONObject tokenJson = new JSONObject();
+            tokenJson.put("host",vncinfo.getHost());
+            tokenJson.put("port",vncinfo.getPort());
+            // 将token信息转为base64编码
+            String token = Base64.encodeBase64String(tokenJson.toJSONString().getBytes());
+
+            String url = http + domain + ":6080" + "/vnc.html?token=" + token;
             map.put(vncnode.getName(),url);
         }
         return map;
