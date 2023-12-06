@@ -5,6 +5,14 @@ pip3.10 install -r /home/software/QAgent/requirements.txt
 rm -rf /usr/share/qemu-server/bootsplash.jpg
 mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
 
+# 停止novnc服务
+systemctl stop noVNC.service
+
+# 删除noVNC文件夹
+if [ -d /home/software/noVNC ]; then
+    rm -rf /home/software/noVNC
+fi
+
 # 赋予指定文件权限
 chmod +x /home/software/QAgent/vnc.sh
 

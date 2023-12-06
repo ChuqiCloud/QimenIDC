@@ -30,7 +30,7 @@ function init_system_dir(){
 }
 # 安装必须环境依赖
 function install_python_source(){
-    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev expect
+    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev expect git
 }
 # 安装Python3.10.5
 function install_python(){
@@ -129,7 +129,7 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="http://mirror.chuqiyun.com/software/websocketd/$(check_system())/websocketd"
+    url="http://mirror.chuqiyun.com/software/websocketd/$(check_system)/websocketd"
 
     wget "$url" --no-check-certificate
     chmod +x /home/software/websocketd/websocketd
@@ -172,6 +172,13 @@ WantedBy=multi-user.target" > /etc/systemd/system/noVNC.service
     systemctl start noVNC.service
 }
 
+# 执行cloudbase.sh脚本
+function execute_cloudbase(){
+    # 赋予权限
+    chmod +x /home/software/QAgent/cloudbase.sh
+    # 执行脚本
+    /home/software/QAgent/cloudbase.sh
+}
 
 # 开始安装
 function start_install(){
@@ -191,6 +198,7 @@ function start_install(){
     delete_install_file
     systemctl status qagent.service
     replace_start_image
+    execute_cloudbase
     echo -e "\033[32mQimenIDC Controller install success!\033[0m"
     echo -e "\033[32m-->start: systemctl start qagent.service\033[0m"
     echo -e "\033[32m-->stop: systemctl stop qagent.service\033[0m"
