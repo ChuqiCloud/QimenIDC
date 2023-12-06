@@ -1,43 +1,41 @@
 package com.chuqiyun.proxmoxveams.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.util.Map;
 
 /**
- * (Vncnode)表实体类
+ * (Flowdata)表实体类
  *
  * @author mryunqi
- * @since 2023-11-22 13:42:25
+ * @since 2023-12-03 20:21:54
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "vncnode")
-public class Vncnode extends Model<Vncnode> {
+@TableName(value = "flowdata",autoResultMap = true)
+public class Flowdata extends Model<Flowdata> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
-    //别称
-    private String name;
     
-    private String host;
-    //控制器端口
-    private Integer port;
+    private Integer nodeId;
     
-    private String domain;
-    // 0=HTTP；1=HTTPS
-    private Integer protocol;
-    // 0=不开启代理；1=开启代理
-    private Integer proxy;
-    //0=true；1=false
+    private Integer hostid;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String,String> rrd;
+    //已用流量
+    private Double usedFlow;
+    //0=未同步;1=已同步
     private Integer status;
-    //创建日期
+    
     private Long createDate;
-
 
 
     /**

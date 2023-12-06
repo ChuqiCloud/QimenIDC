@@ -31,7 +31,8 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object power(@PathVariable("hostId") Integer hostId,
-                        @PathVariable("action") String action) throws UnauthorizedException {
+                        @PathVariable("action") String action,
+                        @RequestBody(required = false) JSONObject data) throws UnauthorizedException {
         // 判断虚拟机是否存在
         if (vmhostService.getById(hostId) == null) {
             return ResponseResult.fail("虚拟机不存在");
@@ -41,7 +42,7 @@ public class SysVmHostController {
                 && !"pause".equals(action) && !"unpause".equals(action) && !"suspend".equals(action) && !"resume".equals(action)) {
             return ResponseResult.fail("action不合法");
         }
-        HashMap<String, Object> result = vmhostService.power(hostId, action);
+        HashMap<String, Object> result = vmhostService.power(hostId, action, data);
         if (result == null) {
             return ResponseResult.fail("操作失败");
         }

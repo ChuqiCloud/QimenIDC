@@ -33,7 +33,7 @@ public class CookieUp {
     * @DateTime: 2023/6/19 21:58
     */
     @Async
-    @Scheduled(fixedDelay = 1000*60*30)  //每隔30分钟执行一次
+    @Scheduled(fixedRate = 1000*60*30)  //每隔30分钟执行一次
     public void cookieUpCron(){
         masterService.updateAllNodeCookie();
     }
@@ -44,7 +44,7 @@ public class CookieUp {
     * @DateTime: 2023/11/18 15:06
     */
     @Async
-    @Scheduled(fixedDelay = 1000*60)  //每隔1分钟执行一次
+    @Scheduled(fixedRate = 1000*60)  //每隔1分钟执行一次
     public void cookieCheckCron(){
         int i = 1;
         while (true){

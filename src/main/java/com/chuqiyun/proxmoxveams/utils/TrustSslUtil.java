@@ -2,6 +2,8 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import javax.net.ssl.*;
 import java.net.Socket;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 
@@ -66,6 +68,36 @@ public class TrustSslUtil {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public static SSLSocketFactory getIgnoreSslSocketFactory() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, getTrustManagers(), new java.security.SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            throw new RuntimeException("Failed to create SSL socket factory", e);
+        }
+    }
+
+    public static HostnameVerifier getTrustAnyHostnameVerifier() {
+        return (hostname, session) -> true;
+    }
+
+    public static X509TrustManager[] getTrustManagers() {
+        return new X509TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return null;
+                    }
+
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) {
+                    }
+
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                    }
+                }
+        };
     }
 
 }

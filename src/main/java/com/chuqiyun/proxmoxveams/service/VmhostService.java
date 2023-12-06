@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -40,7 +41,7 @@ public interface VmhostService extends IService<Vmhost> {
 
     Integer addVmhost(int vmId, VmParams vmParams);
 
-    HashMap<String,Object> power(Integer hostId, String action);
+    HashMap<String,Object> power(Integer hostId, String action, JSONObject data);
 
     Integer getNewVmid(Integer id);
 

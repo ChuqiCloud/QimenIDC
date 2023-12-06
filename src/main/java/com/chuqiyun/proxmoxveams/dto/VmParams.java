@@ -77,6 +77,14 @@ public class VmParams {
      */
     private Long bwlimit;
     /**
+     * 月流量限制(单位:GB)
+     */
+    private Long flowLimit;
+    /**
+     * 月流量使用量(单位:GB)
+     */
+    private Double usedFlow;
+    /**
      * args 命令集参数
      */
     private String args;

@@ -6,10 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.OsNodeStatus;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
-import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
-import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -27,8 +25,6 @@ import java.util.Map;
 @EnableScheduling
 public class OsCron {
     @Resource
-    private TaskService taskService;
-    @Resource
     private OsService osService;
     @Resource
     private MasterService masterService;
@@ -39,7 +35,7 @@ public class OsCron {
     * @DateTime: 2023/8/13 17:11
     */
     @Async
-    @Scheduled(fixedDelay = 1000*60*5)
+    @Scheduled(fixedDelay = 1000*60*3) // 3分钟执行一次
     public void updateOsUrlCron() {
         QueryWrapper<Os> queryWrap = new QueryWrapper<>();
         // status不为1，且downType为0的镜像
@@ -65,6 +61,11 @@ public class OsCron {
                     }
                     // 设置镜像大小
                     os.setSize(ModUtil.formatFileSize(size));
+                    // 如果镜像状态为2，说明之前镜像下载地址不可用，现在可用了，所以设置镜像状态为0，并清空异常信息
+                    if (os.getStatus() == 2) {
+                        os.setStatus(0);
+                        os.setReason("");
+                    }
                     osService.updateById(os);
                 }
             }else {

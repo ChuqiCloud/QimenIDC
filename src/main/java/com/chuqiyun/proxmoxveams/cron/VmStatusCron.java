@@ -401,6 +401,64 @@ public class VmStatusCron {
     }
 
     /**
+     * @Author: mryunqi
+     * @Description: 超流暂停虚拟机任务
+     * @DateTime: 2023/7/18 23:20
+     */
+    @Async
+    @Scheduled(fixedDelay = 1000)
+    public void qosPauseVm(){
+        QueryWrapper<Task> queryWrap = new QueryWrapper<>();
+        // 暂停为挂起操作
+        queryWrap.eq("type", QOS_PAUSE);
+        queryWrap.eq("status", 0);
+        Task task = taskService.getOne(queryWrap);
+        if (task != null){
+            // 设置任务状态为1 1为正在执行
+            task.setStatus(1);
+            taskService.updateById(task);
+            // 获取node信息
+            Master node = masterService.getById(task.getNodeid());
+            log.info("[Task-PauseVm] 执行超流暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+            // 获取vm信息
+            Vmhost vmhost = vmhostService.getById(task.getHostid());
+            // 先获取虚拟机的状态码
+            int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
+            // 如果虚拟机状态为1或者 2
+            if (vmStatus ==1 || vmStatus == 2){
+                // 设置任务状态为2 2为执行完成
+                task.setStatus(2);
+                taskService.updateById(task);
+                log.info("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
+                return;
+            }
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+            HashMap<String,Object> params = new HashMap<>();
+            // 挂起虚拟机硬盘
+            params.put("todisk",true);
+            try {
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/suspend", params);
+            } catch (Exception e) {
+                log.error("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError(e.getMessage());
+                taskService.updateById(task);
+                e.printStackTrace();
+                return;
+            }
+            // 设置数据库中的vm状态为4 4为暂停
+            vmhost.setStatus(4);
+            vmhostService.updateById(vmhost);
+            // 设置任务状态为2 2为执行完成
+            task.setStatus(2);
+            taskService.updateById(task);
+            log.info("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
+        }
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 恢复暂停任务
     * @DateTime: 2023/7/18 23:24
@@ -484,7 +542,12 @@ public class VmStatusCron {
                 break;
             }
             for (Master master: nodes){
+
                 int nodeId = master.getId();
+                //  判断节点是否在线
+                if (!masterService.isNodeOnline(nodeId)){
+                    continue;
+                }
                 JSONObject vmJson = masterService.getNodeVmInfoJsonList(nodeId);
                 // 判空
                 if (vmJson == null){

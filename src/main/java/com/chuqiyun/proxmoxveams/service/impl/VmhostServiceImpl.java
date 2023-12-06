@@ -234,7 +234,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return HashMap<String,Object> 返回操作结果
     */
     @Override
-    public HashMap<String,Object> power(Integer hostId, String action) {
+    public HashMap<String,Object> power(Integer hostId, String action,JSONObject data) {
         HashMap<String,Object> result = new HashMap<>();
         // 获取虚拟机实例信息
         Vmhost vmhost = this.getById(hostId);
@@ -246,7 +246,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         int vmStatus = vmhost.getStatus();
         long time = System.currentTimeMillis();
         // vmStatus状态有0=运行中、1=已关机、2=挂起、3=恢复中、4=暂停、5=到期、6=创建中、7=开机中、8=关机中、9=停止中（强制关机中）、10=挂起中、11=暂停中、12重启中、13=重装系统中、14=修改密码中
+        // 15=流量超限
         // action类型有start=开机、stop=关机、reboot=重启、shutdown=强制关机、suspend=挂起、resume=恢复、pause=暂停、unpause=恢复
+        // qosPause=超流暂停
         switch (action) {
             case "start": {
                 // 判断虚拟机是否被暂停
@@ -259,6 +261,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 5){
                     result.put("status", false);
                     result.put("msg", "虚拟机已到期，无法开机");
+                    return result;
+                }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，无法开机");
                     return result;
                 }
                 // 判断虚拟机状态是否为已停止
@@ -307,6 +315,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已到期，无法关机");
                     return result;
                 }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，无法关机");
+                    return result;
+                }
                 if (vmStatus == 1 || vmStatus == 2) {
                     result.put("status", true);
                     // 直接返回true
@@ -348,6 +362,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 5){
                     result.put("status", false);
                     result.put("msg", "虚拟机已到期，无法重启");
+                    return result;
+                }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，无法重启");
                     return result;
                 }
                 else {
@@ -413,6 +433,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已到期，无法关机");
                     return result;
                 }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，无法关机");
+                    return result;
+                }
                 else {
                     // 设置虚拟机状态为9，表示强制关机中
                     vmhost.setStatus(9);
@@ -450,6 +476,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 if (vmStatus == 5){
                     result.put("status", false);
                     result.put("msg", "虚拟机已到期，无法挂起");
+                    return result;
+                }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，已经挂起");
                     return result;
                 }
                 else {
@@ -492,6 +524,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     result.put("msg", "虚拟机已到期，无法恢复");
                     return result;
                 }
+                // 判断虚拟机是否流量超限
+                if (vmStatus == 15){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机流量超限，已经暂停");
+                    return result;
+                }
                 else {
                     // 设置虚拟机状态为3，表示恢复中
                     vmhost.setStatus(3);
@@ -522,6 +560,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             case "pause":{
                 // 设置虚拟机状态为11，表示暂停中
                 vmhost.setStatus(11);
+                // 判断data是否为空
+                if (data != null) {
+                    // 设置虚拟机暂停原因
+                    vmhost.setPauseInfo(data.getString("pauseInfo"));
+                }
                 // 更新虚拟机状态
                 this.updateById(vmhost);
                 Task vmPauseTask = new Task();
@@ -545,9 +588,40 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 }
                 return result;
             }
+            case "qosPause":{
+                // 设置虚拟机状态为11，表示暂停中
+                vmhost.setStatus(11);
+                // 判断data是否为空
+                if (data != null) {
+                    // 设置虚拟机暂停原因
+                    vmhost.setPauseInfo(data.getString("pauseInfo"));
+                }
+                // 更新虚拟机状态
+                this.updateById(vmhost);
+                Task vmPauseTask = new Task();
+                vmPauseTask.setNodeid(nodeId);
+                vmPauseTask.setVmid(vmId);
+                vmPauseTask.setHostid(hostId);
+                vmPauseTask.setType(QOS_PAUSE);
+                vmPauseTask.setStatus(0);
+                vmPauseTask.setCreateDate(time);
+                if (taskService.save(vmPauseTask)) {
+                    log.info("[Task-PauseVm] 超流暂停任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                    result.put("status", true);
+
+                    // 添加任务流程
+                    this.addVmHostTask(hostId, vmPauseTask.getId());
+                }
+                else {
+                    log.info("[Task-PauseVm] 超流暂停任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                    result.put("status", false);
+                    result.put("msg", "超流暂停任务创建失败");
+                }
+                return result;
+            }
             case "unpause":{
-                // 判断虚拟机状态是否为暂停
-                if (vmStatus != 4) {
+                // 判断虚拟机状态是否为暂停或者超流暂停
+                if (vmStatus != 4 && vmStatus != 15) {
                     result.put("status", false);
                     result.put("msg", "虚拟机未暂停");
                     return result;
@@ -708,13 +782,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             // 判断数据库中的状态是否为5(到期)，且pve中的状态不为1(关机)
             if (vmStatus == 5 && initStatus != 1){
                 // 强制关机
-                this.power(vmhost.getId(),"shutdown");
+                this.power(vmhost.getId(),"shutdown",null);
                 continue;
             }
             // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
             if (vmStatus == 4){
                 // 暂停pve中的虚拟机
-                this.power(vmhost.getId(),"pause");
+                this.power(vmhost.getId(),"pause",null);
                 continue;
             }
             // 其他情况，直接更新数据库中的状态
@@ -757,7 +831,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
-            this.power(vmhost.getId(), "shutdown");
+            this.power(vmhost.getId(), "shutdown",null);
         }
         // 重置osName
         osName = os.getFileName();
@@ -820,7 +894,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
-            this.power(vmhost.getId(), "shutdown");
+            this.power(vmhost.getId(), "shutdown",null);
         }
 
         // 创建删除虚拟机的任务
@@ -877,7 +951,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
-            this.power(vmhost.getId(), "shutdown");
+            this.power(vmhost.getId(), "shutdown",null);
         }
         // 对比新旧密码是否相同
         if (newPassword.equals(vmhost.getPassword())){

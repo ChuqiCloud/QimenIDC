@@ -1,6 +1,9 @@
 package com.chuqiyun.proxmoxveams.utils;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -34,5 +37,25 @@ public class TimeUtil {
     */
     public static long tenToThirteen(long timestamp){
         return timestamp * 1000;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 判断时间戳是否小于当前时间戳30天
+    * @DateTime: 2023/12/6 18:27
+    * @Params: long timestamp 时间戳
+    * @Return boolean true:小于30天 false:大于30天
+    */
+    public static boolean isLessThanThirtyDays(long timestamp){
+        long now = System.currentTimeMillis();
+        // 判断该时间戳是否是本月的
+        LocalDateTime dateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneId.systemDefault());// 转换为 LocalDateTime
+
+        // 获取当前月份的第一天
+        LocalDateTime firstDayOfMonth = LocalDateTime.of(dateTime.getYear(), dateTime.getMonth(), 1, 0, 0);
+
+        // 转换为时间戳
+        long firstDayOfMonthTimestamp = firstDayOfMonth.toInstant(ZoneId.systemDefault().getRules().getOffset(firstDayOfMonth)).toEpochMilli();
+        return timestamp < firstDayOfMonthTimestamp;
     }
 }

@@ -75,6 +75,18 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Long bwlimit;
     /**
+     * 月流量限制(单位:GB)
+     */
+    private Long flowLimit;
+    /**
+     * 月流量使用量(单位:GB)
+     */
+    private Double usedFlow;
+    /**
+     * 上次重置流量时间
+     */
+    private Long lastResetFlow;
+    /**
      * args 命令集参数
      */
     private String args;
@@ -142,6 +154,10 @@ public class Vmhost extends Model<Vmhost> {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> task;
     private Integer status;
+    /**
+     * 暂停原因
+     */
+    private String pauseInfo;
     private Long createTime;
     private Long expirationTime;
     @TableField(typeHandler = JacksonTypeHandler.class)

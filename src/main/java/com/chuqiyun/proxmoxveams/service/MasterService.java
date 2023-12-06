@@ -63,6 +63,8 @@ public interface MasterService extends IService<Master> {
 
     JSONObject getNodeVmInfoJsonList(Integer nodeId);
 
+    Boolean isNodeOnline(Integer nodeId);
+
     void updateAllNodeCookie();
 
     void updateNodeCookie(Integer nodeId);

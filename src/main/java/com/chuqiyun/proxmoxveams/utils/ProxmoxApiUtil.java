@@ -1,15 +1,17 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
-import io.swagger.models.auth.In;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 
 /**
@@ -170,9 +172,8 @@ public class ProxmoxApiUtil {
     * @DateTime: 2023/6/20 15:22
     * @Return
     */
-    public HashMap<String, String> loginAndGetCookie(HashMap<String,String> user){
-        RestTemplate restTemplate = new RestTemplate();
-
+    public HashMap<String, String> loginAndGetCookie(HashMap<String,String> user) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+        RestTemplate restTemplate = new RestTemplate(RestTemplateConfig.generateHttpRequestFactory());
         // 构建请求主体
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -187,7 +188,6 @@ public class ProxmoxApiUtil {
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
         ResponseEntity<String> response = restTemplate.exchange(user.get("url") + "/api2/json/access/ticket", HttpMethod.POST, entity, String.class);
-
         if (response.getStatusCode().is2xxSuccessful()) {
             // 提取 Cookie 和 CSRF 预防令牌
             JSONObject body = JSONObject.parseObject(response.getBody());

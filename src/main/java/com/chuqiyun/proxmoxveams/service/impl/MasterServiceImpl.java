@@ -173,6 +173,32 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
 
     /**
     * @Author: mryunqi
+    * @Description: 判断节点是否在线
+    * @DateTime: 2023/12/6 13:42
+    * @Params: Integer nodeId 节点ID
+    * @Return Boolean 节点是否在线
+    */
+    @Override
+    public Boolean isNodeOnline(Integer nodeId) {
+        Master node = this.getById(nodeId);
+        // 先判断数据库中节点状态是否为在线
+        if (node.getStatus() != 0){
+            return false;
+        }
+        // 获取cookie
+        HashMap<String, String> authentications = getMasterCookieMap(nodeId);
+        try {
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", new HashMap<>());
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 更新所有节点cookie
     * @DateTime: 2023/7/20 0:51
     */
@@ -229,6 +255,9 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
             this.updateById(node);
         }catch (Exception e){
             e.printStackTrace();
+            // 出现异常则将节点状态设置为离线
+            node.setStatus(1);
+            this.updateById(node);
         }
     }
 

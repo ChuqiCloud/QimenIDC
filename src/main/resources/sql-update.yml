@@ -3,3 +3,26 @@ build: # 内部构建版本信息
     3: # 迭代号
       - "alter table config
              add installed int default 1 not null comment '0=否;1=是';"
+    4:
+      - "alter table vmhost
+             add flow_limit bigint default 0 not null comment '月流量上限' after bwlimit;"
+      - "alter table vmhost
+             add used_flow double default 0 not null comment '已用流量' after flow_limit;"
+      - "create table flowdata
+         (
+             id          int auto_increment,
+             node_id     int              null,
+             hostid      int              null,
+             rrd         json             null,
+             used_flow   double default 0 not null comment '已用流量',
+             status      int    default 0 not null comment '0=未同步;1=已同步',
+             create_date varchar(20)      null,
+             constraint flowdata_pk
+                 primary key (id)
+         );"
+      - "alter table vncnode
+             modify port int default 7600 not null comment '控制器端口';"
+      - "alter table vncnode
+             add proxy int default 0 not null comment '0=false;1=true' after protocol;"
+      - "alter table vmhost
+             add last_reset_flow bigint default 0 not null comment '上次重置流量月份' after used_flow;"

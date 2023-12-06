@@ -222,6 +222,8 @@ public class VmInfoServiceImpl implements VmInfoService {
             if (node == null || node.getStatus() != 0){
                 vmHostDto.setVmhost(vmhost);
                 vmHostDto.setCurrent(null);
+                Os os = osService.isExistOs(vmhost.getOsName());
+                vmHostDto.setOs(os);
                 vmHostDtoList.add(vmHostDto);
                 continue;
             }

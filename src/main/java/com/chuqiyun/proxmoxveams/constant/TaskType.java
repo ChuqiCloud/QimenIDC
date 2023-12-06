@@ -137,5 +137,9 @@ public class TaskType {
      * 重置密码
      */
     public static Integer RESET_PASSWORD = 33;
+    /**
+     * 超流暂停
+     */
+    public static Integer QOS_PAUSE = 34;
 
 }

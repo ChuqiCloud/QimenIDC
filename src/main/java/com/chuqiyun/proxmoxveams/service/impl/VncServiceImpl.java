@@ -161,8 +161,15 @@ public class VncServiceImpl implements VncService {
             tokenJson.put("port",vncinfo.getPort());
             // 将token信息转为base64编码
             String token = Base64.encodeBase64String(tokenJson.toJSONString().getBytes());
-
-            String url = http + domain + ":6080" + "/vnc.html?token=" + token;
+            String url = "";
+            // 判断是开启代理
+            if (vncnode.getProxy() == 1) {
+                // 不带端口
+                url = http + domain + "/vnc.html?token=" + token;
+            }else {
+                // 带端口
+                url = http + domain + ":6080" + "/vnc.html?token=" + token;
+            }
             map.put(vncnode.getName(),url);
         }
         return map;
