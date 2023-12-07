@@ -65,6 +65,18 @@ create table cpuinfo
     create_date varchar(13)  null
 );
 
+create table flowdata
+(
+    id          int auto_increment
+        primary key,
+    node_id     int              null,
+    hostid      int              null,
+    rrd         json             null,
+    used_flow   double default 0 not null comment '已用流量',
+    status      int    default 0 not null comment '0=未同步;1=已同步',
+    create_date varchar(20)      null
+);
+
 create table ippool
 (
     id          int auto_increment
@@ -216,6 +228,9 @@ create table vmhost
     cpu                   varchar(255)                               null,
     cpu_units             int                                        null,
     bwlimit               bigint                                     null,
+    flow_limit            bigint       default 0                     not null comment '月流量上限',
+    used_flow             double       default 0                     not null comment '已用流量',
+    last_reset_flow       bigint       default 0                     not null comment '上次重置流量月份',
     args                  text                                       null,
     arch                  varchar(20)                                null,
     acpi                  int                                        null,
@@ -237,6 +252,14 @@ create table vmhost
     bandwidth             int                                        null,
     storage               varchar(255)                               null,
     system_disk_size      int                                        null,
+    mbps_rd               int          default 0                     not null comment '读取长效限制 单位mb/s',
+    mbps_rd_max           int          default 0                     not null comment '读取突发限制 单位mb/s',
+    mbps_wr               int          default 0                     not null comment '写长效限制 单位mb/s',
+    mbps_wr_max           int          default 0                     not null comment '写突发限制 单位mb/s',
+    iops_rd               int          default 0                     not null comment 'iops读长效限制 单位ops/s',
+    iops_rd_max           int          default 0                     not null comment 'iops读突发限制 单位ops/s',
+    iops_wr               int          default 0                     not null comment 'iops写长效限制 单位ops/s',
+    iops_wr_max           int          default 0                     not null comment 'iops写突发限制 单位ops/s',
     data_disk             json                                       null,
     bridge                varchar(255)                               null,
     ip_config             json                                       null,
@@ -244,6 +267,7 @@ create table vmhost
     nested                int          default 0                     not null comment '嵌套虚拟化',
     task                  json                                       null comment '任务流',
     status                int          default 0                     not null,
+    pause_info            text                                       null comment '暂停原因',
     create_time           mediumtext                                 not null comment '创建时间',
     expiration_time       mediumtext                                 not null comment '到期时间',
     ip_list               text                                       null
@@ -278,13 +302,14 @@ create table vncnode
 (
     id          int auto_increment
         primary key,
-    name        varchar(255)  not null comment '别称',
-    host        varchar(255)  null,
-    port        int           null comment '控制器端口',
-    domain      varchar(255)  null,
-    protocol    int default 0 not null comment '0=false;1=true',
-    status      int default 0 not null comment '0=true；1=false',
-    create_date bigint        null comment '创建日期'
+    name        varchar(255)     not null comment '别称',
+    host        varchar(255)     null,
+    port        int default 7600 not null comment '控制器端口',
+    domain      varchar(255)     null,
+    protocol    int default 0    not null comment '0=false;1=true',
+    proxy       int default 0    not null comment '0=false;1=true',
+    status      int default 0    not null comment '0=true；1=false',
+    create_date bigint           null comment '创建日期'
 );
 
 
