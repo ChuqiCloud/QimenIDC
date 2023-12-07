@@ -3,10 +3,7 @@ package com.chuqiyun.proxmoxveams.utils;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.dto.IpDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
-import com.chuqiyun.proxmoxveams.entity.Configuretemplate;
-import com.chuqiyun.proxmoxveams.entity.Cpuinfo;
-import com.chuqiyun.proxmoxveams.entity.Modelgroup;
-import com.chuqiyun.proxmoxveams.entity.Smbios;
+import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.CpuinfoService;
 import com.chuqiyun.proxmoxveams.service.SmbiosService;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -547,6 +544,64 @@ public class VmUtil {
     */
     public static List<Integer> getRecoveringStatusList(){
         return Arrays.asList(3, 7, 8, 9, 10, 11, 12, 13, 14);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 虚拟机系统硬盘参数拼接
+    * @DateTime: 2023/12/7 16:21
+    * @Params: Vmhost vmhost 虚拟机实体 diskInfo 系统硬盘参数 size 是否需要size
+    * @Return String 系统硬盘参数
+    */
+    public static String getSystemDiskParams(Vmhost vmhost,String diskInfo,boolean size,boolean first){
+        // 系统硬盘参数
+        String systemDiskParams = "";
+        // diskInfo = "local-lvm:vm-100-disk-0,iops_rd=200,iops_rd_max=300,iops_wr=200,iops_wr_max=300,mbps_rd=200,mbps_rd_max=400,mbps_wr=200,mbps_wr_max=400,size=40G"
+        // 如果为第一次创建则不需要拆分
+        if (first){
+            systemDiskParams = diskInfo;
+        }else {
+            // 保留第一个,之前的字符串 local-lvm:vm-100-disk-0
+            systemDiskParams = diskInfo.substring(0, diskInfo.indexOf(","));
+        }
+
+        if (vmhost.getMbpsRd() > 0){
+            // 追加mbps_rd
+            systemDiskParams = systemDiskParams + ",mbps_rd=" + vmhost.getMbpsRd();
+        }
+        if (vmhost.getMbpsRdMax() > 0){
+            // 追加mbps_rd_max
+            systemDiskParams = systemDiskParams + ",mbps_rd_max=" + vmhost.getMbpsRdMax();
+        }
+        if (vmhost.getMbpsWr() > 0){
+            // 追加mbps_wr
+            systemDiskParams = systemDiskParams + ",mbps_wr=" + vmhost.getMbpsWr();
+        }
+        if (vmhost.getMbpsWrMax() > 0){
+            // 追加mbps_wr_max
+            systemDiskParams = systemDiskParams + ",mbps_wr_max=" + vmhost.getMbpsWrMax();
+        }
+        if (vmhost.getIopsRd() > 0){
+            // 追加iops_rd
+            systemDiskParams = systemDiskParams + ",iops_rd=" + vmhost.getIopsRd();
+        }
+        if (vmhost.getIopsRdMax() > 0){
+            // 追加iops_rd_max
+            systemDiskParams = systemDiskParams + ",iops_rd_max=" + vmhost.getIopsRdMax();
+        }
+        if (vmhost.getIopsWr() > 0){
+            // 追加iops_wr
+            systemDiskParams = systemDiskParams + ",iops_wr=" + vmhost.getIopsWr();
+        }
+        if (vmhost.getIopsWrMax() > 0){
+            // 追加iops_wr_max
+            systemDiskParams = systemDiskParams + ",iops_wr_max=" + vmhost.getIopsWrMax();
+        }
+        if (size){
+            // 追加size
+            systemDiskParams = systemDiskParams + ",size=" + vmhost.getSystemDiskSize();
+        }
+        return systemDiskParams;
     }
 
 }

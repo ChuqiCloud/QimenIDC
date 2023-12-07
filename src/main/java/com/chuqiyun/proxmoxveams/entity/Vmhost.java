@@ -140,6 +140,38 @@ public class Vmhost extends Model<Vmhost> {
     private Integer bandwidth;
     private String storage;
     private Integer systemDiskSize;
+    /**
+     * 系统磁盘读取长效限制 单位mb/s
+     */
+    private Integer mbpsRd;
+    /**
+     * 系统磁盘读取突发限制 单位mb/s
+     */
+    private Integer mbpsRdMax;
+    /**
+     * 系统磁盘写入长效限制 单位mb/s
+     */
+    private Integer mbpsWr;
+    /**
+     * 系统磁盘写入突发限制 单位mb/s
+     */
+    private Integer mbpsWrMax;
+    /**
+     * 系统磁盘iops读取长效限制 单位ops/s
+     */
+    private Integer iopsRd;
+    /**
+     * 系统磁盘iops读取突发限制 单位ops/s
+     */
+    private Integer iopsRdMax;
+    /**
+     * 系统磁盘iops写入长效限制 单位ops/s
+     */
+    private Integer iopsWr;
+    /**
+     * 系统磁盘iops写入突发限制 单位ops/s
+     */
+    private Integer iopsWrMax;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> dataDisk;
     private String  bridge;

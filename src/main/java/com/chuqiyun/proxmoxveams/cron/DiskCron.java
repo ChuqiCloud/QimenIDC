@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.SshUtil;
+import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import com.jcraft.jsch.JSchException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -178,10 +179,12 @@ public class DiskCron {
                 // 修改任务状态为进行中
                 task.setStatus(2);
                 taskService.updateById(task);
+                // 获取vm信息
+                Vmhost vmhost = vmhostService.getById(task.getHostid());
                 HashMap<String, Object> params = new HashMap<>();
                 params.put("scsihw", "virtio-scsi-pci");
                 //params.put("scsihw", "lsi53c810");
-                params.put("scsi0", vmInfo.getString("unused0"));
+                params.put("scsi0", VmUtil.getSystemDiskParams(vmhost, vmInfo.getString("unused0"),false,true));
                 try {
                     proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
                 } catch (Exception e) {

@@ -26,3 +26,27 @@ build: # 内部构建版本信息
              add proxy int default 0 not null comment '0=false;1=true' after protocol;"
       - "alter table vmhost
              add last_reset_flow bigint default 0 not null comment '上次重置流量月份' after used_flow;"
+    5:
+      - "alter table vmhost
+             add mbps_rd int default 0 not null comment '读取长效限制 单位mb/s' after system_disk_size;
+
+         alter table vmhost
+             add mbps_rd_max int default 0 not null comment '读取突发限制 单位mb/s' after mbps_rd;
+
+         alter table vmhost
+             add mbps_wr int default 0 not null comment '写长效限制 单位mb/s' after mbps_rd_max;
+
+         alter table vmhost
+             add mbps_wr_max int default 0 not null comment '写突发限制 单位mb/s' after mbps_wr;
+
+         alter table vmhost
+             add iops_rd int default 0 not null comment 'iops读长效限制 单位ops/s' after mbps_wr_max;
+
+         alter table vmhost
+             add iops_rd_max int default 0 not null comment 'iops读突发限制 单位ops/s' after iops_rd;
+
+         alter table vmhost
+             add iops_wr int default 0 not null comment 'iops写长效限制 单位ops/s' after iops_rd_max;
+
+         alter table vmhost
+             add iops_wr_max int default 0 not null comment 'iops写突发限制 单位ops/s' after iops_wr;"
