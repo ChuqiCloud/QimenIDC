@@ -46,7 +46,7 @@ public class StartUp {
         }
 
         boolean isInstalled = FileUtil.isInstall();// 文件锁
-        boolean isInstalledDb = configService.getInstalled(); // 数据库锁
+        boolean isInstalledDb = false;//configService.getInstalled(); // 数据库锁
         // 二者必须都为false，才能进行安装
         if (!isInstalled && !isInstalledDb){
             UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "检测到未初始化数据库，正在初始化");
