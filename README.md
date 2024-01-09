@@ -32,7 +32,7 @@
 
 ## 爱发电赞助作者
 
-[![爱发电](https://afdian.net/a/qimen)](https://afdian.net/a/qimen)
+[![爱发电](https://pic1.afdiancdn.com/user/de62723c738711eb80cb52540025c377/avatar/0e7bcee4a52a3357ae42304c89bb00d1_w640_h639_s53.jpeg?imageView2/1/w/240/h/240)](https://afdian.net/a/qimen)
 
 ## 开发者API文档
 
