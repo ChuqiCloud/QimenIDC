@@ -32,7 +32,11 @@
 
 ## 爱发电赞助作者
 
-夜空（qimen）： [https://afdian.net/a/qimen](https://afdian.net/a/qimen) -- 您的支持是我最大的动力！
+夜空（qimen）： [https://afdian.net/a/qimen](https://afdian.net/a/qimen)
+
+leapstar： [https://afdian.net/a/leapstar](https://afdian.net/a/leapstar)
+
+-- 您的支持是我们最大的动力！
 
 ## 开发者API文档
 
