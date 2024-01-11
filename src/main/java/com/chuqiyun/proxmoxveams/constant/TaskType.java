@@ -141,5 +141,9 @@ public class TaskType {
      * 超流暂停
      */
     public static Integer QOS_PAUSE = 34;
+    /**
+     * 配置系统盘IO限制
+     */
+    public static Integer UPDATE_IO_SYSTEM_DISK = 35;
 
 }

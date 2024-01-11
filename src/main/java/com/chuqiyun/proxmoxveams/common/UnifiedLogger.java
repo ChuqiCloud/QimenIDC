@@ -39,6 +39,8 @@ public class UnifiedLogger {
         VMHOST_UPDATE_OS("[Vmhost-UpdateOs]"),
         // 系统日志
         SYSTEM("[System]"),
+        // 更新虚拟机系统盘IO限制
+        UpdateSystemDiskIOLimit("[Task-UpdateSystemDiskIOLimit]"),
         ;
 
         private final String type;

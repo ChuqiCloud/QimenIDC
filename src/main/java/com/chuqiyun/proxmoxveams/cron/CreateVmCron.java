@@ -148,9 +148,9 @@ public class CreateVmCron {
             if (!taskService.insertTask(importTask)) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建导入操作系统任务失败");
                 // 存入失败，修改任务状态为3
-                importTask.setStatus(3);
+                task.setStatus(3);
                 // 记录错误信息
-                importTask.setError("创建导入操作系统任务失败");
+                task.setError("创建导入操作系统任务失败");
                 taskService.updateById(importTask);
                 return;
             }
@@ -174,6 +174,45 @@ public class CreateVmCron {
                 }
             } while (taskStatus.getStatus() != 2);
             // 任务状态为2，任务成功
+
+            // 修改系统盘IO限制
+            UnifiedLogger.log(UnifiedLogger.LogType.UpdateSystemDiskIOLimit, "修改系统盘IO限制");
+            time = System.currentTimeMillis();
+            Task updateSystemDiskIOLimitTask = new Task();
+            updateSystemDiskIOLimitTask.setNodeid(vmParams.getNodeid());
+            updateSystemDiskIOLimitTask.setHostid(vmhostId);
+            updateSystemDiskIOLimitTask.setVmid(vmId);
+            updateSystemDiskIOLimitTask.setType(UPDATE_IO_SYSTEM_DISK);
+            updateSystemDiskIOLimitTask.setStatus(0);
+            updateSystemDiskIOLimitTask.setParams(task.getParams());
+            updateSystemDiskIOLimitTask.setCreateDate(time);
+            if (!taskService.save(updateSystemDiskIOLimitTask)){
+                UnifiedLogger.warn(UnifiedLogger.LogType.UpdateSystemDiskIOLimit,"添加修改系统盘IO限制任务失败: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
+                // 存入失败，修改任务状态为3
+                task.setStatus(3);
+                // 记录错误信息
+                task.setError("添加修改系统盘IO限制任务失败");
+                return;
+            }
+            // 添加任务流程
+            vmhostService.addVmHostTask(vmhostId, updateSystemDiskIOLimitTask.getId());
+            // 等待修改系统盘IO限制任务完成
+            do {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 获取任务
+                taskStatus = taskService.getById(updateSystemDiskIOLimitTask.getId());
+                // 判断任务状态
+                if (taskStatus.getStatus() == 3) {
+                    // 任务状态为3，任务失败
+                    // 结束任务
+                    return;
+                }
+            } while (taskStatus.getStatus() != 2);
+            // 任务状态为2，任务成功
             // 创建修改系统盘大小任务
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
             time = System.currentTimeMillis();
@@ -188,9 +227,9 @@ public class CreateVmCron {
             if (!taskService.save(updateSystemDiskTask)){
                 UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
                 // 存入失败，修改任务状态为3
-                updateSystemDiskTask.setStatus(3);
+                task.setStatus(3);
                 // 记录错误信息
-                updateSystemDiskTask.setError("创建导入操作系统任务失败");
+                task.setError("创建导入操作系统任务失败");
                 taskService.updateById(updateSystemDiskTask);
                 return;
             }
@@ -232,8 +271,8 @@ public class CreateVmCron {
                     UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
 
                     // 修改任务状态为失败
-                    createDataDiskTask.setStatus(3);
-                    createDataDiskTask.setError("创建数据盘任务失败");
+                    task.setStatus(3);
+                    task.setError("创建数据盘任务失败");
                     taskService.updateById(createDataDiskTask);
                     return;
                 }
@@ -275,8 +314,8 @@ public class CreateVmCron {
             if (!taskService.insertTask(updateBootDiskTask)){
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_UPDATE_BOOT,"添加创建修改启动项任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
                 // 修改任务状态为失败
-                updateBootDiskTask.setStatus(3);
-                updateBootDiskTask.setError("创建修改启动项任务失败");
+                task.setStatus(3);
+                task.setError("创建修改启动项任务失败");
                 taskService.updateById(updateBootDiskTask);
             }
             // 添加任务流程
@@ -312,8 +351,8 @@ public class CreateVmCron {
             if (!taskService.insertTask(startTask)){
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_START_VM,"添加创建开机任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
                 // 修改任务状态为失败
-                startTask.setStatus(3);
-                startTask.setError("添加创建开机任务失败");
+                task.setStatus(3);
+                task.setError("添加创建开机任务失败");
                 taskService.updateById(startTask);
             }
             // 添加任务流程

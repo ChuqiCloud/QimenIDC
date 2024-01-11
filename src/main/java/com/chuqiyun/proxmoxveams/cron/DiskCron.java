@@ -184,6 +184,7 @@ public class DiskCron {
                 HashMap<String, Object> params = new HashMap<>();
                 params.put("scsihw", "virtio-scsi-pci");
                 //params.put("scsihw", "lsi53c810");
+                //params.put("scsi0", VmUtil.getSystemDiskParams(vmhost, vmInfo.getString("unused0"),false,true));
                 params.put("scsi0", vmInfo.getString("unused0"));
                 try {
                     proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
@@ -200,25 +201,6 @@ public class DiskCron {
                 task.setStatus(2);
                 taskService.updateById(task);
                 UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 完成",task.getNodeid(),task.getVmid());
-                /*// 创建修改系统盘大小任务
-                UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-                long time = System.currentTimeMillis();
-                Task updateSystemDiskTask = new Task();
-                updateSystemDiskTask.setNodeid(node.getId());
-                updateSystemDiskTask.setHostid(vmhost.getId());
-                updateSystemDiskTask.setVmid(task.getVmid());
-                updateSystemDiskTask.setType(UPDATE_SYSTEM_DISK_SIZE);
-                updateSystemDiskTask.setStatus(0);
-                updateSystemDiskTask.setParams(task.getParams());
-                updateSystemDiskTask.setCreateDate(time);
-                if (taskService.save(updateSystemDiskTask)){
-                    UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
-                    // 增加虚拟机task
-                    vmhost.getTask().put(String.valueOf(time), updateSystemDiskTask.getId());
-                    vmhostService.updateById(vmhost);
-                }else {
-                    UnifiedLogger.warn(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                }*/
             }
         }
     }
@@ -270,29 +252,6 @@ public class DiskCron {
             task.setStatus(2);
             taskService.updateById(task);
             log.info("[Task-UpdateSystemDisk] 添加修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),vmhost.getVmid());
-            // 创建数据盘任务
-            /*log.info("[Task-CreateDataDisk] 添加创建数据盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-            long time = System.currentTimeMillis();
-            Task createDataDiskTask = new Task();
-            createDataDiskTask.setNodeid(node.getId());
-            createDataDiskTask.setHostid(vmhost.getId());
-            createDataDiskTask.setVmid(task.getVmid());
-            createDataDiskTask.setType(CREATE_DATA_DISK);
-            createDataDiskTask.setStatus(0);
-            createDataDiskTask.setParams(vmhost.getDataDisk());
-            createDataDiskTask.setCreateDate(time);
-            if (taskService.save(createDataDiskTask)){
-                log.info("[Task-CreateDataDisk] 添加创建数据盘任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
-                // 增加虚拟机task
-                vmhost.getTask().put(String.valueOf(time), createDataDiskTask.getId());
-                vmhostService.updateById(vmhost);
-            }else {
-                log.error("[Task-CreateDataDisk] 添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                // 修改任务状态为失败
-                task.setStatus(3);
-                task.setError("创建数据盘任务失败");
-                taskService.updateById(task);
-            }*/
         }
     }
 
@@ -349,31 +308,73 @@ public class DiskCron {
         task.setStatus(2);
         taskService.updateById(task);
         log.info("[Task-CreateDataDisk] 创建数据盘任务: NodeID:{} VM-ID:{} 完成",node.getId(),vmhost.getVmid());
-        /*// 创建修改启动项任务
-        log.info("[Task-UpdateBoot] 添加创建修改启动项任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-        long time = System.currentTimeMillis();
-        Task updateBootDiskTask = new Task();
-        updateBootDiskTask.setNodeid(node.getId());
-        updateBootDiskTask.setHostid(vmhost.getId());
-        updateBootDiskTask.setVmid(task.getVmid());
-        updateBootDiskTask.setType(UPDATE_VM_BOOT);
-        updateBootDiskTask.setStatus(0);
-        Map<Object,Object> bootDiskMap = new HashMap<>();
-        bootDiskMap.put("boot","order=scsi0;ide2;net0");
-        updateBootDiskTask.setParams(bootDiskMap);
-        updateBootDiskTask.setCreateDate(time);
-        if (taskService.insertTask(updateBootDiskTask)){
-            log.info("[Task-UpdateBoot] 添加创建修改启动项任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
-            // 增加虚拟机task
-            vmhost.getTask().put(String.valueOf(time), updateBootDiskTask.getId());
-            vmhostService.updateById(vmhost);
-        }else {
-            log.error("[Task-UpdateBoot] 添加创建修改启动项任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-            // 修改任务状态为失败
-            task.setStatus(3);
-            task.setError("创建修改启动项任务失败");
+    }
+
+    /**
+     * 修改系统盘IO限制
+     */
+    @Async
+    @Scheduled(fixedDelay = 500)
+    public void updateSystemDiskIOLimitCron() {
+        QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
+        taskQueryWrapper.eq("type", UPDATE_IO_SYSTEM_DISK);
+        taskQueryWrapper.eq("status", 0);
+        Page<Task> taskPage = taskService.getTaskList(1, 1, taskQueryWrapper);
+        // 判断是否没有任务
+        if (taskPage.getRecords().size() == 0) {
+            return;
+        }
+        // 逐个任务修改
+        for (Task task : taskPage.getRecords()) {
+            // 修改任务状态为1
+            task.setStatus(1);
             taskService.updateById(task);
-        }*/
+            // 获取node信息
+            Master node = masterService.getById(task.getNodeid());
+            // 获取vm信息
+            Vmhost vmhost = vmhostService.getById(task.getHostid());
+
+            JSONObject vmInfo = masterService.getVmInfo(node.getId(),vmhost.getVmid()); // 获取vm信息
+
+            // 判断是否存在'scsi0'磁盘
+            if (!vmInfo.containsKey("scsi0")){
+                //log.error("[Task-UpdateSystemDiskIOLimit] 执行修改系统盘IO限制任务: NodeID:{} VM-ID:{} 失败,不存在'scsi0'磁盘", node.getId(), task.getVmid());
+                UnifiedLogger.log(UnifiedLogger.LogType.UpdateSystemDiskIOLimit, "执行修改系统盘IO限制任务: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+                // 修改任务状态为失败
+                task.setStatus(3);
+                task.setError("不存在系统磁盘");
+                taskService.updateById(task);
+                continue;
+            }
+
+            // 系统盘信息
+            String diskInfo = vmInfo.getString("scsi0");
+
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+            HashMap<String, Object> params = new HashMap<>();
+            params.put("scsi0", VmUtil.getSystemDiskParams(vmhost, diskInfo,false));
+            //log.info("[Task-UpdateSystemDiskIOLimit] 执行修改系统盘IO限制任务: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+            UnifiedLogger.log(UnifiedLogger.LogType.UpdateSystemDiskIOLimit, "执行修改系统盘IO限制任务: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+            try {
+                proxmoxApiUtil.postNodeApi(node, authentications, "/nodes/" + node.getNodeName() + "/qemu/" + vmhost.getVmid() + "/config", params);
+            } catch (Exception e) {
+                //log.error("[Task-UpdateSystemDiskIOLimit] 修改系统盘IO限制任务: NodeID:{} VM-ID:{} 失败", node.getId(), task.getVmid());
+                UnifiedLogger.log(UnifiedLogger.LogType.UpdateSystemDiskIOLimit, "修改系统盘IO限制任务: NodeID:{} VM-ID:{} 失败", node.getId(), task.getVmid());
+                // 修改任务状态为失败
+                task.setStatus(3);
+                task.setError(e.getMessage());
+                taskService.updateById(task);
+                e.printStackTrace();
+                continue;
+            }
+            // 修改任务状态为成功
+            task.setStatus(2);
+            taskService.updateById(task);
+            //log.info("[Task-UpdateSystemDiskIOLimit] 修改系统盘IO限制任务: NodeID:{} VM-ID:{} 完成", node.getId(), vmhost.getVmid());
+            UnifiedLogger.log(UnifiedLogger.LogType.UpdateSystemDiskIOLimit, "修改系统盘IO限制任务: NodeID:{} VM-ID:{} 完成", node.getId(), vmhost.getVmid());
+        }
+
     }
 
 }

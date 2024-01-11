@@ -99,7 +99,13 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     */
     @Override
     public Boolean getInstalled(){
-        return this.getById(1).getInstalled() == 1;
+        // return this.getById(1).getInstalled() == 1;
+        try {
+            return this.getById(1).getInstalled() == 1;
+        } catch (Exception e) {
+            e.printStackTrace();// 打印异常信息
+            return false; // 如果出现异常，返回false
+        }
     }
 
     /**

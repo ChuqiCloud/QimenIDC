@@ -553,16 +553,15 @@ public class VmUtil {
     * @Params: Vmhost vmhost 虚拟机实体 diskInfo 系统硬盘参数 size 是否需要size
     * @Return String 系统硬盘参数
     */
-    public static String getSystemDiskParams(Vmhost vmhost,String diskInfo,boolean size,boolean first){
+    public static String getSystemDiskParams(Vmhost vmhost,String diskInfo,boolean size){
         // 系统硬盘参数
-        String systemDiskParams = "";
+        String systemDiskParams;
         // diskInfo = "local-lvm:vm-100-disk-0,iops_rd=200,iops_rd_max=300,iops_wr=200,iops_wr_max=300,mbps_rd=200,mbps_rd_max=400,mbps_wr=200,mbps_wr_max=400,size=40G"
-        // 如果为第一次创建则不需要拆分
-        if (first){
-            systemDiskParams = diskInfo;
-        }else {
-            // 保留第一个,之前的字符串 local-lvm:vm-100-disk-0
+        // 保留第一个,之前的字符串 local-lvm:vm-100-disk-0
+        if (diskInfo.contains(",")){
             systemDiskParams = diskInfo.substring(0, diskInfo.indexOf(","));
+        }else {
+            systemDiskParams = diskInfo;
         }
 
         if (vmhost.getMbpsRd() > 0){

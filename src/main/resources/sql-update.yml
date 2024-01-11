@@ -50,3 +50,4 @@ build: # 内部构建版本信息
 
          alter table vmhost
              add iops_wr_max int default 0 not null comment 'iops写突发限制 单位ops/s' after iops_wr;"
+    6:
