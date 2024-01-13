@@ -68,7 +68,7 @@ info:
     description: "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system."
     version: "1.0.7"
     build:
-      version: "1.0.7_6"
+      version: "1.0.7_7"
 
 management:
   server: # 指定监听端口，不指定则与server端口一直
