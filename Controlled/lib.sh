@@ -32,7 +32,6 @@ function check_system(){
     fi
 }
 
-
 function download_websocketd(){
     cd /home/software/websocketd
 
@@ -94,6 +93,12 @@ if [ ! -d /home/software/noVNC ]; then
     download_noVNC
     install_websockify
     config_noVNC_service
+fi
+
+# 判断/home/software/QAgent/目录下是否存在port文件，不存在则创建
+if [ ! -f /home/software/QAgent/port ]; then
+    # 将7600写入port文件中
+    echo "7600" > /home/software/QAgent/port
 fi
 
 # 重启pve 服务

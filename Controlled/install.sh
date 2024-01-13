@@ -68,9 +68,24 @@ function install_qimenidc_controller_source(){
 # 配置QimenIDC Controller token文件
 function config_qimenidc_controller_token(){
     # 黄色字体
-    echo -e "\033[33m--->Please input QimenIDS Master token:\033[0m"
+    echo -e "\033[33m↓¯¯¯请输入QimenIDS Controlled token\033[0m"
+    echo -e "\033[33m--->Please input QimenIDS Controlled token:\033[0m"
     read token
     echo $token > /home/software/QAgent/token.key
+}
+
+# 配置QimenIDC Controller端口
+function config_qimenidc_controller_port(){
+    # 黄色字体
+    echo -e "\033[33m↓¯¯¯请输入QimenIDS被控端口,直接回车默认7600端口\033[0m"
+    echo -e "\033[33m--->Please input QimenIDS Controlled port(default 7600): \033[0m"
+    # 默认端口为7600
+    read port
+    # 判断是否输入端口
+    if [ -z $port ];then
+        port=7600
+    fi
+    echo $port > /home/software/QAgent/port
 }
 
 # 配置程序开机自启动以及systemd服务
@@ -188,6 +203,7 @@ function start_install(){
     install_python
     download_qimenidc_controller
     install_qimenidc_controller_source
+    config_qimenidc_controller_port
     config_qimenidc_controller_token
     config_qimenidc_controller_service
     install_qa

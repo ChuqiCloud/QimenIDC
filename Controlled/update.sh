@@ -13,7 +13,9 @@ get_url
 
 # 删除 /home/software/QAgent 文件夹
 if [ -d /home/software/QAgent ]; then
-    find /home/software/QAgent -mindepth 1 ! -name "token.key" -exec rm -rf {} \;
+    # 删除 /home/software/QAgent 文件夹中除了 token.key和port 文件的所有文件
+    find /home/software/QAgent -mindepth 1 ! \( -name "token.key" -o -name "port" \) -exec rm -rf {} \;
+    #find /home/software/QAgent -mindepth 1 ! -name "token.key" -exec rm -rf {} \;
 fi
 
 # 解压文件

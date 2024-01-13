@@ -6,6 +6,7 @@ from common.UnicornException import UnicornException
 from common.CodeEnum import CodeEnum
 
 from service.Authentication import get_token
+from service.RunPort import get_port
 
 app=FastAPI(
     title="QimenIDC公有云管理系统 - 被控端API接口文档",
@@ -68,4 +69,4 @@ async def add_process_time_header(request: Request, call_next):
 
 
 if __name__ == '__main__':
-    uvicorn.run(app,host="0.0.0.0",port=7600)
+    uvicorn.run(app,host="0.0.0.0",port=get_port())

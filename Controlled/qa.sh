@@ -33,7 +33,9 @@ while true; do
     echo "5. 查看 QAgent 运行状态"
     echo "6. 查看 QAgent token"
     echo "7. 重置 QAgent token"
-    echo "8. 更新被控端程序"
+    echo "8. 查看 QAgent port"
+    echo "9. 重置 QAgent port"
+    echo "10. 更新被控端程序"
     echo "q. 退出"
     read -p "请选择序号操作: " choice
 
@@ -69,6 +71,32 @@ while true; do
             reset_token
             ;;
         8)
+            echo -e "\033[33m--->QAgent port:\033[0m"
+            cat /home/software/QAgent/port
+            ;;
+        9)
+            echo -e "\033[33m↓¯¯¯请输入QimenIDS被控端口,直接回车默认7600端口\033[0m"
+            echo -e "\033[33m--->Please input QimenIDS Controlled port(default 7600): \033[0m"
+            read port
+            if [ -z $port ];then
+                port=7600
+            fi
+            echo $port > /home/software/QAgent/port
+
+            # 提示是否现在重启QAgent
+            echo -e "\033[33m↓¯¯¯是否现在重启QAgent？（输入y或n）\033[0m"
+            echo -e "\033[33m--->Do you want to restart QAgent now? (input y or n)\033[0m"
+
+            # 读取用户输入 如果为y,yes,Y,YES或不输入则重启QAgent
+            read choice
+            if [ -z $choice ] || [ $choice == "y" ] || [ $choice == "yes" ] || [ $choice == "Y" ] || [ $choice == "YES" ]; then
+                sudo systemctl restart qagent.service
+                echo "QAgent 重启中..."
+                sleep 2
+                check_qagent_status
+            fi
+            ;;
+        10)
             echo "---> 5秒后将更新最新版被控程序..."
             sleep 5
             # 运行/home/software/QAgent中的update.sh文件
