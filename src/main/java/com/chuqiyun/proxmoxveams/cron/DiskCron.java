@@ -122,7 +122,7 @@ public class DiskCron {
         }*/
         // 调用被控api导入系统盘
         try {
-            boolean result = ClientApiUtil.importDisk(node.getHost(),configService.getToken(), Long.valueOf(task.getVmid()),path+"/"+os,vmhost.getStorage());
+            boolean result = ClientApiUtil.importDisk(node.getHost(),node.getControllerPort(),configService.getToken(), Long.valueOf(task.getVmid()),path+"/"+os,vmhost.getStorage());
 
             if (!result){
                 UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());

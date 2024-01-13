@@ -60,6 +60,6 @@ public class PveNetworkServiceImpl implements PveNetworkService {
         String token = configService.getToken();
         // 获取节点信息
         Master node = masterService.getById(nodeId);
-        return ClientApiUtil.getNetworkInfo(node.getHost(), token).getString("data");
+        return ClientApiUtil.getNetworkInfo(node.getHost(),node.getControllerPort(), token).getString("data");
     }
 }

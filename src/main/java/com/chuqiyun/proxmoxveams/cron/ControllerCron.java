@@ -50,7 +50,7 @@ public class ControllerCron {
         for (Master node : nodeList){
             JSONObject result;
             try {
-                result = ClientApiUtil.getControllerConnectStatus(node.getHost(),config.getToken());
+                result = ClientApiUtil.getControllerConnectStatus(node.getHost(),node.getControllerPort(),config.getToken());
             }catch (Exception e){
                 log.error("获取控制器连接状态失败:["+e.getMessage()+"]");
                 node.setControllerStatus(1);

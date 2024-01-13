@@ -258,7 +258,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         String osPath = os.getPath();
         String ip = node.getHost();
         String token = configService.getToken();
-        return ClientApiUtil.downloadFile(ip,token,osUrl,osPath);
+        return ClientApiUtil.downloadFile(ip,node.getControllerPort(),token,osUrl,osPath);
     }
 
     /**
@@ -279,7 +279,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         String osPath = os.getPath();
         String ip = node.getHost();
         String token = configService.getToken();
-        return ClientApiUtil.getDownloadProgress(ip,token,osUrl,osPath).getJSONObject("data");
+        return ClientApiUtil.getDownloadProgress(ip,node.getControllerPort(),token,osUrl,osPath).getJSONObject("data");
     }
 
     /**
@@ -294,7 +294,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         Master node = masterService.getById(nodeId);
         String ip = node.getHost();
         String token = configService.getToken();
-        return ClientApiUtil.deleteOsFile(ip,token,osName);
+        return ClientApiUtil.deleteOsFile(ip,node.getControllerPort(),token,osName);
     }
     
     /**

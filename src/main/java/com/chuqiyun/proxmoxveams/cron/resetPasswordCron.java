@@ -98,7 +98,7 @@ public class resetPasswordCron {
             }
         } else {
             // 通过qemu修改密码
-            ClientApiUtil.resetPassword(node.getHost(),configService.getToken(),vmhost.getVmid(),vmhost.getUsername(),newPassword);
+            ClientApiUtil.resetPassword(node.getHost(),node.getControllerPort(),configService.getToken(),vmhost.getVmid(),vmhost.getUsername(),newPassword);
         }
         // 修改vmhost密码
         vmhost.setPassword(newPassword);

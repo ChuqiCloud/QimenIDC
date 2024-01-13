@@ -82,8 +82,8 @@ public class ClientApiUtil {
     * @Description: 获取被控端连接状态
     * @DateTime: 2023/7/11 17:45
     */
-    public static JSONObject getControllerConnectStatus(String ip, String token){
-        String url = "http://"+ip+":7600/status";
+    public static JSONObject getControllerConnectStatus(String ip, Integer port,String token){
+        String url = "http://"+ip+":"+port+"/status";
         Map<String, Object> paramMap = new HashMap<>();
         RestTemplate restTemplate = new RestTemplate();
         // 将token放入header
@@ -104,8 +104,8 @@ public class ClientApiUtil {
      * @Params: path 文件下载路径
     * @Return Boolean
     */
-    public static Boolean downloadFile(String ip, String token, String fileUrl,String path){
-        String url = "http://"+ip+":7600/wget";
+    public static Boolean downloadFile(String ip, Integer port, String token, String fileUrl,String path){
+        String url = "http://"+ip+":"+port+"/wget";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("url",fileUrl);
         paramMap.put("path",path);
@@ -123,8 +123,8 @@ public class ClientApiUtil {
      * @Params: path 文件下载路径
     * @Return JSONObject 下载进度
     */
-    public static JSONObject getDownloadProgress(String ip, String token, String fileUrl,String path){
-        String url = "http://"+ip+":7600/wget";
+    public static JSONObject getDownloadProgress(String ip, Integer port, String token, String fileUrl,String path){
+        String url = "http://"+ip+":"+port+"/wget";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("url",fileUrl);
         paramMap.put("path",path);
@@ -140,8 +140,8 @@ public class ClientApiUtil {
      * @Params: osName os文件名
     * @Return Boolean 是否删除成功
     */
-    public static Boolean deleteOsFile(String ip, String token, String osName){
-        String url = "http://"+ip+":7600/deleteFile";
+    public static Boolean deleteOsFile(String ip, Integer port, String token, String osName){
+        String url = "http://"+ip+":"+port+"/deleteFile";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("path","/home/images/");
         paramMap.put("file",osName);
@@ -156,8 +156,8 @@ public class ClientApiUtil {
     * @Params:
     * @Return
     */
-    public static Boolean resetPassword(String ip, String token, Integer vmId, String username, String password){
-        String url = "http://"+ip+":7600/changePassword";
+    public static Boolean resetPassword(String ip,Integer port, String token, Integer vmId, String username, String password){
+        String url = "http://"+ip+":"+port+"/changePassword";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("id",vmId);
         paramMap.put("username",username);
@@ -177,8 +177,8 @@ public class ClientApiUtil {
      * @Params: osPath 磁盘路径
     * @Return Boolean 是否导入成功
     */
-    public static Boolean importDisk(String ip, String token, Long vmid, String osPath,  String diskName){
-        String url = "http://"+ip+":7600/importDisk";
+    public static Boolean importDisk(String ip,Integer port, String token, Long vmid, String osPath,  String diskName){
+        String url = "http://"+ip+":"+port+"/importDisk";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vmid",vmid);
         paramMap.put("image_path",osPath);
@@ -195,8 +195,8 @@ public class ClientApiUtil {
      * @Params: token 被控端token
     * @Return JSONObject 网卡配置信息
     */
-    public static JSONObject getNetworkInfo(String ip, String token){
-        String url = "http://"+ip+":7600/readFile";
+    public static JSONObject getNetworkInfo(String ip,Integer port, String token){
+        String url = "http://"+ip+":"+port+"/readFile";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("path","/etc/network");
         paramMap.put("filename","interfaces");
