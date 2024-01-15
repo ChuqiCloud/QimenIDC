@@ -5,6 +5,7 @@ import com.chuqiyun.proxmoxveams.entity.Ippool;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * @author mryunqi
@@ -61,6 +62,7 @@ public class IpUtil {
             ip.setSubnetMask(subnetMaskString);
             ip.setDns1(dns1);
             ip.setDns2(dns2);
+            ip.setMac(generateRandomMacAddress()); // 随机生成mac地址
             ip.setPoolId(ipParams.getPoolId());
             // 如果ip地址为网关地址，则设置为3,0=正常;1=已使用;2=停用;3=网关
             if (i == gatewayIP) {
@@ -147,5 +149,29 @@ public class IpUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 生成随机MAC地址
+     *
+     * @return 随机MAC地址
+     */
+    public static String generateRandomMacAddress() {
+        Random random = new Random();
+        byte[] macAddressBytes = new byte[6];
+        random.nextBytes(macAddressBytes);
+
+        // 将第一个字节的最低有效位设置为0（单播）
+        macAddressBytes[0] = (byte) (macAddressBytes[0] & (byte) 254);
+
+        StringBuilder macAddress = new StringBuilder(18);
+        for (byte b : macAddressBytes) {
+            if (macAddress.length() > 0) {
+                macAddress.append(":");
+            }
+            macAddress.append(String.format("%02X", b));
+        }
+
+        return macAddress.toString();
     }
 }
