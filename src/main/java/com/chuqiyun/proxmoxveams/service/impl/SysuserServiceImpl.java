@@ -69,8 +69,9 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
      * @Return int
      */
     @Override
-    public int insertSysuser(Sysuser sysuser) {
-        return this.baseMapper.insertSysuser(sysuser);
+    public boolean insertSysuser(Sysuser sysuser) {
+        //return this.baseMapper.insertSysuser(sysuser);
+        return this.save(sysuser);
     }
 
     /**

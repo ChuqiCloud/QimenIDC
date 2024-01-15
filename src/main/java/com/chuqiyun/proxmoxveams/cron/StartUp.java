@@ -46,7 +46,7 @@ public class StartUp {
         }
 
         boolean isInstalled = FileUtil.isInstall();// 文件锁
-        boolean isInstalledDb = true;//configService.getInstalled(); // 数据库锁
+        /*boolean isInstalledDb = false;//configService.getInstalled(); // 数据库锁
         // 二者必须都为false，才能进行安装
         if (!isInstalled && !isInstalledDb){
             UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "检测到未初始化数据库，正在初始化");
@@ -65,15 +65,20 @@ public class StartUp {
                 UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "内部版号设置失败");
                 System.exit(0); // 退出程序
             }
-        }
-        else {
+        }*/
+        /*else {
             // 再次同步数据库锁和文件锁
             configService.setInstalled(true);
             FileUtil.createInstallLock();
+        }*/
+
+        // 判断是否第一次启动
+        if (!isInstalled){
+            configService.initConfig(); // 初始化配置
+            FileUtil.createInstallLock(); // 创建文件锁
         }
 
         // 检测并更新数据库
-
         UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "正在检测数据库是否需要更新");
         if (!sqlService.checkAndUpdateDatabase()){
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "数据库更新失败");

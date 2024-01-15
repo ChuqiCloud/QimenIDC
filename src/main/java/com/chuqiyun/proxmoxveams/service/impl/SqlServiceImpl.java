@@ -98,7 +98,7 @@ public class SqlServiceImpl implements SqlService {
         String dbBuildVersion = configService.getBuild();
         // 如果数据库中的版本号为空，直接返回false
         if (dbBuildVersion == null) {
-            return false;
+            return true;
         }
         // 如果数据库中的版本号与当前版本号相同，直接返回true
         if (dbBuildVersion.equals(nowBuildVersion)) {

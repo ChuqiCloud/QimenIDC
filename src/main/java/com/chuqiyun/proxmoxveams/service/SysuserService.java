@@ -18,7 +18,7 @@ public interface SysuserService extends IService<Sysuser> {
 
     Sysuser getSysuserByUsername(String username);
 
-    int insertSysuser(Sysuser sysuser);
+    boolean insertSysuser(Sysuser sysuser);
 
     Sysuser insertInitSysuser();
 

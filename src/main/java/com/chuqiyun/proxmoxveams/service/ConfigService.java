@@ -30,5 +30,7 @@ public interface ConfigService extends IService<Config> {
     Boolean setInstalled(Boolean installed);
 
     Boolean setBuild(String build);
+
+    Boolean initConfig();
 }
 

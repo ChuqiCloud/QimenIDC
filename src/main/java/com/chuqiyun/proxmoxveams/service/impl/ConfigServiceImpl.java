@@ -88,7 +88,12 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     */
     @Override
     public String getBuild(){
-        return this.getById(1).getBuild();
+        // return this.getById(1).getBuild();
+        try {
+            return this.getById(1).getBuild();
+        } catch (Exception e) {
+            return null; // 如果出现异常，返回null
+        }
     }
 
     /**
@@ -134,6 +139,20 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
         Config config = this.getById(1);
         config.setBuild(build);
         return this.updateById(config);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 初始化配置表
+    * @DateTime: 2024/1/15 22:27
+    * @Return Boolean true:成功  false:失败
+    */
+    @Override
+    public Boolean initConfig(){
+        Config config = new Config();
+        config.setId(1);
+        config.setInstalled(1);
+        return this.save(config);
     }
 
 }
