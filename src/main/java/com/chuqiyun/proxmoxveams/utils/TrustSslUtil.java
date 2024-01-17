@@ -15,6 +15,40 @@ public class TrustSslUtil {
 
     public static void initDefaultSsl() {
         try {
+            // Create a trust manager that does not validate certificate chains
+            TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager() {
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                    return null;
+                }
+
+                public void checkClientTrusted(
+                        java.security.cert.X509Certificate[] certs, String authType) {
+                }
+
+                public void checkServerTrusted(
+                        java.security.cert.X509Certificate[] certs, String authType) {
+                }
+            }};
+
+            // Install the all-trusting trust manager
+            SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new SecureRandom());
+
+            // Create an SSL socket factory with our all-trusting manager
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+
+            // Create a HostnameVerifier that allows all hostnames
+            HostnameVerifier allHostsValid = (hostname, session) -> true;
+
+            // Install the all-trusting host verifier
+            HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*public static void initDefaultSsl() {
+        try {
             SSLContext sc = SSLContext.getInstance("SSL");
             HostnameVerifier hv = (urlHostName, session) -> true;
             TrustManager[] trustAllCerts = new TrustManager[]{
@@ -68,7 +102,7 @@ public class TrustSslUtil {
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
+    }*/
 
     public static SSLSocketFactory getIgnoreSslSocketFactory() {
         try {

@@ -88,6 +88,6 @@ async def deleteFile(item:DeleteFile):
 读取指定目录下文件的内容
 Read the contents of the file in the specified directory
 '''
-@file_router.get('/readFile')
+@file_router.post('/readFile')
 async def readFile(item:ReadFile):
     return common_response(CodeEnum.SUCCESS,'success',{'data':read_file(item.path,item.filename)})

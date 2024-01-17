@@ -188,6 +188,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setSwap(vmParams.getSwap());
         vmhost.setStorage(vmParams.getStorage());
         vmhost.setSystemDiskSize(vmParams.getSystemDiskSize());
+        vmhost.setMbpsRd(vmParams.getMbpsRd());
+        vmhost.setMbpsWr(vmParams.getMbpsWr());
+        vmhost.setMbpsRdMax(vmParams.getMbpsRdMax());
+        vmhost.setMbpsWrMax(vmParams.getMbpsWrMax());
+        vmhost.setIopsRd(vmParams.getIopsRd());
+        vmhost.setIopsWr(vmParams.getIopsWr());
+        vmhost.setIopsRdMax(vmParams.getIopsRdMax());
+        vmhost.setIopsWrMax(vmParams.getIopsWrMax());
         vmhost.setDataDisk(vmParams.getDataDisk());
         vmhost.setBridge(vmParams.getBridge());
         vmhost.setOs(vmParams.getOs());

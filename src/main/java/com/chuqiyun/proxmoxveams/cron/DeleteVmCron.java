@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.cron;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
@@ -61,17 +62,36 @@ public class DeleteVmCron {
         Task task = taskPage.getRecords().get(0);
         // 获取虚拟机配置信息
         Vmhost vmhost = vmhostService.getById(task.getHostid());
-        // 判断虚拟机状态是否为1或者为4
-        if (vmhost.getStatus() != 1 && vmhost.getStatus() != 4) {
+        // 获取node信息
+        Master node = masterService.getById(task.getNodeid());
+        HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONObject vmInfo;
+        // 获取虚拟机实时信息
+        try {
+            vmInfo = proxmoxApiUtil.getVmStatus(node, authentications, vmhost.getVmid());
+        } catch (Exception e) {
+            vmInfo = null;
+        }
+        // 如果vmInfo不为空，才进行下一步操作
+        if (vmInfo != null) {
+            // 判断虚拟机状态是否为1或者为4
+            if (vmhost.getStatus() != 1 && vmhost.getStatus() != 4) {
+                return;
+            }
+        }
+        else {
+            // 直接删除数据库中的虚拟机信息
+            vmhostService.removeById(task.getHostid());
+            // 修改任务状态为2
+            task.setStatus(2);
+            taskService.updateById(task);
             return;
         }
         // 修改任务状态为1
         task.setStatus(1);
         taskService.updateById(task);
-        // 获取node信息
-        Master node = masterService.getById(task.getNodeid());
-        HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+
         proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
 
         List<String> ipList = vmhost.getIpList();
