@@ -2,13 +2,14 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.dto.NetWorkParams;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.PveNetworkService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 
@@ -52,5 +53,21 @@ public class SysNodeNetworkController {
             return ResponseResult.fail("该节点不存在！");
         }
         return ResponseResult.ok(pveNetworkService.getPveInterfaces(nodeId));
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 创建虚拟网卡
+    * @DateTime: 2024/1/17 21:34
+    */
+    @AdminApiCheck
+    @PostMapping(value = "/createPveNodeInterface/{nodeId}")
+    public ResponseResult<Object> createPveNodeInterface(@PathVariable("nodeId") Long nodeId,
+                                                         @RequestBody NetWorkParams netWorkParams) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = pveNetworkService.createNetWork(nodeId,netWorkParams);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
 }

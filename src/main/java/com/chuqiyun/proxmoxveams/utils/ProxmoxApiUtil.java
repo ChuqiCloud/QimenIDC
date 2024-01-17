@@ -68,6 +68,42 @@ public class ProxmoxApiUtil {
 
     /**
     * @Author: mryunqi
+    * @Description: post通用form请求
+    * @DateTime: 2024/1/17 21:00
+    * @Params: Master node, HashMap<String,String> cookie,String url, HashMap<String, String> params
+    * @Return JSONObject
+    */
+    public JSONObject postNodeApiForm(Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params) throws UnauthorizedException {
+        // 构建请求主体
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.add("Cookie", cookie.get("cookie"));
+        headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
+
+        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        for (String key : params.keySet()) {
+            requestBody.add(key, params.get(key));
+        }
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        // 忽略证书验证
+        TrustSslUtil.initDefaultSsl();
+        // 发送 POST 请求
+        RestTemplate restTemplate = new RestTemplate();
+        ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.POST, entity, String.class);
+
+        if (response.getStatusCode().is2xxSuccessful()) {
+            // 提取 Cookie 和 CSRF 预防令牌
+            JSONObject body = JSONObject.parseObject(response.getBody());
+            assert body != null;
+            return body;
+        } else {
+            throw new UnauthorizedException("请求失败");
+        }
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 通用GET请求
     * @DateTime: 2023/6/20 16:39
     */
