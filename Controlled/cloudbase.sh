@@ -29,6 +29,14 @@ case "$major_version" in
         ;;
 esac # end case
 
+# 判断版号第一个数字是否小于8
+if [ "${major_version:0:1}" -lt 8 ]; then
+    # 激活sdn
+    echo -e "\nsource /etc/network/interfaces.d/*" >>/etc/network/interfaces
+    ifreload -a
+    exit 1
+fi
+
 # 构建目录路径
 directory="/opt/chuqi-cloudbase-init/qemu-server-$directory"
 

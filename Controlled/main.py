@@ -1,4 +1,5 @@
 import uvicorn
+import threading
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -7,6 +8,7 @@ from common.CodeEnum import CodeEnum
 
 from service.Authentication import get_token
 from service.RunPort import get_port
+import service.Nat as nat
 
 app=FastAPI(
     title="QimenIDC公有云管理系统 - 被控端API接口文档",
@@ -16,8 +18,11 @@ app=FastAPI(
     openapi_url="/openapi.json"
 )
 
+# 初始化端口转发数据库
+# nat.ForwardRuleManager()
+
 # 路由
-from controller import update,changePassword,importDisk,status,file,vnc
+from controller import update,changePassword,importDisk,status,file,vnc,natForward,netWork
 
 # 挂载路由
 app.include_router(update.update_router,tags=["update"])
@@ -26,6 +31,8 @@ app.include_router(importDisk.importDisk_router,tags=["importDisk"])
 app.include_router(status.status_router,tags=["status"])
 app.include_router(file.file_router,tags=["file"])
 app.include_router(vnc.vnc_router,tags=["vnc"])
+app.include_router(natForward.nat_router,tags=["nat"])
+app.include_router(netWork.netWork_router,tags=["netWork"])
 
 '''
 自定义错误处理
@@ -69,4 +76,7 @@ async def add_process_time_header(request: Request, call_next):
 
 
 if __name__ == '__main__':
+    # thread = threading.Thread(target=nat.Manager().active_forward_rules_scheduler())
+    # thread.start()
+    nat.Manager().active_forward_rules_scheduler()
     uvicorn.run(app,host="0.0.0.0",port=get_port())
