@@ -30,47 +30,46 @@ function init_system_dir(){
 }
 # 安装必须环境依赖
 function install_python_source(){
-    apt-get install -y build-essential zlib1g-dev libncurses5-dev libpve-network-perl libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev expect git python3-pip
-    pip3 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
+    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev expect git
 }
-# # 安装Python3.10.5
-# function install_python(){
-#     #判断是否安装python3.10.5
-#     if [ -f "/usr/bin/python3.10" ];then
-#         echo "python3.10.5 has been installed!"
-#     else
-#         cd /home/software
-#         # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-#         wget http://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz --no-check-certificate
-#         tar -zxvf Python-3.10.5.tgz
-#         cd Python-3.10.5
-#         ./configure --prefix=/home/software/python3.10.5
-#         make && make install
-#         ln -s /home/software/python3.10.5/bin/python3.10 /usr/bin/python3.10
-#         ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
-#         pip3.10 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
-#         pip3.10 install --upgrade pip
-#     fi
-# }
+# 安装Python3.10.5
+function install_python(){
+    #判断是否安装python3.10.5
+    if [ -f "/usr/bin/python3.10" ];then
+        echo "python3.10.5 has been installed!"
+    else
+        cd /home/software
+        # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
+        wget http://mirrors.leapteam.cn:8000/software/Python/Python-3.10.5.tgz --no-check-certificate
+        tar -zxvf Python-3.10.5.tgz
+        cd Python-3.10.5
+        ./configure --prefix=/home/software/python3.10.5
+        make && make install
+        ln -s /home/software/python3.10.5/bin/python3.10 /usr/bin/python3.10
+        ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
+        pip3.10 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
+        pip3.10 install --upgrade pip
+    fi
+}
 
 
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software
-    wget http://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz --no-check-certificate
+    wget http://mirrors.leapteam.cn:8000/software/QAgent/QAgent.tar.gz --no-check-certificate
     tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
 # 安装QimenIDC Controller依赖
 function install_qimenidc_controller_source(){
-    pip3 install -r /home/software/QAgent/requirements.txt
+    pip3.10 install -r /home/software/QAgent/requirements.txt
 }
 
 # 配置QimenIDC Controller token文件
 function config_qimenidc_controller_token(){
     # 黄色字体
-    echo -e "\033[33m↓¯¯¯请输入QimenIDC Controlled token\033[0m"
-    echo -e "\033[33m--->Please input QimenIDC Controlled token:\033[0m"
+    echo -e "\033[33m↓¯¯¯请输入QimenIDS Controlled token\033[0m"
+    echo -e "\033[33m--->Please input QimenIDS Controlled token:\033[0m"
     read token
     echo $token > /home/software/QAgent/token.key
 }
@@ -78,8 +77,8 @@ function config_qimenidc_controller_token(){
 # 配置QimenIDC Controller端口
 function config_qimenidc_controller_port(){
     # 黄色字体
-    echo -e "\033[33m↓¯¯¯请输入QimenIDC被控端口,直接回车默认7600端口\033[0m"
-    echo -e "\033[33m--->Please input QimenIDC Controlled port(default 7600): \033[0m"
+    echo -e "\033[33m↓¯¯¯请输入QimenIDS被控端口,直接回车默认7600端口\033[0m"
+    echo -e "\033[33m--->Please input QimenIDS Controlled port(default 7600): \033[0m"
     # 默认端口为7600
     read port
     # 判断是否输入端口
@@ -96,7 +95,7 @@ Description=QimenIDC Controller
 After=network.target
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/software/QAgent/main.py
+ExecStart=/usr/bin/python3.10 /home/software/QAgent/main.py
 Restart=on-failure
 User=root
 [Install]
@@ -108,8 +107,8 @@ WantedBy=multi-user.target" > /etc/systemd/system/qagent.service
 
 # 删除安装文件
 function delete_install_file(){
-    # rm -rf /home/software/Python-3.10.5
-    # rm -rf /home/software/Python-3.10.5.tgz
+    rm -rf /home/software/Python-3.10.5
+    rm -rf /home/software/Python-3.10.5.tgz
     rm -rf /home/software/QAgent.tar.gz
 }
 
@@ -145,7 +144,7 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="http://mirror.chuqiyun.com/software/websocketd/$(check_system)/websocketd"
+    url="http://mirrors.leapteam.cn:8000/software/websocketd/$(check_system)/websocketd"
 
     wget "$url" --no-check-certificate
     chmod +x /home/software/websocketd/websocketd
@@ -153,12 +152,12 @@ function download_websocketd(){
 
 # 下载noVNC程序
 function download_noVNC(){
-    cd /home/software
+    cd /home/software/noVNC
 
-    url="http://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz"
+    url="http://mirrors.leapteam.cn:8000/software/noVNC/noVNC.tar.gz"
 
     wget "$url" --no-check-certificate
-    tar --warning=no-timestamp -zxvf /home/software/noVNC.tar.gz -C /home/software/noVNC/
+    tar -zxvf noVNC.tar.gz
     rm -rf noVNC.tar.gz
     # 赋予start_novnc权限
     chmod +x /home/software/noVNC/start_novnc.sh
@@ -166,8 +165,8 @@ function download_noVNC(){
 
 # 安装websockify
 function install_websockify(){
-    # cd /home/software/noVNC/utils/websockify
-    #python3 setup.py install
+    cd /home/software/noVNC/utils/websockify
+    python3.10 setup.py install
     chmod +x /home/software/noVNC/utils/websockify/run
 }
 
@@ -178,7 +177,7 @@ Description=noVNC Service
 After=network.target
 [Service]
 Type=simple
-ExecStart=/home/software/noVNC/utils/novnc_proxy
+ExecStart=/home/software/noVNC/utils/websockify/run --web /home/software/noVNC --target-config /home/software/vnc 6080
 Restart=on-failure
 User=root
 [Install]
@@ -201,7 +200,7 @@ function start_install(){
     update_source
     init_system_dir
     install_python_source
-    # install_python
+    install_python
     download_qimenidc_controller
     install_qimenidc_controller_source
     config_qimenidc_controller_port
