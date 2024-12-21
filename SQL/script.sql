@@ -275,7 +275,7 @@ create table vmhost
     vmid                  int                                        null,
     hostname              varchar(255)                               not null,
     configure_template_id int                                        null,
-    sockets     d          int                                        null,
+    sockets               int                                        null,
     cores                 int                                        not null,
     threads               int                                        null,
     devirtualization      int                                        null,
