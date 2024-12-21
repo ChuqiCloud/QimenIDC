@@ -50,3 +50,74 @@ build: # 内部构建版本信息
 
          alter table vmhost
              add iops_wr_max int default 0 not null comment 'iops写突发限制 单位ops/s' after iops_wr;"
+  1.0.8:
+    1:
+      - "create table zones
+         (
+             id         int auto_increment,
+             node_id    int          null,
+             type       varchar(255) null,
+             zone       varchar(255) null,
+             nodes      varchar(255) null,
+             ipam       varchar(255) null,
+             dns        varchar(255) null,
+             reversedns varchar(255) null,
+             state      varchar(255) default 'new' not null,
+             constraint zones_pk
+                 primary key (id)
+         );"
+      - "create table vnets
+         (
+             id    int auto_increment,
+             vnet  varchar(255)                null,
+             zone  varchar(255)                null,
+             alias varchar(255)                null,
+             tag   int                         null,
+             type  varchar(255) default 'vnet' not null,
+             state varchar(255) default 'new'  not null,
+             constraint vnets_pk
+                 primary key (id)
+         );"
+      - "create table subnet
+         (
+             id      int auto_increment,
+             nodeid  int          null,
+             subnet  varchar(255)                  null,
+             type    varchar(255) default 'subnet' not null,
+             vnet    varchar(255)                  not null,
+             gateway varchar(255)                  null,
+             dns     varchar(255)                  null,
+             snat    int          default 0        not null,
+             available int        default 0        not null,
+             used   int          default 0        not null,
+             disable int          default 0        not null,
+             state   varchar(255) default 'new'    not null,
+             constraint subnet_pk
+                 primary key (id)
+         );"
+      - "create table subnetpool
+         (
+             id        int auto_increment,
+             node_id   int           null,
+             vm_id     int           null,
+             subnat_id int           null,
+             ip        varchar(255)  null,
+             mask      varchar(15)   null,
+             gateway   varchar(15)   null,
+             mac       varchar(255)  null,
+             dns       varchar(15)   null,
+             status    int default 0 not null,
+             constraint subnetpool_pk
+                 primary key (id)
+         );"
+      - "create table natcontroller
+         (
+             id         int auto_increment,
+             name       varchar(255)  null,
+             host       varchar(255)  null,
+             port       int           null,
+             port_range varchar(255)  null,
+             status     int default 0 not null,
+             constraint natcontroller_pk
+                 primary key (id)
+         );"

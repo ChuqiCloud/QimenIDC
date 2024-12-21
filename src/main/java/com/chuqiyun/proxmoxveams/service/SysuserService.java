@@ -12,7 +12,7 @@ import com.chuqiyun.proxmoxveams.entity.Sysuser;
  */
 public interface SysuserService extends IService<Sysuser> {
 
-    Sysuser getSysuserByUuid(String phone);
+    Sysuser getSysuserByUuid(String uuid);
 
     Sysuser getSysuserByPhone(String phone);
 
@@ -23,5 +23,7 @@ public interface SysuserService extends IService<Sysuser> {
     Sysuser insertInitSysuser();
 
     Page<Sysuser> selectUserPage(Integer page, Integer limit);
+
+    boolean deleteSysuserById(Integer id);
 }
 

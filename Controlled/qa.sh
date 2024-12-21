@@ -75,8 +75,8 @@ while true; do
             cat /home/software/QAgent/port
             ;;
         9)
-            echo -e "\033[33m↓¯¯¯请输入QimenIDS被控端口,直接回车默认7600端口\033[0m"
-            echo -e "\033[33m--->Please input QimenIDS Controlled port(default 7600): \033[0m"
+            echo -e "\033[33m↓¯¯¯请输入QimenIDC被控端口,直接回车默认7600端口\033[0m"
+            echo -e "\033[33m--->Please input QimenIDC Controlled port(default 7600): \033[0m"
             read port
             if [ -z $port ];then
                 port=7600
@@ -99,6 +99,8 @@ while true; do
         10)
             echo "---> 5秒后将更新最新版被控程序..."
             sleep 5
+            # 停止QAgent
+            sudo systemctl stop qagent.service
             # 运行/home/software/QAgent中的update.sh文件
             chmod +x /home/software/QAgent/update.sh
             # 执行update.sh文件
