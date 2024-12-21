@@ -107,7 +107,17 @@ create table ipstatus
     disable   int          null comment '禁用',
     nodeId    int          null
 );
-
+create table ipforward
+(
+    id          int auto_increment
+        primary key,
+    node_id     int           not null,
+    vm_id       int           null,
+    port          varchar(15)   not null,
+    vm_ip varchar(15)   not null,
+    vm_port     varchar(15)   not null,
+    status      int default 0 not null
+);
 create table master
 (
     id                int auto_increment
@@ -128,7 +138,10 @@ create table master
     ssh_username      varchar(255)               null,
     ssh_password      varchar(255)               null,
     controller_status int                        null,
-    controller_port   int          default 7600  null comment '被控端口'
+    controller_port   int          default 7600  null comment '被控端口',
+    naton             int          default 0     not null comment '0关闭 1开启',
+    natbridge             varchar(50)  default 'pam' not null,
+    natippool            int          default 0     not null comment 'nat ip池id',
 );
 
 create table modelgroup
@@ -262,7 +275,7 @@ create table vmhost
     vmid                  int                                        null,
     hostname              varchar(255)                               not null,
     configure_template_id int                                        null,
-    sockets               int                                        null,
+    sockets     d          int                                        null,
     cores                 int                                        not null,
     threads               int                                        null,
     devirtualization      int                                        null,
@@ -314,7 +327,8 @@ create table vmhost
     pause_info            text                                       null comment '暂停原因',
     create_time           mediumtext                                 not null comment '创建时间',
     expiration_time       mediumtext                                 not null comment '到期时间',
-    ip_list               text                                       null
+    ip_list               text                                       null,
+    ifnat                 int          default 0                     not null comment '是否nat 0否 1是'
 );
 
 create table vncdata
