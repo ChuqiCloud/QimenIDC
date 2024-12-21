@@ -155,5 +155,28 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
         return this.save(config);
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取配置实体
+    * @DateTime: 2024/2/16 9:32
+    * @Return Config config 实体
+    */
+    @Override
+    public Config getConfig(){
+        return this.getById(1);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 更新配置实体
+    * @DateTime: 2024/2/16 9:33
+    * @Params: Config config 实体
+    * @Return Boolean true:成功  false:失败
+    */
+    @Override
+    public Boolean updateConfig(Config config){
+        return this.updateById(config);
+    }
+
 }
 

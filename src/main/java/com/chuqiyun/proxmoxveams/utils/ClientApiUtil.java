@@ -282,4 +282,94 @@ public class ClientApiUtil {
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 重启宿主机网络
+    * @DateTime: 2024/1/20 15:39
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: controllerPort 被控端端口
+    * @Return  Boolean 是否重启成功
+    */
+    public static Boolean restartNetwork(String ip, String token, Integer controllerPort){
+        String url = "http://"+ip+":"+controllerPort+"/restartNetwork";
+        Map<String, Object> paramMap = new HashMap<>();
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 添加端口转发
+    * @DateTime: 2024/1/20 15:41
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: controllerPort 被控端端口
+     * @Params: hostId 虚拟机id
+     * @Params: source_port 源端口
+     * @Params: destination_ip 目标ip
+     * @Params: destination_port 目标端口
+     * @Params: protocol 协议
+    * @Return Boolean 是否添加成功
+    */
+    public static Boolean addPortForward(String ip, String token, Integer controllerPort, Integer hostId, Integer source_port, String destination_ip, Integer destination_port, String protocol){
+        String url = "http://"+ip+":"+controllerPort+"/nat/add";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vm",hostId);
+        paramMap.put("source_port",source_port);
+        paramMap.put("destination_ip",destination_ip);
+        paramMap.put("destination_port",destination_port);
+        paramMap.put("protocol",protocol);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除端口转发
+    * @DateTime: 2024/1/20 15:44
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: controllerPort 被控端端口
+     * @Params: hostId 虚拟机id
+     * @Params: source_port 源端口
+     * @Params: destination_ip 目标ip
+     * @Params: destination_port 目标端口
+     * @Params: protocol 协议
+    * @Return  Boolean 是否删除成功
+    */
+    public static Boolean deletePortForward(String ip, String token, Integer controllerPort, Integer hostId, Integer source_port, String destination_ip, Integer destination_port, String protocol) {
+        String url = "http://" + ip + ":" + controllerPort + "/nat/delete";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vm", hostId);
+        paramMap.put("source_port", source_port);
+        paramMap.put("destination_ip", destination_ip);
+        paramMap.put("destination_port", destination_port);
+        paramMap.put("protocol", protocol);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 分页查询指定虚拟机主机的端口转发
+    * @DateTime: 2024/1/20 15:45
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: controllerPort 被控端端口
+     * @Params: hostId 虚拟机id
+     * @Params: page 页码
+     * @Params: size 每页条数
+    * @Return JSONObject 端口转发列表
+    */
+    public static JSONObject getPortForwardList(String ip, String token, Integer controllerPort, Integer hostId, Integer page, Integer size){
+        String url = "http://"+ip+":"+controllerPort+"/nat/getVm/"+page+"/"+size+"";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vm",hostId);
+        paramMap.put("page",page);
+        paramMap.put("size",size);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200 ? result : null;
+    }
 }

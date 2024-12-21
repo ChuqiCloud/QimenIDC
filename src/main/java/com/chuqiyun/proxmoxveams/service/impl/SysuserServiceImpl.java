@@ -111,5 +111,17 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         return this.page(sysuserPage);
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 删除超管账号
+    * @DateTime: 2024/2/17 17:10
+    * @Params: Integer id 账号id
+    * @Return boolean 返回删除结果
+    */
+    @Override
+    public boolean deleteSysuserById(Integer id) {
+        return this.removeById(id);
+    }
+
 }
 

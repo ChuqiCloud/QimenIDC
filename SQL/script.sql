@@ -90,7 +90,6 @@ create table ippool
     mac         varchar(255)  null,
     dns1        varchar(15)   null,
     dns2        varchar(15)   null,
-    mac_map     varchar(255)  null,
     status      int default 0 not null
 );
 
@@ -143,6 +142,17 @@ create table modelgroup
     create_date  varchar(13)  null
 );
 
+create table natcontroller
+(
+    id         int auto_increment
+        primary key,
+    name       varchar(255)  null,
+    host       varchar(255)  null,
+    port       int           null,
+    port_range varchar(255)  null,
+    status     int default 0 not null
+);
+
 create table os
 (
     id          int auto_increment
@@ -171,6 +181,39 @@ create table smbios
     model       json        null,
     info        text        null,
     create_date varchar(13) null
+);
+
+create table subnet
+(
+    id        int auto_increment
+        primary key,
+    nodeid    int                           null,
+    subnet    varchar(255)                  null,
+    type      varchar(255) default 'subnet' not null,
+    vnet      varchar(255)                  not null,
+    gateway   varchar(255)                  null,
+    mask      int                           null,
+    dns       varchar(255)                  null,
+    snat      int          default 0        not null,
+    available int                           null,
+    used      int                           null,
+    disable   int                           null,
+    state     varchar(255) default 'new'    not null
+);
+
+create table subnetpool
+(
+    id        int auto_increment
+        primary key,
+    node_id   int           null,
+    vm_id     int           null,
+    subnat_id int           null,
+    ip        varchar(255)  null,
+    mask      int           null,
+    gateway   varchar(15)   null,
+    mac       varchar(255)  null,
+    dns       varchar(15)   null,
+    status    int default 0 not null
 );
 
 create table sysapi
@@ -311,6 +354,32 @@ create table vncnode
     proxy       int default 0    not null comment '0=false;1=true',
     status      int default 0    not null comment '0=true；1=false',
     create_date bigint           null comment '创建日期'
+);
+
+create table vnets
+(
+    id    int auto_increment
+        primary key,
+    vnet  varchar(255)                null,
+    zone  varchar(255)                null,
+    alias varchar(255)                null,
+    tag   int                         null,
+    type  varchar(255) default 'vnet' not null,
+    state varchar(255) default 'new'  not null
+);
+
+create table zones
+(
+    id         int auto_increment
+        primary key,
+    node_id    int                        null,
+    type       varchar(255)               null,
+    zone       varchar(255)               null,
+    nodes      varchar(255)               null,
+    ipam       varchar(255)               null,
+    dns        varchar(255)               null,
+    reversedns varchar(255)               null,
+    state      varchar(255) default 'new' not null
 );
 
 

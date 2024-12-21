@@ -26,6 +26,23 @@ public class FileUtil {
 
     /**
     * @Author: mryunqi
+    * @Description: 判断运行目录下/config文件夹是否存在
+    * @DateTime: 2024/1/30 13:06
+    * @Return boolean true:存在  false:不存在
+    */
+    public static boolean isConfigDir(){
+        // 获取运行目录
+        String currentDir = System.getProperty("user.dir");
+        // 拼接文件路径
+        String filePath = currentDir + File.separator + "config";
+        // 创建文件对象
+        File installLockFile = new File(filePath);
+        // 判断文件是否存在
+        return installLockFile.exists();
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 创建install.lock文件
     * @DateTime: 2023/12/3 15:57
     * @Return boolean true:创建成功  false:创建失败

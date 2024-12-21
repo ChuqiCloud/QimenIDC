@@ -45,6 +45,12 @@ public class StartUp {
             System.exit(0); // 退出程序
         }
 
+        // 判断config文件夹是否存在
+        if (!FileUtil.isConfigDir()){
+            UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "config文件夹不存在，请检查安装是否正确");
+            System.exit(0); // 退出程序
+        }
+
         boolean isInstalled = FileUtil.isInstall();// 文件锁
         /*boolean isInstalledDb = false;//configService.getInstalled(); // 数据库锁
         // 二者必须都为false，才能进行安装

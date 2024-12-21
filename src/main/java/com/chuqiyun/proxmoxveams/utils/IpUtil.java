@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
+import com.chuqiyun.proxmoxveams.entity.Subnetpool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +77,67 @@ public class IpUtil {
         return ipList;
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 根据网关及掩码位计算所有ip地址 nat
+    * @DateTime: 2024/1/26 15:21
+    * @Params: IpParams ipParams
+    * @Return List<Subnatpool>
+    */
+    public static List<Subnetpool> getNatIpList(IpParams ipParams){
+        String gateway = ipParams.getGateway();
+        Integer mask = ipParams.getMask();
+        Integer nodeId = ipParams.getNodeId();
+        String dns1 = ipParams.getDns1();
+        List<Subnetpool> ipList = new ArrayList<>();
+        // 将网关地址转换为整数形式
+        String[] gatewayParts = gateway.split("\\.");
+        int gatewayIP = (Integer.parseInt(gatewayParts[0]) << 24) |
+                (Integer.parseInt(gatewayParts[1]) << 16) |
+                (Integer.parseInt(gatewayParts[2]) << 8) |
+                Integer.parseInt(gatewayParts[3]);
+        // 计算子网掩码
+        int subnetMask = 0xFFFFFFFF << (32 - mask);
+
+        // 计算网络地址
+        int networkAddress = gatewayIP & subnetMask;
+
+        // 计算可用IP地址
+        int hostMin = networkAddress + 1;
+        int hostMax = networkAddress + (1 << (32 - mask)) - 2;
+
+        // 将子网掩码转换为字符串形式
+        String subnetMaskString = ((subnetMask >> 24) & 0xFF) + "." +
+                ((subnetMask >> 16) & 0xFF) + "." +
+                ((subnetMask >> 8) & 0xFF) + "." +
+                (subnetMask & 0xFF);
+
+        // 将整数形式的IP地址转换为字符串形式
+        for (int i = hostMin; i <= hostMax; i++) {
+            int octet1 = (i >> 24) & 0xFF;
+            int octet2 = (i >> 16) & 0xFF;
+            int octet3 = (i >> 8) & 0xFF;
+            int octet4 = i & 0xFF;
+
+            Subnetpool ip = new Subnetpool();
+            // 将网关掩码存入
+            ip.setNodeId(nodeId);
+            ip.setGateway(gateway);
+            ip.setMask(mask);
+            ip.setDns(dns1);
+            ip.setMac(generateRandomMacAddress()); // 随机生成mac地址
+            ip.setSubnatId(ipParams.getSubnetId());
+            // 如果ip地址为网关地址，则设置为3,0=正常;1=已使用;2=停用;3=网关
+            if (i == gatewayIP) {
+                ip.setStatus(3);
+            } else {
+                ip.setStatus(0);
+            }
+            ip.setIp(octet1 + "." + octet2 + "." + octet3 + "." + octet4);
+            ipList.add(ip);
+        }
+        return ipList;
+    }
     /**
     * @Author: mryunqi
     * @Description: 将掩码位转换为字符串类型

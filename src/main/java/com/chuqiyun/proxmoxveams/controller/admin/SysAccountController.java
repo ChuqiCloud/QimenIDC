@@ -114,6 +114,18 @@ public class SysAccountController {
 
     /**
     * @Author: mryunqi
+    * @Description: 根据UUID查询账号
+    * @DateTime: 2024/2/17 16:07
+    */
+    @AdminApiCheck
+    @GetMapping("/getSysuserByUuid")
+    public ResponseResult<Sysuser> getSysuserByUuid(@RequestParam(name = "uuid") String uuid)
+            throws UnauthorizedException {
+        return ResponseResult.ok(sysuserService.getSysuserByUuid(uuid));
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 修改超管账号接口
     * @DateTime: 2023/8/5 10:33
     * @Params: param JSONObject
@@ -140,6 +152,22 @@ public class SysAccountController {
             return ResponseResult.ok("修改管理账号成功！");
         } else {
             return ResponseResult.fail("修改管理账号失败！");
+        }
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 删除超管账号接口
+    * @DateTime: 2024/2/17 17:11
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/deleteSysUserById/{id}",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<String> deleteSysUserById(@PathVariable Long id)
+            throws UnauthorizedException {
+        if (sysuserService.removeById(id)) {
+            return ResponseResult.ok("删除管理账号成功！");
+        } else {
+            return ResponseResult.fail("删除管理账号失败！");
         }
     }
 }

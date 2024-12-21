@@ -80,6 +80,21 @@ public enum UnifiedResultCode {
     ERROR_VNC_NODE_NOT_EXIST(1033, "VNC control node does not exist"),
     // 创建VNC连接失败
     ERROR_CREATE_VNC_CONNECTION(1034, "Failed to create VNC connection"),
+    // sdn区域添加失败
+    ERROR_SDN_ZONE_ADD_FAILED(1035, "Failed to add SDN zone"),
+    // sdn区域不存在
+    ERROR_SDN_ZONE_NOT_EXIST(1036, "SDN zone does not exist"),
+    // sdn区域删除失败
+    ERROR_SDN_ZONE_DELETE_FAILED(1037, "Failed to delete SDN zone"),
+    // sdn vnet添加失败
+    ERROR_SDN_VNET_ADD_FAILED(1038, "Failed to add SDN vnet"),
+    // sdn vnet不存在
+    ERROR_SDN_VNET_NOT_EXIST(1039, "SDN vnet does not exist"),
+    // sdn subnet添加失败
+    ERROR_SDN_SUBNET_ADD_FAILED(1040, "Failed to add SDN subnet"),
+    // sdn 应用配置失败
+    ERROR_SDN_APPLY_CONFIG_FAILED(1041, "Failed to apply SDN config"),
+
     /*pve错误码范围：2xxx*/
 
     /*成功*/

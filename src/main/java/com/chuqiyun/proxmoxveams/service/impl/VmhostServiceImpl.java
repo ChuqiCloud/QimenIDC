@@ -725,7 +725,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Vmhost vmhost;
         vmhost = this.getOne(queryWrapper);
         if (vmhost == null) {
-            return maxVmid;
+            return maxVmid+1;
         }
         // 循环+1，直到找到一个不存在的vmid
         while (vmhost != null) {
