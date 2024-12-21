@@ -151,7 +151,7 @@ public class VmParams {
     /**
      * 网卡
      */
-    private String  bridge;
+    private String bridge;
     /**
      * ipconfig
      */
@@ -196,4 +196,5 @@ public class VmParams {
     private Long expirationTime;
     // 临时ip list
     private List<String> ipList;
+    private Integer ifnat;
 }

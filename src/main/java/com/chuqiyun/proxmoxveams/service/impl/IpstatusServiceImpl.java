@@ -99,8 +99,14 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     * @Return Ipstatus
     */
     @Override
-    public Ipstatus getIpStatusMaxByNodeId(Integer nodeId) {
-        return this.lambdaQuery().eq(Ipstatus::getNodeid,nodeId).orderByDesc(Ipstatus::getAvailable).last("limit 1").one();
+    public Ipstatus getIpStatusMaxByNodeId(Integer nodeId, String natippool) {
+        if (natippool == null)
+        {
+            return this.lambdaQuery().eq(Ipstatus::getNodeid,nodeId).orderByDesc(Ipstatus::getAvailable).last("limit 1").one();
+        }
+        else {
+            return this.lambdaQuery().eq(Ipstatus::getNodeid,nodeId).eq(Ipstatus::getId,natippool).orderByDesc(Ipstatus::getAvailable).last("limit 1").one();
+        }
     }
 
     /**

@@ -27,7 +27,9 @@ public interface IpstatusService extends IService<Ipstatus> {
 
     List<Integer> getAllId();
 
-    Ipstatus getIpStatusMaxByNodeId(Integer nodeId);
+    default Ipstatus getIpStatusMaxByNodeId(Integer nodeId, String natippool) {
+        return null;
+    }
 
     UnifiedResultDto<Object> deleteIppoolById(Long id);
 }

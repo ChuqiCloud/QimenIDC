@@ -44,7 +44,9 @@ public class Master extends Model<Master> {
     private String sshPassword;
     private Integer controllerStatus;
     private Integer controllerPort;
-
+    private Integer naton;
+    private Integer natbridge;
+    private Integer natippool;
     /**
      * 获取主键值
      *

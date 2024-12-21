@@ -213,7 +213,12 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 设置网络
         if (vmParams.getBridge() == null) {
-            vmParams.setBridge("vmbr0");
+            if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat网口
+            {
+                vmParams.setBridge(node.getNatbridge().toString());
+            } else {
+                vmParams.setBridge("vmbr0");
+            }
         }
 
         // 判断os与template、iso是否为空，至少有一个不为空
@@ -269,7 +274,14 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setPassword(VmUtil.generatePassword());
         }
         // 获取可用ip最多的ip池
-        Ipstatus ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId);
+        Ipstatus ipPool;
+        if (vmParams.getIfnat()==1)//nat机器，获取nat池
+        {
+            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool().toString());
+        } else {
+            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,null);
+        }
+
         List<String> ipList = new ArrayList<>();
         if (vmParams.getIpConfig() == null || vmParams.getIpConfig().size() <= 1){
             HashMap<String,String> ipConfig = new HashMap<>();
