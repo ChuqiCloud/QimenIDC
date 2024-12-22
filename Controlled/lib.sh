@@ -35,7 +35,7 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="https://mirrors.leapteam.cn:8000/software/websocketd/$(check_system)/websocketd"
+    url="https://mirrors.leapteam.cn:8899/software/websocketd/$(check_system)/websocketd"
 
     wget "$url" --no-check-certificate
     chmod +x /home/software/websocketd/websocketd
@@ -54,7 +54,7 @@ fi
 function download_noVNC(){
     cd /home/software/noVNC
 
-    url="https://mirrors.leapteam.cn:8000/software/noVNC/noVNC.tar.gz"
+    url="https://mirrors.leapteam.cn:8899/software/noVNC/noVNC.tar.gz"
 
     wget "$url" --no-check-certificate
     tar -zxvf noVNC.tar.gz

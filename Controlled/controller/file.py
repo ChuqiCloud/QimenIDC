@@ -50,7 +50,7 @@ async def wget(url:str,path:str):
     if os.path.exists(os.path.join(path,url.split('/')[-1])):
         # 获取文件大小
         size=os.path.getsize(os.path.join(path,url.split('/')[-1]))
-        # 获取文件总大小 curl -I -s -L "https://mirrors.leapteam.cn:8000/cloud-images/ubuntu/Ubuntu-22.04-x64.qcow2" | grep -i "Content-Length" | awk '{print $2}'
+        # 获取文件总大小 curl -I -s -L "https://mirrors.leapteam.cn:8899/cloud-images/ubuntu/Ubuntu-22.04-x64.qcow2" | grep -i "Content-Length" | awk '{print $2}'
         size_command = f"curl -I -s -L {url} | grep -i 'Content-Length' | awk '{{print $2}}'"
         size_output = os.popen(size_command).read().strip()
         if size_output.isdigit():  # 检查输出是否是有效的数字

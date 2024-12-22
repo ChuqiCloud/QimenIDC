@@ -34,7 +34,6 @@ if [ "${major_version:0:1}" -lt 8 ]; then
     # 激活sdn
     echo -e "\nsource /etc/network/interfaces.d/*" >>/etc/network/interfaces
     ifreload -a
-    exit 1
 fi
 
 # 构建目录路径
