@@ -125,8 +125,22 @@ class ForwardRuleManager:
                 return True
             else:
                 return False
-            
-        
+
+    '''
+    删除数据库端口规则
+    Delete database port rule
+    '''
+    def delete_forward_rule(self,source_port,protocol='tcp'):
+        with self.Session() as session:
+            deleted_count = session.query(ForwardRule).filter(
+                ForwardRule.source_port == source_port,
+                ForwardRule.protocol == protocol
+            ).delete()
+            session.commit()
+            if deleted_count > 0:
+                return True
+            else:
+                return False
     
 
 # # 使用示例
@@ -206,12 +220,14 @@ class IptablesForwardRuleManager:
     '''
     def delete_iptables_rule(self,source_port,destination_ip,destination_port,protocol):
         # 先检查规则是否存在
-        rule = self.get_iptables_rule(source_port,destination_ip,destination_port,protocol,True)
-        if not self.check_iptables_rule(rule):
-            return True
+        # = self.get_iptables_rule(source_port,destination_ip,destination_port,protocol,True)
+        #if not self.check_iptables_rule(rule):
+        #    return True
         # 使用iptables命令删除规则
+        #iptables -t nat -D PREROUTING -p udp --dport 7780 -j DNAT --to-destination 192.168.7.12:7780
         try:
-            subprocess.check_output(f"iptables -t nat {rule}", shell=True, universal_newlines=True)
+            subprocess.check_output(f"iptables -t nat -D PREROUTING -p {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}", shell=True, universal_newlines=True)
+            subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}", shell=True, universal_newlines=True)
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables: {e}")
@@ -264,7 +280,7 @@ class NatManager:
         # 先检查数据库中是否存在源端口
         if self.forward_rule_manager.check_source_port(self.source_port,self.protocol):
             # 删除数据库记录
-            if self.forward_rule_manager.delete_forward_rule(self.source_port) == False:
+            if self.forward_rule_manager.delete_forward_rule(self.source_port,self.protocol) == False:
                 return self.response(1,'Failed to delete rule from database')
         # 删除iptables规则
         if self.iptables_forward_rule_manager.delete_iptables_rule(self.source_port,self.destination_ip,self.destination_port,self.protocol) == False:

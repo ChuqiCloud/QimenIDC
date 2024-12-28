@@ -42,10 +42,10 @@ async def nat_delete(item: ForwardRule):
 获取端口转发规则
 Get port forwarding rules
 '''
-@nat_router.post('/nat/getVm/{page}/{size}')
-async def nat_get(page: int, size: int, item: ForwardRule):
-    nat = Nat.NatManager(item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
-    result = nat.get_forward_rules_by_vm(page, size)
+@nat_router.get('/nat/getVm/{page}/{size}')
+async def nat_get(page: int, size: int, vm: int):
+    nat = Nat.NatManager('', '', '', '', vm)
+    result = nat.get_forward_rules_by_vm(size, page)
     code = result['code']
     message = result['message']
     if (code == 0):
