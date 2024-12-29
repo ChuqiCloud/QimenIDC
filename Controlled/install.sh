@@ -15,7 +15,7 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo
+    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack
 }
 # 初始化系统软件目录
 function init_system_dir(){
@@ -36,6 +36,7 @@ function install_python_source(){
 function install_python(){
     #判断是否安装python3.10.5
     if [ -f "/usr/bin/python3.10" ];then
+        apt-get install -y python3-pip
         echo "python3.10.5 has been installed!"
     else
         cd /home/software
