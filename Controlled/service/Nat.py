@@ -227,7 +227,11 @@ class IptablesForwardRuleManager:
         #iptables -t nat -D PREROUTING -p udp --dport 7780 -j DNAT --to-destination 192.168.7.12:7780
         try:
             subprocess.check_output(f"iptables -t nat -D PREROUTING -p {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}", shell=True, universal_newlines=True)
-            subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}", shell=True, universal_newlines=True)
+            # 尝试删除conntrack条目，但忽略可能发生的错误
+            try:
+                subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}",shell=True, universal_newlines=True)
+            except subprocess.CalledProcessError:
+                return True
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables: {e}")

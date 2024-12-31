@@ -215,7 +215,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getBridge() == null) {
             if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat网口
             {
-                vmParams.setBridge(node.getNatbridge().toString());
+                vmParams.setBridge(node.getNatbridge());
             } else {
                 vmParams.setBridge("vmbr0");
             }

@@ -364,12 +364,10 @@ public class ClientApiUtil {
     * @Return JSONObject 端口转发列表
     */
     public static JSONObject getPortForwardList(String ip, String token, Integer controllerPort, Integer hostId, Integer page, Integer size){
-        String url = "http://"+ip+":"+controllerPort+"/nat/getVm/"+page+"/"+size+"";
+        String url = "http://"+ip+":"+controllerPort+"/nat/getVm/"+page+"/"+size;
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
-        paramMap.put("page",page);
-        paramMap.put("size",size);
-        JSONObject result = postControllerApi(url, paramMap, token);
+        JSONObject result = getControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200 ? result : null;
     }
 }

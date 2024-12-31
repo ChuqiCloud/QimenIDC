@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
@@ -15,13 +16,12 @@ import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
-import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.service.OsService;
-import com.chuqiyun.proxmoxveams.service.TaskService;
-import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
+import io.swagger.models.auth.In;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -47,6 +47,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private TaskService taskService;
     @Resource
     private OsService osService;
+    @Resource
+    private ConfigService configService;
     /**
     * @Author: mryunqi
     * @Description: 根据虚拟机id获取虚拟机实例信息
@@ -1123,6 +1125,72 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status",status);
         return this.selectCount(queryWrapper);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 添加NAT规则
+     * @DateTime: 2024/12/30 17:00
+     * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
+     */
+    @Override
+    public Boolean addVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+        String token = configService.getToken();
+        Master node = masterService.getById(this.getVmhostNodeId(vm));
+        return ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 删除NAT规则
+     * @DateTime: 2024/12/30 17:15
+     * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
+     */
+    @Override
+    public Boolean delVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+        String token = configService.getToken();
+        Master node = masterService.getById(this.getVmhostNodeId(vm));
+        return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机ID的节点ID
+     * @DateTime: 2024/12/29 21:00
+     * @Params: hostId 虚拟机id
+     */
+    @Override
+    public Object getVmhostNatByVmid (int page, int size, int hostId) {
+        String token = configService.getToken();
+        Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        JSONObject data = ClientApiUtil.getPortForwardList(node.getHost(), token, node.getControllerPort(), hostId, page, size);
+        if (data != null) {
+            // 检查返回的代码，如果成功，则返回数据
+            int code = data.getIntValue("code");
+            if (code == 200) {
+                JSONArray dataArray = data.getJSONArray("data");
+                if (dataArray != null) {
+                    return ResponseResult.ok(dataArray);
+                } else {
+                    return ResponseResult.fail("Data array is null");
+                }
+            } else {
+                String message = data.getString("message");
+                return ResponseResult.fail(message != null ? message : "Unknown error");
+            }
+        } else {
+            return ResponseResult.fail("Failed to retrieve port forward list");
+        }
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机ID的节点ID
+     * @DateTime: 2024/12/29 21:00
+     * @Params: hostId 虚拟机id
+     */
+    @Override
+    public Integer getVmhostNodeId(int hostId) {
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("id",hostId);
+        Vmhost vmhost = this.getOne(queryWrapper);
+        return vmhost.getNodeid();
     }
 }
 
