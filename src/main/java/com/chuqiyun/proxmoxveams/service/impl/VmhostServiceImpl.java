@@ -209,6 +209,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setBandwidth(vmParams.getBandwidth());
         vmhost.setIpConfig(vmParams.getIpConfig());
         vmhost.setIpList(vmParams.getIpList());
+        vmhost.setIfnat(vmParams.getIfnat());
+        vmhost.setNatnum(vmParams.getNatnum());
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
         }
@@ -1136,6 +1138,19 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Boolean addVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(vm));
+        Vmhost vmhost = this.getById(vm);
+        if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
+                || source_port < 1000 || source_port > 65535
+        ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有错误提示
+        Object natForward = this.getVmhostNatByVmid(1,99999,vm);
+        if (natForward instanceof String) {
+            JSONObject jsonObject = JSONObject.parseObject((String) natForward);
+            JSONArray dataArray = jsonObject.getJSONArray("data");
+            int dataCount = dataArray.size();
+            if( dataCount >= vmhost.getNatnum()) {
+                return false;
+            }
+        }
         return ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
     }
     /**
@@ -1191,6 +1206,20 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         queryWrapper.eq("id",hostId);
         Vmhost vmhost = this.getOne(queryWrapper);
         return vmhost.getNodeid();
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机ID的节点ID
+     * @DateTime: 2024/12/29 21:00
+     * @Params: hostId 虚拟机id
+     */
+    @Override
+    public Object getVmhostNatAddrByVmid (int hostId) {
+        Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        String natAddr = node.getNataddr();
+        Map<String, Object> resultData = new HashMap<>();
+        resultData.put("natAddr", natAddr);
+        return ResponseResult.ok(resultData);
     }
 }
 

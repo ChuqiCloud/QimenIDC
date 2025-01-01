@@ -197,4 +197,5 @@ public class VmParams {
     // 临时ip list
     private List<String> ipList;
     private Integer ifnat;
+    private Integer natnum;
 }

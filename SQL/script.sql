@@ -140,8 +140,9 @@ create table master
     controller_status int                        null,
     controller_port   int          default 7600  null comment '被控端口',
     naton             int          default 0     not null comment '0关闭 1开启',
-    natbridge             varchar(50)  default 'pam' not null,
+    natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
+    nataddr             varchar(50)  null comment 'nat展示地址',
 );
 
 create table modelgroup
@@ -328,7 +329,8 @@ create table vmhost
     create_time           mediumtext                                 not null comment '创建时间',
     expiration_time       mediumtext                                 not null comment '到期时间',
     ip_list               text                                       null,
-    ifnat                 int          default 0                     not null comment '是否nat 0否 1是'
+    ifnat                 int          default 0                     not null comment '是否nat 0否 1是',
+    natnum                int          default 0                     not null comment 'nat端口转发数量'
 );
 
 create table vncdata

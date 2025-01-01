@@ -137,4 +137,15 @@ public class SysVmHostInfoController {
     ) throws UnauthorizedException {
         return vmhostService.getVmhostNatByVmid(page,size,hostId);
     }
+    /**
+     * @Author: 星禾
+     * @Description: 根据VM数据库ID获取Nat相关信息
+     * @DateTime: 2025/1/1 20:55
+     */
+    @AdminApiCheck
+    @GetMapping(value = "/nat/getInfo")
+    public Object getVmNatInfo(@RequestParam(name = "hostId") Integer hostId
+    ) throws UnauthorizedException {
+        return vmhostService.getVmhostNatAddrByVmid(hostId);
+    }
 }

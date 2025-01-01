@@ -47,6 +47,7 @@ public class Master extends Model<Master> {
     private Integer naton;
     private String natbridge;
     private Integer natippool;
+    private String nataddr;
     /**
      * 获取主键值
      *

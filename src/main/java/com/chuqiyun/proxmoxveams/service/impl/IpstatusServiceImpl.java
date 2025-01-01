@@ -96,10 +96,10 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     * @Description: 获取指定nodeID下available最大的IP组
     * @DateTime: 2023/7/6 18:24
     * @Params: Integer nodeId
-    * @Return Ipstatus
+    * @Return Ipstatus natippool
     */
     @Override
-    public Ipstatus getIpStatusMaxByNodeId(Integer nodeId, String natippool) {
+    public Ipstatus getIpStatusMaxByNodeId(Integer nodeId, Integer natippool) {
         if (natippool == null)
         {
             return this.lambdaQuery().eq(Ipstatus::getNodeid,nodeId).orderByDesc(Ipstatus::getAvailable).last("limit 1").one();

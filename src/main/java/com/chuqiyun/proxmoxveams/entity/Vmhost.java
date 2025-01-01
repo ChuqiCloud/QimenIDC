@@ -194,6 +194,9 @@ public class Vmhost extends Model<Vmhost> {
     private Long expirationTime;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> ipList;
+    private Integer ifnat;
+    private Integer natnum;
+
 
 
 

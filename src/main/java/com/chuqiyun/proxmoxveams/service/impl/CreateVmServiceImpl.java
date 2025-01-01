@@ -277,7 +277,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         Ipstatus ipPool;
         if (vmParams.getIfnat()==1)//nat机器，获取nat池
         {
-            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool().toString());
+            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool());
         } else {
             ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,null);
         }
@@ -342,6 +342,14 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 设置dns
         if (vmParams.getDns1() == null) {
             vmParams.setDns1(ipPool.getDns1());
+        }
+        // 判断ifNat是否为空
+        if (vmParams.getIfnat() == null) {
+            vmParams.setIfnat(0);
+        }
+        // 判断natnum是否为空
+        if (vmParams.getNatnum() == null) {
+            vmParams.setNatnum(0);
         }
         // 将vmParams转换为HashMap
         HashMap<Object, Object> vmParamsMap;
@@ -506,10 +514,16 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 设置网络
         if (vmParams.getBridge() == null) {
-            param.put("net0", "virtio,bridge=vmbr0,rate="+vmParams.getBandwidth());
+            if(vmParams.getIfnat() == 1 && node.getNatbridge() != null) //nat网口
+            {
+                param.put("net0", "virtio,bridge="+node.getNatbridge()+",rate="+vmParams.getBandwidth());
+            } else {
+                param.put("net0", "virtio,bridge=vmbr0,rate="+vmParams.getBandwidth());
+            }
         }else {
             param.put("net0", "virtio,bridge="+vmParams.getBridge()+",rate="+vmParams.getBandwidth());
         }
+
         // 获取cookie
         HashMap<String, String> authentications = masterService.getMasterCookieMap(vmParams.getNodeid());
         JSONObject jsonObject =  proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);

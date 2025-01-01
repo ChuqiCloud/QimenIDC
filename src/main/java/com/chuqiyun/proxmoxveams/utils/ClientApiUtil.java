@@ -1,18 +1,23 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.service.MasterService;
 import io.swagger.models.auth.In;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.annotation.Resource;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * @author mryunqi
@@ -321,8 +326,21 @@ public class ClientApiUtil {
         paramMap.put("destination_ip",destination_ip);
         paramMap.put("destination_port",destination_port);
         paramMap.put("protocol",protocol);
-        JSONObject result = postControllerApi(url, paramMap, token);
-        return result != null && result.getInteger("code") == 200;
+        if (Objects.equals(protocol, "all")) //处理tcp+udp请求
+        {
+            paramMap.put("protocol","tcp");
+            JSONObject result = postControllerApi(url, paramMap, token);
+            if ( result != null && result.getInteger("code") == 200 ) {
+                paramMap.put("protocol","udp");
+                JSONObject result_udp = postControllerApi(url, paramMap, token);
+                return result_udp != null && result_udp.getInteger("code") == 200;
+            } else {
+                return result != null && result.getInteger("code") == 200;
+            }
+        } else {
+            JSONObject result = postControllerApi(url, paramMap, token);
+            return result != null && result.getInteger("code") == 200;
+        }
     }
 
     /**

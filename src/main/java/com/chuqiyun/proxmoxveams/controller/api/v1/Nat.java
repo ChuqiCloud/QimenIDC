@@ -60,4 +60,15 @@ public class Nat {
     ) throws UnauthorizedException {
         return vmhostService.getVmhostNatByVmid(page,size,hostId);
     }
+    /**
+     * @Author: 星禾
+     * @Description: 根据VM数据库ID获取虚拟机Nat信息
+     * @DateTime: 2024/1/1 20:50
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/nat/getInfo")
+    public Object getNatAddr(@RequestParam(name = "hostId") Integer hostId
+    ) throws UnauthorizedException {
+        return vmhostService.getVmhostNatAddrByVmid(hostId);
+    }
 }
