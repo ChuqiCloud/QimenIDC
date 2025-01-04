@@ -334,4 +334,40 @@ public class ProxmoxApiUtil {
     public void deleteVm(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         deleteNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "?purge=1&destroy-unreferenced-disks=1", new HashMap<>());
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 重置虚拟机账号
+     * @DateTime: 2025/1/4 23:00
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String password 密码
+     */
+    public void resetVmUsername(Master node, HashMap<String,String> cookie, Integer vmid, String username) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("ciuser",username);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 重置虚拟机Pve系统类型
+     * @DateTime: 2025/1/4 23:00
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String password 密码
+     */
+    public void resetVmOsType(Master node, HashMap<String,String> cookie, Integer vmid, String ostype) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        // 设置虚拟机osType
+        params.put("ostype", ostype);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 重置虚拟机Pve系统类型
+     * @DateTime: 2025/1/4 23:00
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String password 密码
+     */
+    public void resetVmCitype(Master node, HashMap<String,String> cookie, Integer vmid, String citype) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        // 设置虚拟机citype
+        params.put("citype",citype);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
 }

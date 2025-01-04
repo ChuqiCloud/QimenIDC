@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -86,7 +87,22 @@ public class ResetSystemCron {
         Vmhost vmhost = vmhostService.getById(task.getHostid());
 
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-
+        
+        //修改username
+        proxmoxApiUtil.resetVmUsername(node,authentications,vmhost.getVmid(),vmhost.getUsername());
+        //修改ostype
+        // 设置虚拟机osType
+        String ostype = OsTypeUtil.getOsType(vmhost.getOs(),vmhost.getOsType());
+        proxmoxApiUtil.resetVmOsType(node,authentications,vmhost.getVmid(),ostype);
+        //修改citype
+        String citype = null;
+        if ("windows".equals(vmhost.getOsType())){
+            citype = "configdrive2";
+        }
+        if ("linux".equals(vmhost.getOsType())){
+            citype = "nocloud";
+        }
+        proxmoxApiUtil.resetVmCitype(node,authentications,vmhost.getVmid(),citype);
         // 删除系统盘
         proxmoxApiUtil.deleteVmDisk(node,authentications,vmhost.getVmid(),"scsi0");
 
