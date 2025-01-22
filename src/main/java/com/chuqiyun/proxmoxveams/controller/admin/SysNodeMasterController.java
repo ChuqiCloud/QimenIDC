@@ -110,7 +110,9 @@ public class SysNodeMasterController {
             if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nataddr, natbridge)) {
                 // 将master信息存入数据库
                 Master master = masterService.getById(id);
-                master.setNataddr(nataddr);
+                String[] parts = nataddr.split("/");
+                String ipAddress = parts[0];
+                master.setNataddr(ipAddress);
                 master.setNatippool(poolid);
                 master.setNaton(1);
                 master.setNatbridge(natbridge);
