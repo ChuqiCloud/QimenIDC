@@ -32,7 +32,7 @@
 
 ## 爱发电赞助作者
 
-夜空（qimen）： [https://afdian.net/a/qimen](https://afdian.net/a/qimen)
+夜空（qimen）： [https://afdian.com/a/qimen](https://afdian.com/a/qimen)
 
 -- 您的支持是我们最大的动力！
 
