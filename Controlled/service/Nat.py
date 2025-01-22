@@ -231,11 +231,11 @@ class IptablesForwardRuleManager:
             try:
                 subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}",shell=True, universal_newlines=True)
             except subprocess.CalledProcessError:
-                return True
-            return True
+                return self.response(0,'success')
+            return self.response(0,'success')
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables: {e}")
-            return False
+            return self.response(1,'falid')
         
 
 class NatManager:
@@ -299,7 +299,29 @@ class NatManager:
         # 查询数据库
         data = self.forward_rule_manager.get_forward_rules_by_vm(self.vm,page_size,page_number)
         return self.response(0,'success',data)
-    
+
+    '''
+    添加转发接口
+    add forwarding bridge
+    '''
+    def add_forward_nat_bridge(self,nataddr,bridge) -> dict:
+        try:
+            subprocess.check_output(f"echo \"auto {bridge}\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"iface {bridge}\" inet static >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        address {nataddr}\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        bridge-ports none\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        bridge-stp off\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        bridge-fd 0\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        post-up echo 1 > /proc/sys/net/ipv4/ip_forward\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        post-up iptables -t nat -A POSTROUTING -s '{nataddr}' -o vmbr0 -j MASQUERADE\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \"        post-down iptables -t nat -D POSTROUTING -s '{nataddr}' -o vmbr0 -j MASQUERADE\" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            subprocess.check_output(f"echo \" \" >> /etc/network/interfaces", shell=True, universal_newlines=True)
+            return self.response(0,'success')
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing iptables: {e}")
+            return self.response(1,'faild')
+        return self.response(0,'success')
+
 
 class Manager:
 

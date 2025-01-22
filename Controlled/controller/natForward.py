@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter,Body
 
 from common.CodeEnum import CodeEnum
 from common.ResponseResult import common_response
@@ -46,6 +46,17 @@ Get port forwarding rules
 async def nat_get(page: int, size: int, vm: int):
     nat = Nat.NatManager('', '', '', '', vm)
     result = nat.get_forward_rules_by_vm(size, page)
+    code = result['code']
+    message = result['message']
+    if (code == 0):
+        return common_response(CodeEnum.SUCCESS, message, result['data'])
+    else:
+        return common_response(CodeEnum.FAIL, message, {})
+
+@nat_router.post('/nat/addBridge')
+async def nat_addBridge(nataddr: str = Body(...), bridge: str = Body(...)):
+    nat = Nat.NatManager('', '', '', '', '')
+    result = nat.add_forward_nat_bridge(nataddr, bridge)
     code = result['code']
     message = result['message']
     if (code == 0):
