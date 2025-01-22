@@ -1,6 +1,9 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSON;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
@@ -67,6 +70,37 @@ public class DeleteVmCron {
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         JSONObject vmInfo;
+        //删除Nat转发
+        Object vmNat = vmhostService.getVmhostNatByVmid(1, 99999, vmhost.getId());
+        if (vmNat != null) {
+            ResponseResult responseResult = (ResponseResult) vmNat;
+            Integer code = responseResult.getCode();
+            String message = responseResult.getMessage();
+            if (20000 == code) {
+                Object data = responseResult.getData();
+                if (data instanceof JSONArray) {
+                    JSONArray dataList = (JSONArray) data;
+                    for (int i = 0; i < dataList.size(); i++) {
+                        try {
+                            JSONObject item = dataList.getJSONObject(i);
+                            Integer destinationPort = item.getInteger("destination_port");
+                            Integer sourcePort = item.getInteger("source_port");
+                            String destinationIp = item.getString("destination_ip");
+                            String protocol = item.getString("protocol");
+                            Integer vm = item.getInteger("vm");
+                            vmhostService.delVmhostNat(sourcePort, destinationIp, destinationPort, protocol, vm);
+                            System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
+                        } catch (Exception e) {
+                            System.err.println("Error processing item at index " + i + ": " + e.getMessage());
+                        }
+                    }
+                } else {
+                    System.err.println("Data is not a JSONArray: " + data.getClass().getName());
+                }
+            } else {
+                System.err.println("获取VM NAT信息失败: " + message);
+            }
+        }
         // 获取虚拟机实时信息
         try {
             vmInfo = proxmoxApiUtil.getVmStatus(node, authentications, vmhost.getVmid());

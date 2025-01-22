@@ -5,17 +5,23 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.MasterDao;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.IppoolService;
+import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.IpUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
-
+import com.chuqiyun.proxmoxveams.dto.IpParams;
+import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +34,11 @@ import java.util.List;
  */
 @Service("masterService")
 public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements MasterService {
+
+    @Resource
+    private IppoolService ippoolService;
+    @Resource
+    private IpstatusService ipstatusService;
     /**
     * @Author: mryunqi
     * @Description: 获取节点总数
@@ -320,6 +331,57 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }else {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_VM_UNKNOWN, null);
+        }
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 创建NatIP池
+     * @DateTime: 2023/7/20 23:09
+     * @Params: Integer nodeId 节点ID, Integer vmid 虚拟机ID
+     * @Return Integer 虚拟机状态码
+     */
+    @Override
+    public Integer addNodeNatIpPool(Integer nodeId, String nataddr) {
+        // 创建所有掩码位列表
+        List<Integer> maskList = List.of(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32);
+        // 判断掩码位是否合法
+        IpParams ipParams = new IpParams();
+        ipParams.setPoolName("NAT池");
+        ipParams.setNodeId(nodeId);
+        ipParams.setDns1("8.8.8.8");
+        ipParams.setDns2("223.5.5.5");
+        String[] parts = nataddr.split("/");
+        String ipAddress = parts[0];
+        Integer mask = Integer.valueOf(parts[1]);
+        ipParams.setGateway(ipAddress);
+        ipParams.setMask(mask);
+        if (!maskList.contains(ipParams.getMask())){
+            return 0;
+        }
+        // 判断是否有空参数
+        if(ipParams.getPoolName() == null || ipParams.getNodeId() == null || ipParams.getGateway() == null || ipParams.getMask() == null
+                || ipParams.getDns1() == null || ipParams.getDns2() == null){
+            return 0;
+        }
+        // 判断节点是否存在
+        if (this.getById(ipParams.getNodeId()) == null){
+            return 0;
+        }
+        // 判断网关是否合法
+        if (!ipParams.getGateway().matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")){
+            return 0;
+        }
+        int statusId = ipstatusService.insertIpstatus(ipParams);
+        if (statusId <=0){
+            return 0;
+        }
+        ipParams.setPoolId(statusId);
+        List<Ippool> ippoolList = IpUtil.getIpList(ipParams);
+        // 批量插入ip池
+        if (ippoolService.insertIppoolList(ippoolList)){
+            return statusId;
+        }else {
+            return 0;
         }
     }
 }

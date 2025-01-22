@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -49,6 +51,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private OsService osService;
     @Resource
     private ConfigService configService;
+
     /**
     * @Author: mryunqi
     * @Description: 根据虚拟机id获取虚拟机实例信息
@@ -845,9 +848,70 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost.getStatus() == 0){
             this.power(vmhost.getId(), "shutdown",null);
         }
+        //重置用户名
+        Os os_old = osService.isExistOs(vmhost.getOs());
+        if (!Objects.equals(os_old.getOsType(), os.getOsType()))
+        {
+            if (os.getOsType().equals("ubuntu")) {
+                vmhost.setUsername("ubuntu");
+            } else if (os.getOsType().equals("windows")) {
+                vmhost.setUsername("administrator");
+            } else {
+                vmhost.setUsername("root");
+            }
+        }
+        if(!Objects.equals(vmhost.getOsType(), os.getType())) {
+            System.out.println("vmID：" + vmHostId + " 原系统：" + vmhost.getOsType() + " 新系统：" + os.getType() + " 不一致，重置用户名和NAT");
+            //重置Nat转发
+            int dest_port = 0;
+            if (vmhost.getIfnat() == 1) {
+                if (Objects.equals(os.getType(), "windows")) {
+                    dest_port = 3389;
+                } else {
+                    dest_port = 22;
+                }
+                Object vmNat = this.getVmhostNatByVmid(1, 99999, vmhost.getId());
+                if (vmNat != null) {
+                    ResponseResult responseResult = (ResponseResult) vmNat;
+                    Integer code = responseResult.getCode();
+                    String message = responseResult.getMessage();
+                    if (20000 == code) {
+                        Object data = responseResult.getData();
+                        if (data instanceof JSONArray dataList) {
+                            for (int i = 0; i < dataList.size(); i++) {
+                                try {
+                                    JSONObject item = dataList.getJSONObject(i);
+                                    Integer destinationPort = item.getInteger("destination_port");
+                                    if (destinationPort != null && (destinationPort == 22 || destinationPort == 3389)) {
+                                        Integer sourcePort = item.getInteger("source_port");
+                                        String destinationIp = item.getString("destination_ip");
+                                        String protocol = item.getString("protocol");
+                                        Integer vm = item.getInteger("vm");
+
+                                        this.delVmhostNat(sourcePort, destinationIp, destinationPort, protocol, vm);
+                                        System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
+                                    }
+                                } catch (Exception e) {
+                                    System.err.println("Error processing item at index " + i + ": " + e.getMessage());
+                                }
+                            }
+                        } else {
+                            System.err.println("Data is not a JSONArray: " + data.getClass().getName());
+                        }
+                    } else {
+                        System.err.println("获取VM NAT信息失败: " + message);
+                    }
+                }
+            }
+            String dest_ip = vmhost.getIpList().get(0);
+            int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+            if (!this.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhost.getId())) {
+                s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                this.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhost.getId());
+            }
+        }
         // 重置osName
         osName = os.getFileName();
-
         // 设置虚拟机状态为重装系统中
         vmhost.setStatus(13);
         vmhost.setOsName(os.getFileName());

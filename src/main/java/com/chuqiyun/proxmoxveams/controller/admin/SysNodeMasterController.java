@@ -5,11 +5,13 @@ import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.service.VncnodeService;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +30,8 @@ public class SysNodeMasterController {
     private VmhostService vmhostService;
     @Resource
     private VncnodeService vncnodeService;
-
+    @Resource
+    private ConfigService configService;
     @AdminApiCheck
     @PostMapping("/insertNodeMaster")
     public ResponseResult<String> insertNodeMaster(@RequestBody Master master) throws UnauthorizedException {
@@ -93,5 +96,32 @@ public class SysNodeMasterController {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }
         return ResponseResult.ok(resultDto.getData());
+    }
+    @AdminApiCheck
+    @PostMapping("/addNodeMasterNat")
+    public ResponseResult<String> addNodeMasterNat(@RequestBody Integer id,String nataddr,String natbridge) throws UnauthorizedException {
+        //创建IP池并获取IP池ID
+        Integer poolid = masterService.addNodeNatIpPool(id,nataddr);
+        if (poolid != 0)
+        {
+            //提交添加请求
+            String token = configService.getToken();
+            Master node = masterService.getById(id);
+            if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nataddr, natbridge)) {
+                // 将master信息存入数据库
+                Master master = masterService.getById(id);
+                master.setNataddr(nataddr);
+                master.setNatippool(poolid);
+                master.setNaton(1);
+                master.setNatbridge(natbridge);
+                //更新被控IP池ID、naton、网口等相关信息
+                masterService.updateById(master);
+                return ResponseResult.ok("添加成功！");
+            } else {
+                return ResponseResult.fail("添加失败！");
+            }
+        } else {
+            return ResponseResult.fail("添加失败！");
+        }
     }
 }

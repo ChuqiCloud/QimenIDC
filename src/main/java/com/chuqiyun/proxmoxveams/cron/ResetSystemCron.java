@@ -103,6 +103,7 @@ public class ResetSystemCron {
             citype = "nocloud";
         }
         proxmoxApiUtil.resetVmCitype(node,authentications,vmhost.getVmid(),citype);
+
         // 删除系统盘
         proxmoxApiUtil.deleteVmDisk(node,authentications,vmhost.getVmid(),"scsi0");
 
@@ -376,7 +377,7 @@ public class ResetSystemCron {
             UnifiedLogger.error(UnifiedLogger.LogType.TASK_START_VM,"添加创建开机任务: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());
             // 修改任务状态为失败
             startTask.setStatus(3);
-            startTask.setError("创建修改启动项任务失败");
+            startTask.setError("创建开机任务任务失败");
             taskService.updateById(startTask);
         }
 

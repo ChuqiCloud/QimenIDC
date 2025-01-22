@@ -388,4 +388,19 @@ public class ClientApiUtil {
         JSONObject result = getControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200 ? result : null;
     }
+    /**
+     * @Author: 星禾
+     * @Description: 添加端口转发接口
+     * @DateTime: 2025/1/22 15:41
+     * @Params: nataddr 转发地址
+     * @Params: bridge 转发虚拟网口
+     */
+    public static Boolean addNatBridge(String ip, String token, Integer controllerPort, String nataddr, String bridge){
+        String url = "http://"+ip+":"+controllerPort+"/nat/addBridge";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("nataddr",nataddr);
+        paramMap.put("bridge",bridge);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
 }

@@ -17,9 +17,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -131,7 +130,22 @@ public class CreateVmCron {
             HashMap<Object, Object> taskMap = new HashMap<>();
             taskMap.put(createTime, task.getId());
             vmParams.setTask(taskMap);*/
-
+            //初始添加Nat规则
+            if (vmParams.getIfnat() == 1){
+                int dest_port;
+                if (Objects.equals(vmParams.getOsType(), "windows")) {
+                    dest_port = 3389;
+                } else {
+                    dest_port = 22;
+                }
+                String dest_ip = ipList.get(0);
+                int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                if (!vmhostService.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhostId)){
+                    s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                    vmhostService.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhostId);
+                }
+                System.out.println("[NAT] 创建默认远程NAT: 虚拟机ID:" + vmhostId + " VM-ID:" + task.getHostid() + " 完成");
+            }
             // 添加导入操作系统任务
             Task importTask = new Task();
             long time = System.currentTimeMillis();
@@ -360,6 +374,7 @@ public class CreateVmCron {
             // 更新主线程任务task状态为2
             task.setStatus(2);
             taskService.updateById(task);
+
         }
 
     }
