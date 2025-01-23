@@ -195,30 +195,55 @@ public class SysOsController {
                 }
             }
         }
-        boolean result = osService.downloadOs(osId,nodeId);
-        if (result){
+        //判断是否手动上传
+        if (os.getDownType()==1){
             OsNodeStatus osNodeStatus = new OsNodeStatus();
             osNodeStatus.setNodeId(nodeId);
             osNodeStatus.setNodeName(node.getNodeName());
-            osNodeStatus.setStatus(1);
-            osNodeStatus.setSchedule(0.00);
+            osNodeStatus.setStatus(2);
+            osNodeStatus.setSchedule(100.00);
             // 转换为Map
             /*Map<String,Object> osNodeStatusMap = ModUtil.entityToMap(osNodeStatus);*/
             // 判断是否为空
-            if (oldNodeStatus == null){
+            if (oldNodeStatus == null) {
                 oldNodeStatus = new HashMap<>();
-                oldNodeStatus.put("0",osNodeStatus);
-            }
-            else{
+                oldNodeStatus.put("0", osNodeStatus);
+            } else {
                 // 获取最后一个key
                 String lastKey = String.valueOf(oldNodeStatus.size());
                 // 添加到Map中
-                oldNodeStatus.put(lastKey,osNodeStatus);
+                oldNodeStatus.put(lastKey, osNodeStatus);
             }
             // 更新到数据库
             os.setNodeStatus(oldNodeStatus);
             osService.updateById(os);
-            return ResponseResult.ok("开始下载");
+            return ResponseResult.ok("添加成功");
+        }
+        else {
+            boolean result = osService.downloadOs(osId, nodeId);
+            if (result) {
+                OsNodeStatus osNodeStatus = new OsNodeStatus();
+                osNodeStatus.setNodeId(nodeId);
+                osNodeStatus.setNodeName(node.getNodeName());
+                osNodeStatus.setStatus(1);
+                osNodeStatus.setSchedule(0.00);
+                // 转换为Map
+                /*Map<String,Object> osNodeStatusMap = ModUtil.entityToMap(osNodeStatus);*/
+                // 判断是否为空
+                if (oldNodeStatus == null) {
+                    oldNodeStatus = new HashMap<>();
+                    oldNodeStatus.put("0", osNodeStatus);
+                } else {
+                    // 获取最后一个key
+                    String lastKey = String.valueOf(oldNodeStatus.size());
+                    // 添加到Map中
+                    oldNodeStatus.put(lastKey, osNodeStatus);
+                }
+                // 更新到数据库
+                os.setNodeStatus(oldNodeStatus);
+                osService.updateById(os);
+                return ResponseResult.ok("开始下载");
+            }
         }
         return ResponseResult.fail("下载失败");
     }
