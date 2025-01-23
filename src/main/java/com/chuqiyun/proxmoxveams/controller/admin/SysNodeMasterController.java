@@ -101,6 +101,12 @@ public class SysNodeMasterController {
     @AdminApiCheck
     @PostMapping("/addNodeMasterNat")
     public ResponseResult<String> addNodeMasterNat(@RequestBody CNat nat) throws UnauthorizedException {
+        Master master = masterService.getById(nat.getId());
+        //查看是否已经启用NAT
+        if (master.getNaton() == 1)
+        {
+            return ResponseResult.fail("该节点已经启用了NAT！");
+        }
         //创建IP池并获取IP池ID
         Integer poolid = masterService.addNodeNatIpPool(nat.getId(),nat.getNataddr());
         if (poolid != 0)
@@ -110,10 +116,7 @@ public class SysNodeMasterController {
             Master node = masterService.getById(nat.getId());
             if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nat.getNataddr(), nat.getNatbridge())) {
                 // 将master信息存入数据库
-                Master master = masterService.getById(nat.getId());
-                String[] parts = nat.getNataddr().split("/");
-                String ipAddress = parts[0];
-                master.setNataddr(ipAddress);
+                master.setNataddr(nat.getAddrdomain());
                 master.setNatippool(poolid);
                 master.setNaton(1);
                 master.setNatbridge(nat.getNatbridge());

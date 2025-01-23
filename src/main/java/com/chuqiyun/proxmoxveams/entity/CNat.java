@@ -4,7 +4,7 @@ public class CNat {
     private Integer id;
     private String nataddr;
     private String natbridge;
-
+    private String addrdomain;
     public Integer getId() {
         return id;
     }
@@ -27,5 +27,12 @@ public class CNat {
 
     public void setNatbridge(String natbridge) {
         this.natbridge = natbridge;
+    }
+    public String getAddrdomain() {
+        return addrdomain;
+    }
+
+    public void setAddrdomain(String addrdomain) {
+        this.addrdomain = addrdomain;
     }
 }
