@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.entity.CNat;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
@@ -99,23 +100,23 @@ public class SysNodeMasterController {
     }
     @AdminApiCheck
     @PostMapping("/addNodeMasterNat")
-    public ResponseResult<String> addNodeMasterNat(@RequestBody Integer id,String nataddr,String natbridge) throws UnauthorizedException {
+    public ResponseResult<String> addNodeMasterNat(@RequestBody CNat nat) throws UnauthorizedException {
         //创建IP池并获取IP池ID
-        Integer poolid = masterService.addNodeNatIpPool(id,nataddr);
+        Integer poolid = masterService.addNodeNatIpPool(nat.getId(),nat.getNataddr());
         if (poolid != 0)
         {
             //提交添加请求
             String token = configService.getToken();
-            Master node = masterService.getById(id);
-            if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nataddr, natbridge)) {
+            Master node = masterService.getById(nat.getId());
+            if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nat.getNataddr(), nat.getNatbridge())) {
                 // 将master信息存入数据库
-                Master master = masterService.getById(id);
-                String[] parts = nataddr.split("/");
+                Master master = masterService.getById(nat.getId());
+                String[] parts = nat.getNataddr().split("/");
                 String ipAddress = parts[0];
                 master.setNataddr(ipAddress);
                 master.setNatippool(poolid);
                 master.setNaton(1);
-                master.setNatbridge(natbridge);
+                master.setNatbridge(nat.getNatbridge());
                 //更新被控IP池ID、naton、网口等相关信息
                 masterService.updateById(master);
                 return ResponseResult.ok("添加成功！");
