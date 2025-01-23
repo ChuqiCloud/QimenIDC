@@ -231,11 +231,11 @@ class IptablesForwardRuleManager:
             try:
                 subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}",shell=True, universal_newlines=True)
             except subprocess.CalledProcessError:
-                return self.response(0,'success')
-            return self.response(0,'success')
+                return True
+            return True
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables: {e}")
-            return self.response(1,'falid')
+            return False
         
 
 class NatManager:
