@@ -27,7 +27,7 @@ public interface IpstatusService extends IService<Ipstatus> {
 
     List<Integer> getAllId();
 
-    default Ipstatus getIpStatusMaxByNodeId(Integer nodeId, Integer natippool) {
+    default Ipstatus getIpStatusMaxByNodeId(Integer nodeId, Integer natippool, Integer excludeId) {
         return null;
     }
 

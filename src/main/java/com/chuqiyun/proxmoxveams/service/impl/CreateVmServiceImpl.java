@@ -277,9 +277,9 @@ public class CreateVmServiceImpl implements CreateVmService {
         Ipstatus ipPool;
         if (vmParams.getIfnat()==1)//nat机器，获取nat池
         {
-            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool());
+            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool(),null);
         } else {
-            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,null);
+            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId, null,node.getNatippool());
         }
 
         List<String> ipList = new ArrayList<>();
