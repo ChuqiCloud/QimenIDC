@@ -121,3 +121,17 @@ build: # 内部构建版本信息
              constraint natcontroller_pk
                  primary key (id)
          );"
+  1.1.0:
+    1:
+      - "alter table master
+                   add naton int default 0 not null comment '0关闭 1开启' after controller_port;"
+      - "alter table master
+                   add natbridge varchar(50) null comment 'nat网口' after naton;"
+      - "alter table master
+                   add natippool int default 0 not null comment 'nat ip池id' after natbridge;"
+      - "alter table master
+                   add nataddr varchar(50) null comment 'nat展示地址' after natippool;"
+      - "alter table vmhost
+                   add ifnat int default 0 not null comment '是否开启NAT' after ip_list;"
+      - "alter table vmhost
+                   add natnum int default 0 not null comment 'NAT数量' after ifnat;"
