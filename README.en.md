@@ -61,7 +61,7 @@ The controlled program is located in the Controlled directory. Upload the instal
 Alternatively, you can run the following command:
 
 ```shell
-wget -O install.sh http://mirrors.leapteam.cn:8899/software/controlled/install.sh && bash install.sh
+wget -O install.sh http://mirrors.leapteam.cn/software/controlled/install.sh && bash install.sh
 ```
 
 ### Node Port Openings

@@ -15,7 +15,7 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack
+    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev
 }
 # 初始化系统软件目录
 function init_system_dir(){
@@ -41,7 +41,7 @@ function install_python(){
     else
         cd /home/software
         # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-        wget http://mirrors.leapteam.cn:8899/software/Python/Python-3.10.5.tgz --no-check-certificate
+        wget http://mirrors.leapteam.cn/software/Python/Python-3.10.5.tgz --no-check-certificate
         tar -zxvf Python-3.10.5.tgz
         cd Python-3.10.5
         ./configure --prefix=/home/software/python3.10.5
@@ -57,7 +57,7 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software
-    wget http://mirrors.leapteam.cn:8899/software/QAgent/QAgent.tar.gz --no-check-certificate
+    wget http://mirrors.leapteam.cn/software/QAgent/QAgent.tar.gz --no-check-certificate
     tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
@@ -145,7 +145,7 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="http://mirrors.leapteam.cn:8899/software/websocketd/$(check_system)/websocketd"
+    url="http://mirrors.leapteam.cn/software/websocketd/$(check_system)/websocketd"
 
     wget "$url" --no-check-certificate
     chmod +x /home/software/websocketd/websocketd
@@ -155,7 +155,7 @@ function download_websocketd(){
 function download_noVNC(){
     cd /home/software/noVNC
 
-    url="http://mirrors.leapteam.cn:8899/software/noVNC/noVNC.tar.gz"
+    url="http://mirrors.leapteam.cn/software/noVNC/noVNC.tar.gz"
 
     wget "$url" --no-check-certificate
     tar -zxvf noVNC.tar.gz

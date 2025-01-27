@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack
+apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev
 pip3.10 install -r /home/software/QAgent/requirements.txt
 rm -rf /usr/share/qemu-server/bootsplash.jpg
 mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
@@ -35,7 +35,7 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="https://mirrors.leapteam.cn:8899/software/websocketd/$(check_system)/websocketd"
+    url="https://mirrors.leapteam.cn/software/websocketd/$(check_system)/websocketd"
 
     wget "$url" --no-check-certificate
     chmod +x /home/software/websocketd/websocketd
@@ -54,7 +54,7 @@ fi
 function download_noVNC(){
     cd /home/software/noVNC
 
-    url="https://mirrors.leapteam.cn:8899/software/noVNC/noVNC.tar.gz"
+    url="https://mirrors.leapteam.cn/software/noVNC/noVNC.tar.gz"
 
     wget "$url" --no-check-certificate
     tar -zxvf noVNC.tar.gz
