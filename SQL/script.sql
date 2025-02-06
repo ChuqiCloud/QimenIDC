@@ -142,7 +142,7 @@ create table master
     naton             int          default 0     not null comment '0关闭 1开启',
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
-    nataddr             varchar(50)  null comment 'nat展示地址',
+    nataddr             varchar(50)  null comment 'nat展示地址'
 );
 
 create table modelgroup
