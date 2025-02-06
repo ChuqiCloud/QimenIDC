@@ -30,12 +30,6 @@
 
 企业版架构将与社区版完全不同，企业版将采用更规范、更稳定、更安全的架构，以满足企业级用户的需求。
 
-## 爱发电赞助作者
-
-夜空（qimen）： [https://afdian.com/a/qimen](https://afdian.com/a/qimen)
-
--- 您的支持是我们最大的动力！
-
 ## 开发者API文档
 
 离线文档：
@@ -141,7 +135,7 @@ wget -O install.sh http://mirrors.leapteam.cn/software/QAgent/install.sh && bash
 
 更换源教程：
 
-[https://www.mryunqi.com/archives/576](https://www.mryunqi.com/archives/576)
+[https://bbs.acmecloud.cn/thread-6-1-1.html](https://www.mryunqi.com/archives/576)
 
 ### 节点端口开放（宿主机）
     
@@ -154,6 +148,7 @@ wget -O install.sh http://mirrors.leapteam.cn/software/QAgent/install.sh && bash
 > 注意需要开启SSH服务
 
 ## 社区和支持
+官方社区：https://bbs.acmecloud.cn/
 
 如果您有任何问题、建议或反馈，可以加入QQ群：
 
