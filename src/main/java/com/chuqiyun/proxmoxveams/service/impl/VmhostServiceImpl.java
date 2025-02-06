@@ -1204,8 +1204,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         Vmhost vmhost = this.getById(vm);
         if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
-                || source_port < 1000 || source_port > 65535
-        ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有错误提示
+                || source_port < 1000 || source_port > 65535 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
+                || source_port == 5404 || source_port == 5405 || (source_port >= 5900 && source_port < 6000)
+                || (source_port >= 60000 && source_port <= 60050) || source_port == 6080
+        ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有写错误提示
+        //上述禁用端口说明：禁止<1000与>65535端口，禁止web端口、控制端口、ssh端口、禁止未开启NAT的机器使用该功能
+        //corosync集群流量 5404 5405 UDP、实时迁移：60000-60050 TCP、SPICE代理：3128 TCP、vnc：5900-5999，6080 TCP/WEBSOCKET
         Object natForward = this.getVmhostNatByVmid(1,99999,vm);
         if (natForward instanceof String) {
             JSONObject jsonObject = JSONObject.parseObject((String) natForward);
