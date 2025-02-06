@@ -32,8 +32,7 @@ public class VmStatus {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/power/{hostId}/{action}",method = {RequestMethod.POST,RequestMethod.PUT})
     public ResponseResult<String> putVmStatus(@PathVariable(name = "hostId") Integer hostId,
-                                              @PathVariable(name = "action") String action,
-                                              @RequestBody JSONObject data) throws UnauthorizedException {
+                                              @PathVariable(name = "action") String action) throws UnauthorizedException {
         // 判断虚拟机是否存在
         if (vmhostService.getById(hostId) == null) {
             return ResponseResult.fail("虚拟机不存在");
@@ -43,7 +42,7 @@ public class VmStatus {
                 && !"pause".equals(action) && !"unpause".equals(action) && !"suspend".equals(action) && !"resume".equals(action)) {
             return ResponseResult.fail("action不合法");
         }
-        HashMap<String, Object> result = vmhostService.power(hostId, action, data);
+        HashMap<String, Object> result = vmhostService.power(hostId, action, null);
         if (result == null) {
             return ResponseResult.fail("操作失败");
         }
