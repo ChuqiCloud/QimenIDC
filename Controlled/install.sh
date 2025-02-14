@@ -50,6 +50,7 @@ function install_python(){
         ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
         pip3.10 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
         pip3.10 install --upgrade pip
+        pip3.10 install -r /home/software/QAgent/requirements.txt
     fi
 }
 
