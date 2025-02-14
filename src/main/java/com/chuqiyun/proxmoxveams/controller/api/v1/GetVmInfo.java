@@ -28,6 +28,8 @@ import java.util.HashMap;
 public class GetVmInfo {
     @Resource
     private VmInfoService vmInfoService;
+    @Resource
+    private VmhostService vmhostService;
 
     /**
      * 获取虚拟机信息
@@ -70,4 +72,108 @@ public class GetVmInfo {
         return ResponseResult.ok(vmByPage);
     }
 
+    /**
+     * 获取虚拟机列表
+     * 此方法通过分页参数获取虚拟机的列表
+     * 主要用于处理获取虚拟机列表的请求
+     *
+     * @param page 分页参数，用于标识当前页码
+     * @param size 分页参数，用于标识每页显示的记录数
+     * @return 返回包含虚拟机列表的ResponseResult对象
+     *         如果分页参数为空，则返回失败的ResponseResult
+     * @throws UnauthorizedException 如果用户未授权，抛出此异常
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmByParam")
+    public ResponseResult<Object> getVmByParam(@RequestParam(name = "page",defaultValue = "1") Integer page,
+                                               @RequestParam(name = "size",defaultValue = "20") Integer size,
+                                               @RequestParam(name = "param") String param,
+                                               @RequestParam(name = "value") String value)
+            throws UnauthorizedException{
+        Object vmByParam = vmInfoService.getVmHostPageByParam(page, size, param, value);
+        return ResponseResult.ok(vmByParam);
+    }
+
+    /**
+     * 获取虚拟机列表
+     * 此方法通过分页参数获取虚拟机的列表
+     * 主要用于处理获取虚拟机列表的请求
+     *
+     * @param page 分页参数，用于标识当前页码
+     * @param size 分页参数，用于标识每页显示的记录数
+     * @return 返回包含虚拟机列表的ResponseResult对象
+     *         如果分页参数为空，则返回失败的ResponseResult
+     * @throws UnauthorizedException 如果用户未授权，抛出此异常
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmByPageOrderByCreateTime")
+    public ResponseResult<Object> getVmByPageOrderByCreateTime(@RequestParam(name = "page",defaultValue = "1") Integer page,
+                                                               @RequestParam(name = "size",defaultValue = "20") Integer size)
+            throws UnauthorizedException{
+        HashMap<String, Object> vmByPage = vmInfoService.getVmByPageOrderByCreateTime(page, size);
+        return ResponseResult.ok(vmByPage);
+    }
+
+    /**
+     * 获取虚拟机数量
+     * 此方法用于获取虚拟机的数量
+     * 主要用于处理获取虚拟机数量的请求
+     *
+     * @return 返回包含虚拟机数量的ResponseResult对象
+     *         如果获取虚拟机数量失败，则返回失败的ResponseResult
+     * @throws UnauthorizedException 如果用户未授权，抛出此异常
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmCount")
+    public Object getVmCount() throws UnauthorizedException {
+        return ResponseResult.ok(vmInfoService.getVmCount());
+    }
+
+    /**
+     * 获取虚拟机RRD数据
+     * 此方法通过hostId参数获取虚拟机的RRD数据
+     *      主要用于处理获取虚拟机RRD数据的请求
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmHostRrdData")
+    public Object getVmHostRrdData(@RequestParam(name = "hostId") Integer hostId,
+                                   @RequestParam(name = "timeframe",defaultValue = "hour") String timeframe,
+                                   @RequestParam(name = "cf",defaultValue = "AVERAGE") String cf) throws UnauthorizedException {
+        return ResponseResult.ok(vmInfoService.getVmInfoRrdData(hostId,timeframe, cf).getJSONArray("data"));
+    }
+
+    /**
+     * 获取虚拟机列表
+     * 此方法通过分页参数获取虚拟机的列表
+     * 主要用于处理获取虚拟机列表的请求
+     *
+     * @param status 虚拟机状态
+     * @param page 分页参数，用于标识当前页码
+     * @param size 分页参数，用于标识每页显示的记录数
+     * @return 返回包含虚拟机列表的ResponseResult对象
+     *         如果分页参数为空，则返回失败的ResponseResult
+     * @throws UnauthorizedException 如果用户未授权，抛出此异常
+     **/
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmByStatus")
+    public Object getVmByStatus(@RequestParam(name = "status") Integer status,
+                                @RequestParam(name = "page",defaultValue = "1") Long page,
+                                @RequestParam(name = "size",defaultValue = "20") Long size) throws UnauthorizedException {
+        return ResponseResult.ok(vmhostService.getVmhostByStatus(page,size,status));
+    }
+
+    /**
+     * 获取虚拟机数量
+     * 此方法用于获取虚拟机的数量
+     * 主要用于处理获取虚拟机数量的请求
+     *
+     * @return 返回包含虚拟机数量的ResponseResult对象
+     *         如果获取虚拟机数量失败，则返回失败的ResponseResult
+     * @throws UnauthorizedException 如果用户未授权，抛出此异常
+     */
+    @PublicSysApiCheck
+    @GetMapping(value = "/pve/getVmCountByStatus")
+    public Object getVmCountByStatus(@RequestParam(name = "status") Integer status) throws UnauthorizedException {
+        return ResponseResult.ok(vmhostService.getVmhostCountByStatus(status));
+    }
 }
