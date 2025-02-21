@@ -94,6 +94,8 @@ public enum UnifiedResultCode {
     ERROR_SDN_SUBNET_ADD_FAILED(1040, "Failed to add SDN subnet"),
     // sdn 应用配置失败
     ERROR_SDN_APPLY_CONFIG_FAILED(1041, "Failed to apply SDN config"),
+    //虚拟机创建/重装系统中
+    ERROR_VM_IS_INSTALLOS(1042, "Virtual machine is creating or reinstall"),
 
     /*pve错误码范围：2xxx*/
 

@@ -85,7 +85,6 @@ public class ResetSystemCron {
 //        vmhostService.updateVmhostOsData(task.getHostid(), os);
 
         Vmhost vmhost = vmhostService.getById(task.getHostid());
-
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         
         //修改username
@@ -138,6 +137,8 @@ public class ResetSystemCron {
             // 记录错误信息
             importTask.setError("创建导入操作系统任务失败");
             taskService.updateById(importTask);
+            vmhost.setStatus(4);
+            vmhostService.updateById(vmhost);
             return;
         }
         Task taskStatus;
@@ -176,6 +177,8 @@ public class ResetSystemCron {
             // 记录错误信息
             updateSystemDiskTask.setError("创建导入操作系统任务失败");
             taskService.updateById(updateSystemDiskTask);
+            vmhost.setStatus(4);
+            vmhostService.updateById(vmhost);
             return;
         }
         // 等待修改系统盘大小任务完成
@@ -191,6 +194,8 @@ public class ResetSystemCron {
             if (taskStatus.getStatus() == 3) {
                 // 任务状态为3，任务失败
                 // 结束任务
+                vmhost.setStatus(4);
+                vmhostService.updateById(vmhost);
                 return;
             }
         } while (taskStatus.getStatus() != 2);
@@ -223,6 +228,8 @@ public class ResetSystemCron {
                     // 记录错误信息
                     resetPasswordTask.setError("创建重置密码任务失败");
                     taskService.updateById(resetPasswordTask);
+                    vmhost.setStatus(4);
+                    vmhostService.updateById(vmhost);
                     return;
                 }
                 // 等待重置密码任务完成
@@ -238,6 +245,8 @@ public class ResetSystemCron {
                     if (taskStatus.getStatus() == 3) {
                         // 任务状态为3，任务失败
                         // 结束任务
+                        vmhost.setStatus(4);
+                        vmhostService.updateById(vmhost);
                         return;
                     }
                 } while (taskStatus.getStatus() != 2);
@@ -262,6 +271,8 @@ public class ResetSystemCron {
                 createDataDiskTask.setStatus(3);
                 createDataDiskTask.setError("创建数据盘任务失败");
                 taskService.updateById(createDataDiskTask);
+                vmhost.setStatus(4);
+                vmhostService.updateById(vmhost);
                 return;
             }
             // 等待创建数据盘任务完成
@@ -277,6 +288,8 @@ public class ResetSystemCron {
                 if (taskStatus.getStatus() == 3) {
                     // 任务状态为3，任务失败
                     // 结束任务
+                    vmhost.setStatus(4);
+                    vmhostService.updateById(vmhost);
                     return;
                 }
             } while (taskStatus.getStatus() != 2);
@@ -305,6 +318,8 @@ public class ResetSystemCron {
                     // 记录错误信息
                     resetPasswordTask.setError("创建重置密码任务失败");
                     taskService.updateById(resetPasswordTask);
+                    vmhost.setStatus(4);
+                    vmhostService.updateById(vmhost);
                     return;
                 }
                 // 等待重置密码任务完成
@@ -360,6 +375,8 @@ public class ResetSystemCron {
             if (taskStatus.getStatus() == 3) {
                 // 任务状态为3，任务失败
                 // 结束任务
+                vmhost.setStatus(4);
+                vmhostService.updateById(vmhost);
                 return;
             }
         } while (taskStatus.getStatus() != 2);
@@ -379,8 +396,11 @@ public class ResetSystemCron {
             startTask.setStatus(3);
             startTask.setError("创建开机任务任务失败");
             taskService.updateById(startTask);
+            vmhost.setStatus(1);
+            vmhostService.updateById(vmhost);
         }
-
+        vmhost.setStatus(0);
+        vmhostService.updateById(vmhost);
         // 更新主线程任务task状态为2
         task.setStatus(2);
         taskService.updateById(task);

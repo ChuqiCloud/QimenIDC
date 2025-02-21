@@ -806,6 +806,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 this.power(vmhost.getId(),"pause",null);
                 continue;
             }
+            if (vmStatus == 6 || vmStatus == 13){
+                // 6创建中 13重装系统中 两个状态不更新
+                continue;
+            }
             // 其他情况，直接更新数据库中的状态
             vmhost.setStatus(initStatus);
             this.updateById(vmhost);
@@ -836,7 +840,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost.getStatus() == 5){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
         }
-
+        // 判断虚拟机是否为创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
 
         Os os = osService.isExistOs(osName);
         // 判断镜像是否存在

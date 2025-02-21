@@ -62,6 +62,15 @@ public class VmStatusCron {
             log.info("[Task-StartVm] 执行开机任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-StartVm] 开机任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许开机！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许开机！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -109,6 +118,15 @@ public class VmStatusCron {
             log.info("[Task-StopVm] 执行关机任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-StartVm] 关机任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许开机！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许关机！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -155,6 +173,15 @@ public class VmStatusCron {
             log.info("[Task-RebootVm] 执行重启任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-RebootVm] 重启任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许操作！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许重启！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -200,6 +227,15 @@ public class VmStatusCron {
             log.info("[Task-StopVmNow] 执行停止任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-StopVmNow] 停止任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许操作！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许停止！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -248,6 +284,15 @@ public class VmStatusCron {
             log.info("[Task-SuspendVm] 执行挂起任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-SuspendVm] 挂起任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许操作！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许挂起！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -295,6 +340,15 @@ public class VmStatusCron {
             log.info("[Task-ResumeVm] 执行恢复任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-ResumeVm] 恢复任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许操作！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许恢复！");
+                taskService.updateById(task);
+                return;
+            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
@@ -360,6 +414,15 @@ public class VmStatusCron {
             log.info("[Task-PauseVm] 执行暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
+            {
+                log.error("[Task-PauseVm] 暂停任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许暂停！",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError("创建/重装系统不允许暂停！");
+                taskService.updateById(task);
+                return;
+            }
             // 先获取虚拟机的状态码
             int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
             // 如果虚拟机状态为1或者 2
