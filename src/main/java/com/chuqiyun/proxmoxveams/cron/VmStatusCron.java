@@ -227,15 +227,6 @@ public class VmStatusCron {
             log.info("[Task-StopVmNow] 执行停止任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
-            if(vmhost.getStatus() == 6 || vmhost.getStatus() == 13)
-            {
-                log.error("[Task-StopVmNow] 停止任务: NodeID:{} VM-ID:{} 失败，创建/重装系统不允许操作！",node.getId(),task.getVmid());
-                // 修改任务状态为3 3为执行失败
-                task.setStatus(3);
-                task.setError("创建/重装系统不允许停止！");
-                taskService.updateById(task);
-                return;
-            }
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
