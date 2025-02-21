@@ -245,7 +245,7 @@ public class VmStatusCron {
                 return;
             }
             // 设置数据库中的vm状态为1 1为关机 非重装任务才执行
-            if (vmhost.getStatus() != 16) {
+            if (vmhost.getStatus() != 13) {
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
             }
