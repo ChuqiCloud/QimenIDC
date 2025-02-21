@@ -971,9 +971,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
 
         // 判断虚拟机是否为禁用状态
-        if (vmhost.getStatus() == 4){
+        /*if (vmhost.getStatus() == 4){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
-        }
+        }*/
 
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
