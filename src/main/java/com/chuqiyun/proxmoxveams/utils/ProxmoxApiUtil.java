@@ -13,6 +13,7 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author mryunqi
@@ -44,12 +45,12 @@ public class ProxmoxApiUtil {
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         for (String key : params.keySet()) {
-            requestBody.add(key, params.get(key));
+            requestBody.put(key, params.get(key));
         }
 
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
@@ -80,12 +81,12 @@ public class ProxmoxApiUtil {
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         for (String key : params.keySet()) {
-            requestBody.add(key, params.get(key));
+            requestBody.put(key, params.get(key));
         }
 
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
@@ -114,12 +115,12 @@ public class ProxmoxApiUtil {
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         for (String key : params.keySet()) {
-            requestBody.add(key, params.get(key));
+            requestBody.put(key, params.get(key));
         }
 
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
@@ -148,12 +149,12 @@ public class ProxmoxApiUtil {
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         for (String key : params.keySet()) {
-            requestBody.add(key, params.get(key));
+            requestBody.put(key, params.get(key));
         }
 
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
@@ -214,12 +215,13 @@ public class ProxmoxApiUtil {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
-        requestBody.add("username", user.get("username"));
-        requestBody.add("password", user.get("password"));
-        requestBody.add("realm", user.get("realm"));
+        Map<String, String> requestBody = new HashMap<>();
 
-        HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(requestBody, headers);
+        requestBody.put("username", user.get("username"));
+        requestBody.put("password", user.get("password"));
+        requestBody.put("realm", user.get("realm"));
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
