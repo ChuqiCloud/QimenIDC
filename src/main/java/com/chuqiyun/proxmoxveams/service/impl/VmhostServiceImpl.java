@@ -1215,12 +1215,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有写错误提示
         //上述禁用端口说明：禁止<1000与>65535端口，禁止web端口、控制端口、ssh端口、禁止未开启NAT的机器使用该功能
         //corosync集群流量 5404 5405 UDP、实时迁移：60000-60050 TCP、SPICE代理：3128 TCP、vnc：5900-5999，6080 TCP/WEBSOCKET
-        Object natForward = this.getVmhostNatByVmid(1,99999,vm);
-        if (natForward instanceof String) {
-            JSONObject jsonObject = JSONObject.parseObject((String) natForward);
-            JSONArray dataArray = jsonObject.getJSONArray("data");
-            int dataCount = dataArray.size();
-            if( dataCount >= vmhost.getNatnum()) {
+        Object natForward = this.getVmhostNatByVmid(1, 10000, vm);
+        if (natForward instanceof ResponseResult) {
+            ResponseResult result = (ResponseResult) natForward;
+            List<?> dataList = (List<?>) result.getData();
+            int dataCount = dataList.size();
+            if (dataCount >= vmhost.getNatnum()) {
                 return false;
             }
         }
