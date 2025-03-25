@@ -859,9 +859,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Os os_old = osService.isExistOs(vmhost.getOs());
         if (!Objects.equals(os_old.getOsType(), os.getOsType()))
         {
-            if (os.getOsType().equals("ubuntu")) {
-                vmhost.setUsername("ubuntu");
-            } else if (os.getOsType().equals("windows")) {
+            if (os.getOsType().equals("windows")) {
                 vmhost.setUsername("administrator");
             } else {
                 vmhost.setUsername("root");

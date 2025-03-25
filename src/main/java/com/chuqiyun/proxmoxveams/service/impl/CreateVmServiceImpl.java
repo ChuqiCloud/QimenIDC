@@ -249,10 +249,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 判断username是否为空
         if (vmParams.getUsername() == null) {
-            if (os.getOsType().equals("ubuntu")){
-                vmParams.setUsername("ubuntu");
-            }
-            else if (os.getOsType().equals("windows")){
+            if (os.getOsType().equals("windows")){
                 vmParams.setUsername("administrator");
             }
             else{
