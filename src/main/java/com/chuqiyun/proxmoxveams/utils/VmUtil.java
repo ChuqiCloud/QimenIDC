@@ -603,4 +603,19 @@ public class VmUtil {
         return systemDiskParams;
     }
 
+    /**
+    * @Author: mryunqi
+    * @Description: 获取scsi类型列表，范围:lsi | lsi53c810 | virtio-scsi-pci | virtio-scsi-single | megasas | pvscsi
+    * @Return ArrayList<String> scsi类型列表
+    */
+    public static ArrayList<String> getScsiTypeList(){
+        ArrayList<String> scsiTypeList = new ArrayList<>();
+        scsiTypeList.add("lsi");
+        scsiTypeList.add("lsi53c810");
+        scsiTypeList.add("virtio-scsi-pci");
+        scsiTypeList.add("virtio-scsi-single");
+        scsiTypeList.add("megasas");
+        scsiTypeList.add("pvscsi");
+        return scsiTypeList;
+    }
 }
