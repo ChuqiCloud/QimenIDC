@@ -145,5 +145,9 @@ public class TaskType {
      * 配置系统盘IO限制
      */
     public static Integer UPDATE_IO_SYSTEM_DISK = 35;
+    /**
+     * 新导入系统磁盘挂载配置
+     */
+    public static Integer IMPORT_SYSTEM_DISK_NEW = 36;
 
 }
