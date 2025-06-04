@@ -1,188 +1,188 @@
 {
   "CentOS-9-Stream-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/centos/CentOS-9-Stream-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/centos/CentOS-9-Stream-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "centos"
   },
   "CentOS-8-Stream-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/centos/CentOS-8-Stream-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/centos/CentOS-8-Stream-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "centos"
   },
   "CentOS-7.9.2111-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/centos/CentOS-7.9.2111-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/centos/CentOS-7.9.2111-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "centos"
   },
   "CentOS-7.6.1810-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/centos/CentOS-7.6.1810-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/centos/CentOS-7.6.1810-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "centos"
   },
   "Ubuntu-22.04-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/ubuntu/Ubuntu-22.04-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/ubuntu/Ubuntu-22.04-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "ubuntu"
   },
   "Ubuntu-20.04.1-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/ubuntu/Ubuntu-20.04.1-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/ubuntu/Ubuntu-20.04.1-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "ubuntu"
   },
   "Ubuntu-18.04-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/ubuntu/Ubuntu-18.04-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/ubuntu/Ubuntu-18.04-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "ubuntu"
   },
   "Ubuntu-16.04-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/ubuntu/Ubuntu-16.04-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/ubuntu/Ubuntu-16.04-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "ubuntu"
   },
   "Debian-12.0-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/debian/Debian-12.0-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/debian/Debian-12.0-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "debian"
   },
   "Debian-11.1-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/debian/Debian-11.1-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/debian/Debian-11.1-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "debian"
   },
   "Debian-10.3.3-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/debian/Debian-10.3.3-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/debian/Debian-10.3.3-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "debian"
   },
   "Debian-9.12.1-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/debian/Debian-9.12.1-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/debian/Debian-9.12.1-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "debian"
   },
   "Windows-2022-Datacenter-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2022-Datacenter-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2022-Datacenter-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows-2019-Datacenter-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2019-Datacenter-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2019-Datacenter-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows-2016-Datacenter-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2016-Datacenter-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2016-Datacenter-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows-2012R2-Datacenter-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2012R2-Datacenter-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2012R2-Datacenter-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows-2008R2-Datacenter-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2008R2-Datacenter-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2008R2-Datacenter-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows-2003-Enterprise-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows-2003-Enterprise-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows-2003-Enterprise-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows10-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows10-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows10-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Windows7_enterprise-cn.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/windows/Windows7_enterprise-cn.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/windows/Windows7_enterprise-cn.qcow2",
     "cloud-int": 1,
     "type": "windows",
     "arch": "x86_64",
     "osType": "windows"
   },
   "Fedora-31-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-31-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-31-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-30-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-30-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-30-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-29-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-29-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-29-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-28-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-28-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-28-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-27-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-27-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-27-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-26-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-26-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-26-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",
     "osType": "fedora"
   },
   "Fedora-25-x64.qcow2": {
-    "url":"http://mirrors.leapteam.cn/cloud-images/fedora/Fedora-25-x64.qcow2",
+    "url":"http://mirror.chuqiyun.com/cloud-images/fedora/Fedora-25-x64.qcow2",
     "cloud-int": 1,
     "type": "linux",
     "arch": "x86_64",

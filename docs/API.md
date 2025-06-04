@@ -8478,7 +8478,7 @@ current字段为当前运行实时监控数据，rrddata为历史数据，历史
         }
       },
       "downType": 0,
-      "url": "https://mirrors.leapteam.cn/cloud-images/centos/CentOS-8-Stream-x64.qcow2",
+      "url": "https://mirror.chuqiyun.com/cloud-images/centos/CentOS-8-Stream-x64.qcow2",
       "size": "671MB",
       "path": "/home/images/",
       "cloud": 1,
