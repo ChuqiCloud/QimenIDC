@@ -1,7 +1,6 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSON;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -27,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.DELETE_VM;
-import static com.chuqiyun.proxmoxveams.constant.TaskType.RESET_PASSWORD;
 
 /**
  * @author mryunqi
@@ -88,7 +86,7 @@ public class DeleteVmCron {
                             String destinationIp = item.getString("destination_ip");
                             String protocol = item.getString("protocol");
                             Integer vm = item.getInteger("vm");
-                            vmhostService.delVmhostNat(sourcePort, destinationIp, destinationPort, protocol, vm);
+                            vmhostService.delVmhostNat(node.getHost(), sourcePort, destinationIp, destinationPort, protocol, vm);
                             System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
                         } catch (Exception e) {
                             System.err.println("Error processing item at index " + i + ": " + e.getMessage());

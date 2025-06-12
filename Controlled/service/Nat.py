@@ -12,6 +12,7 @@ class ForwardRule(Base):
     __tablename__ = 'forward_rules'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    source_ip = Column(String, nullable=False)
     source_port = Column(Integer, nullable=False)
     destination_ip = Column(String, nullable=False)
     destination_port = Column(Integer, nullable=False)
@@ -42,8 +43,9 @@ class ForwardRuleManager:
             engine = create_engine(database_url)
             Base.metadata.create_all(engine)
 
-    def add_forward_rule(self, source_port, destination_ip, destination_port, protocol, vm):
+    def add_forward_rule(self, source_ip, source_port, destination_ip, destination_port, protocol, vm):
         rule = ForwardRule(
+            source_ip=source_ip,
             source_port=source_port,
             destination_ip=destination_ip,
             destination_port=destination_port,
@@ -69,6 +71,7 @@ class ForwardRuleManager:
             result = []
             for rule in paginated_rules:
                 result.append({
+                    'source_ip': rule.source_ip,
                     'source_port': rule.source_port,
                     'destination_ip': rule.destination_ip,
                     'destination_port': rule.destination_port,
@@ -92,6 +95,7 @@ class ForwardRuleManager:
             result = []
             for rule in paginated_rules:
                 result.append({
+                    'source_ip': rule.source_ip,
                     'source_port': rule.source_port,
                     'destination_ip': rule.destination_ip,
                     'destination_port': rule.destination_port,
@@ -190,9 +194,9 @@ class IptablesForwardRuleManager:
     规则获取
     rule acquisition
     '''
-    def get_iptables_rule(self,source_port,destination_ip,destination_port,protocol,is_delete=False):
+    def get_iptables_rule(self,source_ip,source_port,destination_ip,destination_port,protocol,is_delete=False):
         # 构建规则
-        rule = f"-A PREROUTING -p {protocol} -m {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}"
+        rule = f"-A PREROUTING -d {source_ip} -p {protocol} -m {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}"
         if is_delete:
             rule = rule.replace('-A','-D')
         return rule
@@ -201,9 +205,9 @@ class IptablesForwardRuleManager:
     添加转发规则
     add forwarding rule
     '''
-    def add_iptables_rule(self,source_port,destination_ip,destination_port,protocol):
+    def add_iptables_rule(self,source_ip,source_port,destination_ip,destination_port,protocol):
         # 先检查规则是否存在
-        rule = self.get_iptables_rule(source_port,destination_ip,destination_port,protocol)
+        rule = self.get_iptables_rule(source_ip,source_port,destination_ip,destination_port,protocol)
         if self.check_iptables_rule(rule):
             return True
         # 使用iptables命令添加规则
@@ -218,7 +222,7 @@ class IptablesForwardRuleManager:
     删除转发规则
     delete forwarding rule
     '''
-    def delete_iptables_rule(self,source_port,destination_ip,destination_port,protocol):
+    def delete_iptables_rule(self,source_ip,source_port,destination_ip,destination_port,protocol):
         # 先检查规则是否存在
         # = self.get_iptables_rule(source_port,destination_ip,destination_port,protocol,True)
         #if not self.check_iptables_rule(rule):
@@ -226,10 +230,10 @@ class IptablesForwardRuleManager:
         # 使用iptables命令删除规则
         #iptables -t nat -D PREROUTING -p udp --dport 7780 -j DNAT --to-destination 192.168.7.12:7780
         try:
-            subprocess.check_output(f"iptables -t nat -D PREROUTING -p {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}", shell=True, universal_newlines=True)
+            subprocess.check_output(f"iptables -t nat -D PREROUTING -d {source_ip} -p {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}", shell=True, universal_newlines=True)
             # 尝试删除conntrack条目，但忽略可能发生的错误
             try:
-                subprocess.check_output(f"conntrack -D -p {protocol} --dport {source_port}",shell=True, universal_newlines=True)
+                subprocess.check_output(f"conntrack -D -p {protocol} -d {source_ip} --dport {source_port}",shell=True, universal_newlines=True)
             except subprocess.CalledProcessError:
                 return True
             return True
@@ -240,7 +244,8 @@ class IptablesForwardRuleManager:
 
 class NatManager:
 
-    def __init__(self, source_port, destination_ip, destination_port, protocol, vm):
+    def __init__(self, source_ip, source_port, destination_ip, destination_port, protocol, vm):
+        self.source_ip = source_ip
         self.source_port = source_port
         self.destination_ip = destination_ip
         self.destination_port = destination_port
@@ -269,10 +274,10 @@ class NatManager:
         if self.forward_rule_manager.check_source_port(self.source_port,self.protocol):
             return self.response(1,'source_port already exists')
         # 添加数据库记录
-        if self.forward_rule_manager.add_forward_rule(self.source_port,self.destination_ip,self.destination_port,self.protocol,self.vm) == False:
+        if self.forward_rule_manager.add_forward_rule(self.source_ip,self.source_port,self.destination_ip,self.destination_port,self.protocol,self.vm) == False:
             return self.response(1,'Failed to add rule to database')
         # 添加iptables规则
-        if self.iptables_forward_rule_manager.add_iptables_rule(self.source_port,self.destination_ip,self.destination_port,self.protocol) == False:
+        if self.iptables_forward_rule_manager.add_iptables_rule(self.source_ip,self.source_port,self.destination_ip,self.destination_port,self.protocol) == False:
             return self.response(1,'Failed to add rule to iptables')
         return self.response(0,'success')
     
@@ -287,7 +292,7 @@ class NatManager:
             if self.forward_rule_manager.delete_forward_rule(self.source_port,self.protocol) == False:
                 return self.response(1,'Failed to delete rule from database')
         # 删除iptables规则
-        if self.iptables_forward_rule_manager.delete_iptables_rule(self.source_port,self.destination_ip,self.destination_port,self.protocol) == False:
+        if self.iptables_forward_rule_manager.delete_iptables_rule(self.source_ip,self.source_port,self.destination_ip,self.destination_port,self.protocol) == False:
             return self.response(1,'Failed to delete rule from iptables')
         return self.response(0,'success')
     
@@ -347,7 +352,7 @@ class Manager:
             data = self.forward_rule_manager.get_forward_rules_by_protocol('tcp',page_size,page_number)
             for rule in data:
                 # 添加iptables规则
-                self.iptables_forward_rule_manager.add_iptables_rule(rule['source_port'],rule['destination_ip'],rule['destination_port'],rule['protocol'])
+                self.iptables_forward_rule_manager.add_iptables_rule(rule['source_ip'],rule['source_port'],rule['destination_ip'],rule['destination_port'],rule['protocol'])
         return True
     
     '''

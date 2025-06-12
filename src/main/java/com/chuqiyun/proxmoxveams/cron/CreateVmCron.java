@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -38,6 +39,8 @@ public class CreateVmCron {
     private CreateVmService createVmService;
     @Resource
     private IppoolService ippoolService;
+    @Resource
+    private MasterService masterService;
 
     /**
      * 创建虚拟机
@@ -143,10 +146,11 @@ public class CreateVmCron {
                     dest_port = 22;
                 }
                 String dest_ip = ipList.get(0);
+                Master node = masterService.getById(vmId);
                 int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
-                if (!vmhostService.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhostId)){
+                if (!vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId)){
                     s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
-                    vmhostService.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhostId);
+                    vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId);
                 }
                 System.out.println("[NAT] 创建默认远程NAT: 虚拟机ID:" + vmhostId + " VM-ID:" + task.getHostid() + " 完成");
             }

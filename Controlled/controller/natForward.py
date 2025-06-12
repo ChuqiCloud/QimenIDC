@@ -14,7 +14,7 @@ Add port forwarding rules
 '''
 @nat_router.post('/nat/add')
 async def nat_add(item: ForwardRule):
-    nat = Nat.NatManager(item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
+    nat = Nat.NatManager(item.source_ip,item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
     result = nat.add_forward_rule()
     code = result['code']
     message = result['message']
@@ -29,7 +29,7 @@ Delete port forwarding rules
 '''
 @nat_router.post('/nat/delete')
 async def nat_delete(item: ForwardRule):
-    nat = Nat.NatManager(item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
+    nat = Nat.NatManager(item.source_ip,item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
     result = nat.delete_forward_rule()
     code = result['code']
     message = result['message']
@@ -44,7 +44,7 @@ Get port forwarding rules
 '''
 @nat_router.get('/nat/getVm/{page}/{size}')
 async def nat_get(page: int, size: int, vm: int):
-    nat = Nat.NatManager('', '', '', '', vm)
+    nat = Nat.NatManager('', '', '', '', '', vm)
     result = nat.get_forward_rules_by_vm(size, page)
     code = result['code']
     message = result['message']
@@ -55,7 +55,7 @@ async def nat_get(page: int, size: int, vm: int):
 
 @nat_router.post('/nat/addBridge')
 async def nat_addBridge(nataddr: str = Body(...), bridge: str = Body(...)):
-    nat = Nat.NatManager('', '', '', '', '')
+    nat = Nat.NatManager('', '', '', '', '', '')
     result = nat.add_forward_nat_bridge(nataddr, bridge)
     code = result['code']
     message = result['message']

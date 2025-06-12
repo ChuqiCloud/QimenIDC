@@ -1,24 +1,14 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
-import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
-import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
-import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.entity.Vmhost;
-import com.chuqiyun.proxmoxveams.service.ConfigService;
-import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmInfoService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
-import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import java.util.HashMap;
 
 /**
  * @author mryunqi
@@ -102,7 +92,7 @@ public class SysVmHostInfoController {
     @AdminApiCheck
     @RequestMapping(value = "/nat/add",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object addVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.addVmhostNat(params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.addVmhostNat(params.getString("source_ip"), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {
@@ -117,7 +107,7 @@ public class SysVmHostInfoController {
     @AdminApiCheck
     @RequestMapping(value = "/nat/del",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object delVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.delVmhostNat(params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.delVmhostNat(params.getString("source_ip"), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {

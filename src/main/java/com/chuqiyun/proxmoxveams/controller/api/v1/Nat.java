@@ -25,7 +25,7 @@ public class Nat {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/nat/add",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object addVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.addVmhostNat(params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.addVmhostNat(params.getString("source_ip"),params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {
@@ -40,7 +40,7 @@ public class Nat {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/nat/del",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object delVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.delVmhostNat(params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.delVmhostNat(params.getString("source_ip"), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {

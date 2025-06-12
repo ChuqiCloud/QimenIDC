@@ -11,7 +11,6 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 
-import java.util.Arrays;
 import java.util.HashMap;
 
 /**
@@ -70,7 +69,7 @@ public interface VmhostService extends IService<Vmhost> {
 
     Object getVmhostNatByVmid(int page, int size, int hostId);
     Object getVmhostNatAddrByVmid(int hostId);
-    Boolean addVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm);
-    Boolean delVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm);
+    Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
+    Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
 }
 

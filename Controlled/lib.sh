@@ -103,3 +103,5 @@ fi
 
 # 重启pve 服务
 systemctl restart pvedaemon.service
+
+/home/software/QAgent/update_forward_rules.sh

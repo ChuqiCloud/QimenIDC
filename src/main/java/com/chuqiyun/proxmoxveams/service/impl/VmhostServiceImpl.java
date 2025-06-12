@@ -1,6 +1,5 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -22,7 +21,6 @@ import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
-import io.swagger.models.auth.In;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -826,6 +824,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk){
         // 获取虚拟机信息
+        Master node = masterService.getById(this.getVmhostNodeId(Math.toIntExact(vmHostId)));
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
         if (vmhost == null){
@@ -888,12 +887,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                                     JSONObject item = dataList.getJSONObject(i);
                                     Integer destinationPort = item.getInteger("destination_port");
                                     if (destinationPort != null && (destinationPort == 22 || destinationPort == 3389)) {
+                                        String sourceIp = item.getString("source_ip");
                                         Integer sourcePort = item.getInteger("source_port");
                                         String destinationIp = item.getString("destination_ip");
                                         String protocol = item.getString("protocol");
                                         Integer vm = item.getInteger("vm");
 
-                                        this.delVmhostNat(sourcePort, destinationIp, destinationPort, protocol, vm);
+                                        this.delVmhostNat(sourceIp, sourcePort, destinationIp, destinationPort, protocol, vm);
                                         System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
                                     }
                                 } catch (Exception e) {
@@ -910,9 +910,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
             String dest_ip = vmhost.getIpList().get(0);
             int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
-            if (!this.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhost.getId())) {
+            if (!this.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhost.getId())) {
                 s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
-                this.addVmhostNat(s_port, dest_ip, dest_port, "tcp", vmhost.getId());
+                this.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhost.getId());
             }
         }
         // 重置osName
@@ -1204,7 +1204,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
      */
     @Override
-    public Boolean addVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+    public Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         Vmhost vmhost = this.getById(vm);
@@ -1233,7 +1233,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
      */
     @Override
-    public Boolean delVmhostNat(int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+    public Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
