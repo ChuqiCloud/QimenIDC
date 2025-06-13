@@ -83,7 +83,8 @@ class ForwardRuleManager:
 
     def get_forward_rules_by_protocol(self, protocol, page_size=10, page_number=1):
         with self.Session() as session:
-            query = session.query(ForwardRule).filter(ForwardRule.protocol == protocol)
+
+            query = session.query(ForwardRule) if protocol == "all" else session.query(ForwardRule).filter(ForwardRule.protocol == protocol)
 
             # 计算分页索引
             start_index = (page_number - 1) * page_size
@@ -189,14 +190,14 @@ class IptablesForwardRuleManager:
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables-save: {e}")
             return False
-        
+
     '''
     规则获取
     rule acquisition
     '''
     def get_iptables_rule(self,source_ip,source_port,destination_ip,destination_port,protocol,is_delete=False):
         # 构建规则
-        rule = f"-A PREROUTING -d {source_ip} -p {protocol} -m {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}"
+        rule = f"-A PREROUTING -d {source_ip}/32 -p {protocol} -m {protocol} --dport {source_port} -j DNAT --to-destination {destination_ip}:{destination_port}"
         if is_delete:
             rule = rule.replace('-A','-D')
         return rule
@@ -349,7 +350,7 @@ class Manager:
         # 逐页激活规则
         for page_number in range(1,total_page+1):
             # 查询数据库
-            data = self.forward_rule_manager.get_forward_rules_by_protocol('tcp',page_size,page_number)
+            data = self.forward_rule_manager.get_forward_rules_by_protocol('all',page_size,page_number)
             for rule in data:
                 # 添加iptables规则
                 self.iptables_forward_rule_manager.add_iptables_rule(rule['source_ip'],rule['source_port'],rule['destination_ip'],rule['destination_port'],rule['protocol'])

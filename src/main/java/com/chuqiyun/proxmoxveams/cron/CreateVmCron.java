@@ -146,7 +146,7 @@ public class CreateVmCron {
                     dest_port = 22;
                 }
                 String dest_ip = ipList.get(0);
-                Master node = masterService.getById(vmId);
+                Master node = masterService.getById(vmParams.getNodeid());
                 int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
                 if (!vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId)){
                     s_port = ThreadLocalRandom.current().nextInt(1000, 65536);

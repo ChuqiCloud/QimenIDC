@@ -322,6 +322,7 @@ public class ClientApiUtil {
         String url = "http://"+ip+":"+controllerPort+"/nat/add";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
+        paramMap.put("source_ip",ip);
         paramMap.put("source_port",source_port);
         paramMap.put("destination_ip",destination_ip);
         paramMap.put("destination_port",destination_port);
@@ -361,6 +362,7 @@ public class ClientApiUtil {
         String url = "http://" + ip + ":" + controllerPort + "/nat/delete";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
+        paramMap.put("source_ip", ip);
         paramMap.put("source_port", source_port);
         paramMap.put("destination_ip", destination_ip);
         paramMap.put("destination_port", destination_port);
