@@ -89,6 +89,8 @@ public class resetPasswordCron {
             //proxmoxApiUtil.resetVmPassword(node,authentications,vmhost.getVmid(),newPassword);
             try {
                 proxmoxApiUtil.resetVmPassword(node,authentications,vmhost.getVmid(),newPassword);
+                // 重置cloud-init
+                proxmoxApiUtil.resetVmCloudinit(node,authentications,vmhost.getVmid());
             } catch (Exception e) {
                 // 修改任务状态为失败
                 task.setStatus(3);

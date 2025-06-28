@@ -5,8 +5,6 @@ import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.springframework.http.*;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.security.KeyManagementException;
@@ -325,6 +323,16 @@ public class ProxmoxApiUtil {
         HashMap<String,Object> params = new HashMap<>();
         params.put("cipassword",password);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 重生成cloudinit镜像
+    * @DateTime: 2025/6/28 10:52
+    * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
+    */
+    public void resetVmCloudinit(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/cloudinit",new HashMap<>());
     }
     
     /**
