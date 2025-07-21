@@ -50,10 +50,10 @@ public class VncServiceImpl implements VncService {
         // 获取虚拟机信息
         Vmhost vmhost = vmhostService.getById(hostId);
         // 如果虚拟机不存在
-        if (vmhost == null){
-            // 将vmHostId作为为vmid
-            vmhost = vmhostService.getVmhostByVmId(Math.toIntExact(hostId));
-        }
+//        if (vmhost == null){
+//            // 将vmHostId作为为vmid
+//            vmhost = vmhostService.getVmhostByVmId(Math.toIntExact(hostId));
+//        }
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);

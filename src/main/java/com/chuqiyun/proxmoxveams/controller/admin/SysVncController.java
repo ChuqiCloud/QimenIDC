@@ -139,10 +139,10 @@ public class SysVncController {
             // 获取虚拟机信息
             Vmhost vmhost = vmhostService.getById(vncinfo.getHostId());
             // 如果虚拟机不存在
-            if (vmhost == null){
-                // 将vmHostId作为为vmid
-                vmhost = vmhostService.getVmhostByVmId(Math.toIntExact(vncinfo.getHostId()));
-            }
+//            if (vmhost == null){
+//                // 将vmHostId作为为vmid
+//                vmhost = vmhostService.getVmhostByVmId(Math.toIntExact(vncinfo.getHostId()));
+//            }
             // 如果虚拟机还是不存在
             if (vmhost == null){
                 return ResponseResult.fail("虚拟机不存在");
