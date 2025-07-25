@@ -152,7 +152,8 @@ wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash
 
 如果您有任何问题、建议或反馈，可以加入QQ群：
 
-<img src="/screenshot/qq.jpg" alt="qq" style="max-height:640px; width:auto;">
+<img src="/screenshot/qq.jpg" alt="qq" style="max-height:320px; width:auto;">
+
 ## 许可证
 
 QimenIDC 使用 [AGPL-3.0 License](https://www.gnu.org/licenses/agpl-3.0.html) 进行许可。
