@@ -959,10 +959,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 如果虚拟机不存在
-        if (vmhost == null){
-            // 将vmHostId作为为vmid
-            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
-        }
+//        if (vmhost == null){
+//            // 将vmHostId作为为vmid
+//            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
+//        }
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
@@ -1007,10 +1007,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 如果虚拟机不存在
-        if (vmhost == null){
-            // 将vmHostId作为为vmid
-            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
-        }
+//        if (vmhost == null){
+//            // 将vmHostId作为为vmid
+//            vmhost = this.getVmhostByVmId(Math.toIntExact(vmHostId));
+//        }
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
@@ -1106,10 +1106,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
         Vmhost vmhost = this.getById(renewalParams.getHostId());
-        if (vmhost == null){
-            // 将vmHostId作为为vmid
-            vmhost = this.getVmhostByVmId(Math.toIntExact(renewalParams.getHostId()));
-        }
+//        if (vmhost == null){
+//            // 将vmHostId作为为vmid
+//            vmhost = this.getVmhostByVmId(Math.toIntExact(renewalParams.getHostId()));
+//        }
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
