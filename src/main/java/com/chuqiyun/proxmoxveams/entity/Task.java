@@ -32,12 +32,12 @@ public class Task extends Model<Task> {
     private Integer hostid;
     
     private Integer type;
-    private Integer masterType;
+    //private Integer masterType;
     
     private Integer status;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> params;
-    private Integer masterId;
+    //private Integer masterId;
     private String error;
     private Long createDate;
 
