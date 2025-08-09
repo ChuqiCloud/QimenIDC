@@ -23,6 +23,7 @@ public class Ipstatus extends Model<Ipstatus> {
     private Integer id;
     
     private String name;
+    private Integer ipType;
     
     private String gateway;
     

@@ -45,6 +45,10 @@ public class Config extends Model<Config> {
      * 是否已导入数据库
      */
     private Integer installed;
+    /**
+     * 最大同时导入磁盘数量
+     */
+    private Integer importDiskMax;
 
     /**
      * 获取主键值

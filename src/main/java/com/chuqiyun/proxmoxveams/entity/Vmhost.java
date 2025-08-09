@@ -27,11 +27,18 @@ public class Vmhost extends Model<Vmhost> {
 
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
+
+    private String uuid;
     private Integer nodeid;
     
     private Integer vmid;
     
     private String hostname;
+
+    /**
+     * 虚拟机类型 0:pve 1:hyperv
+     */
+    private  Integer type;
     /**
      * 配置模板ID
      */
@@ -98,6 +105,14 @@ public class Vmhost extends Model<Vmhost> {
      * acpi 默认1 开启
      */
     private Integer acpi;
+    /**
+     * 虚拟机亲和性
+     */
+    private String affinity;
+    /**
+     * scsihw 控制器类型 默认virtio-scsi-pci
+     */
+    private String scsihw;
     
     private Integer memory;
     /**
@@ -106,13 +121,45 @@ public class Vmhost extends Model<Vmhost> {
     private Integer swap;
     
     private Integer agent;
+    /**
+     * amdSev
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> amdSev;
+    private String archive;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> audio0;
+    private Integer autostart;
+    private Integer balloon;
+    private String bios;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> boot;
+    private String cdrom;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> cicustom;
+    private Integer ciupgrade;
+    private Integer cpulimit;
+    private String description;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> efidisk0;
+    //private Integer force;
+    private Integer freeze;
+    private String hookscript;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> hostpci;
+    private String hotplug;
+    private String hugepages;
     private String username;
     private String password;
     
     private String ide0;
     //cloud-init
     private String ide2;
-    
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> ide3;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> net;
+
     private String net0;
     
     private String net1;
@@ -129,6 +176,70 @@ public class Vmhost extends Model<Vmhost> {
      * iso镜像
      */
     private String iso;
+
+    /**
+     * ivshmem
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> ivshmem;
+
+    private Integer keephugepages;
+    /**
+     * 键盘布局
+     */
+    private String keyboard;
+    private Integer liveRestore;
+    //private Integer localtime;
+   // private String lock;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> machine;
+    private Float migrateDowntime;
+    private Integer migrateSpeed;
+    private String nameserver;
+    private Integer numa;
+    private String parallel;
+    private String pool;
+    private Integer protection;
+    private Integer reboot;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> rng0;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> sata;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> scsi;
+    private String  searchdomain;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> serial;
+    private Integer shares;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> smbios1;
+    private Integer smp;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> spiceEnhancements;
+    private String sshkeys;
+    private Integer start;
+    private String startdate;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> startup;
+    private Integer tablet;
+    private String tags;
+    private Integer tdf;
+    private Integer template0;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> tpmstate0;
+    //private Integer unique;
+    private String unused;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> usb;
+    private Integer vcpus;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> vga;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> virtio;
+    private String vmgenid;
+    private String vmstatestorage;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<Object, Object> watchdog;
     /**
      * 虚拟机模板
      */
