@@ -166,4 +166,16 @@ public class NetWorkUtil {
         }
         return netWorkParamsMap;
     }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 将Mbps转换为Mb/s
+    * @DateTime: 2025/8/5 21:45
+    * @Params: Integer Mbps
+    * @Return   String Mb/s
+    */
+    public static Double mbpsToMbps(Integer mbps) {
+        // 将Mbps转换为Mb/s
+        return (double) (mbps / 8);
+    }
 }
