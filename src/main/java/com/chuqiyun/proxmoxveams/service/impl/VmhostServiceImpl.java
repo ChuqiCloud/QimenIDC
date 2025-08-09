@@ -187,6 +187,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setPassword(vmParams.getPassword());
         vmhost.setArch(vmParams.getArch());
         vmhost.setAcpi(vmParams.getAcpi());
+        vmhost.setScsihw(vmParams.getScsihw());
         vmhost.setMemory(vmParams.getMemory());
         vmhost.setSwap(vmParams.getSwap());
         vmhost.setStorage(vmParams.getStorage());

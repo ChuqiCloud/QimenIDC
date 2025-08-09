@@ -38,6 +38,7 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     public Integer insertIpstatus(IpParams ipParams) {
         Ipstatus ipstatus = new Ipstatus();
         ipstatus.setName(ipParams.getPoolName());
+        ipstatus.setIpType(ipParams.getIpType());
         ipstatus.setGateway(ipParams.getGateway());
         ipstatus.setMask(ipParams.getMask());
         ipstatus.setDns1(ipParams.getDns1());

@@ -198,6 +198,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         else if (vmParams.getAcpi() != 0 && vmParams.getAcpi() != 1) {
             vmParams.setAcpi(1);
         }
+        // 判断scsihw是否为空
+        if (vmParams.getScsihw() == null) {
+            vmParams.setScsihw("virtio-scsi-pci");
+        }
         // 判断memory是否为空
         if (vmParams.getMemory() == null) {
             vmParams.setMemory(512);
