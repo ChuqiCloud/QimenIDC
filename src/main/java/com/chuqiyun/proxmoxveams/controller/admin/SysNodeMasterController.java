@@ -36,6 +36,10 @@ public class SysNodeMasterController {
     @AdminApiCheck
     @PostMapping("/insertNodeMaster")
     public ResponseResult<String> insertNodeMaster(@RequestBody Master master) throws UnauthorizedException {
+        // 如果name为空，则随机生成
+        if (master.getName() == null) {
+            master.setName("node_" + System.currentTimeMillis());
+        }
         // 将master信息存入数据库
         if (masterService.save(master)) {
             // 更新该master的csrfToken与ticket
