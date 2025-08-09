@@ -583,8 +583,8 @@ public class VmStatusCron {
     * @Description: 监听所有虚拟机状态
     * @DateTime: 2023/7/19 17:47
     */
-    @Async
-    @Scheduled(fixedDelay = 1000*5)
+    //@Async
+    //@Scheduled(fixedDelay = 1000*5)
     public void listenVmStatus() {
         int i = 1;
         while (true){

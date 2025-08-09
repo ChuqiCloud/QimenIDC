@@ -45,8 +45,8 @@ public class CreateVmCron {
     /**
      * 创建虚拟机
      */
-    @Async
-    @Scheduled(fixedDelay = 500)
+    //@Async
+    //@Scheduled(fixedDelay = 500)
     public void createVm() {
         // 获取TaskType为CREATE_VM的任务列表
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();

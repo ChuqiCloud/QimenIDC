@@ -68,8 +68,8 @@ public class DiskCron {
 
     }
 
-    @Async
-    @Scheduled(fixedDelay = 1000)
+    //@Async
+    //@Scheduled(fixedDelay = 1000)
     public void importDiskCron(){
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type",IMPORT_SYSTEM_DISK);
@@ -144,8 +144,8 @@ public class DiskCron {
 
     }
 
-    @Async
-    @Scheduled(fixedDelay = 1000)
+    //@Async
+    //@Scheduled(fixedDelay = 1000)
     public void monitorImportDiskCron(){
         QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("type",IMPORT_SYSTEM_DISK);
