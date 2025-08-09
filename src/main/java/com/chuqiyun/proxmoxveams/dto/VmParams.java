@@ -105,6 +105,10 @@ public class VmParams {
      */
     private Integer swap;
     /**
+     * scsihw 控制器类型 默认virtio-scsi-pci
+     */
+    private String scsihw;
+    /**
      * 存储
      */
     private String storage;

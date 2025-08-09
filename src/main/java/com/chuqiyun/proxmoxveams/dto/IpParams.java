@@ -12,6 +12,8 @@ public class IpParams {
     private String poolName;
     // IP池ID
     private Integer poolId;
+    // 池类型
+    private Integer ipType;
     // subnet id
     private Integer subnetId;
     // 起始ip
