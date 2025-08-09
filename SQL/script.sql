@@ -18,7 +18,8 @@ create table config
     vnc_time               int          default 120    null comment 'vnc失效时间，单位分钟',
     version                varchar(255)                null,
     build                  varchar(255)                null,
-    installed              int          default 1      not null comment '0=否;1=是'
+    installed              int          default 1      not null comment '0=否;1=是',
+    import_disk_max        int          default 2      not null
 );
 
 create table configuretemplate
@@ -77,6 +78,18 @@ create table flowdata
     create_date varchar(20)      null
 );
 
+create table ipforward
+(
+    id      int auto_increment
+        primary key,
+    node_id int           not null,
+    vm_id   int           null,
+    port    varchar(15)   not null,
+    vm_ip   varchar(15)   not null,
+    vm_port varchar(15)   not null,
+    status  int default 0 not null
+);
+
 create table ippool
 (
     id          int auto_increment
@@ -97,27 +110,18 @@ create table ipstatus
 (
     id        int auto_increment
         primary key,
-    name      varchar(255) not null,
-    gateway   varchar(15)  null,
-    mask      int          null,
-    dns1      varchar(15)  null,
-    dns2      varchar(15)  null,
-    available int          null comment '可用',
-    used      int          null comment '已用',
-    disable   int          null comment '禁用',
-    nodeId    int          null
+    name      varchar(255)  not null,
+    ip_type   int default 0 not null,
+    gateway   varchar(15)   null,
+    mask      int           null,
+    dns1      varchar(15)   null,
+    dns2      varchar(15)   null,
+    available int           null comment '可用',
+    used      int           null comment '已用',
+    disable   int           null comment '禁用',
+    nodeId    int           null
 );
-create table ipforward
-(
-    id          int auto_increment
-        primary key,
-    node_id     int           not null,
-    vm_id       int           null,
-    port          varchar(15)   not null,
-    vm_ip varchar(15)   not null,
-    vm_port     varchar(15)   not null,
-    status      int default 0 not null
-);
+
 create table master
 (
     id                int auto_increment
@@ -140,9 +144,9 @@ create table master
     controller_status int                        null,
     controller_port   int          default 7600  null comment '被控端口',
     naton             int          default 0     not null comment '0关闭 1开启',
-    natbridge             varchar(50)  null,
-    natippool            int          default 0     not null comment 'nat ip池id',
-    nataddr             varchar(50)  null comment 'nat展示地址'
+    natbridge         varchar(50)                null,
+    natippool         int          default 0     not null comment 'nat ip池id',
+    nataddr           varchar(50)                null comment 'nat展示地址'
 );
 
 create table modelgroup
@@ -262,8 +266,10 @@ create table task
     vmid        int         null,
     hostid      int         null,
     type        int         null,
+    master_type int         null,
     status      int         null,
     params      json        null,
+    master_id   int         null,
     error       text        null,
     create_date varchar(13) null
 );
@@ -292,6 +298,7 @@ create table vmhost
     args                  text                                       null,
     arch                  varchar(20)                                null,
     acpi                  int                                        null,
+    scsihw                varchar(255)                               null,
     memory                int                                        not null,
     swap                  int                                        null,
     agent                 int          default 1                     not null,

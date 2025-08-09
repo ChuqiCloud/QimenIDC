@@ -17,6 +17,15 @@ MySQL:
   database: pve
 
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 10
+    execution:
+      pool:
+        max-size: 10
+        queue-capacity: 500
+        keep-alive: 60
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -36,6 +45,7 @@ spring:
     password: ${MySQL.password}
     type: com.zaxxer.hikari.HikariDataSource
     hikari:
+      connection-init-sql: SET NAMES utf8mb4    # 设置数据库编码
       connection-timeout: 30000     # 等待连接池分配链接的最大时长（毫秒），超过这个时长还没有可用的连接则发生 SQLException，默认：30 秒
       maximum-pool-size: 60         # 最大连接数
       auto-commit: true             # 自动提交
@@ -68,7 +78,7 @@ info:
     description: "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system."
     version: "1.1.0"
     build:
-      version: "1.1.0_3"
+      version: "1.1.0_2"
 
 management:
   server: # 指定监听端口，不指定则与server端口一直

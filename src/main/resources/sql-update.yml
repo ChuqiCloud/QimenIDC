@@ -135,3 +135,144 @@ build: # 内部构建版本信息
                    add ifnat int default 0 not null comment '是否开启NAT' after ip_list;"
       - "alter table vmhost
                    add natnum int default 0 not null comment 'NAT数量' after ifnat;"
+    2:
+      - "alter table config
+                   add import_disk_max int default 2 not null;"
+      - "alter table task
+                   add master_type int null after type;"
+      - "alter table ipstatus
+                   add ip_type int default 0 not null after name;"
+      - "alter table task
+                   add master_id int null after params;"
+      - "alter table vmhost
+                   add scsihw varchar(255) null after acpi;"
+      - "alter table vmhost
+                   add uuid varchar(255) null after id;"
+      - "alter table vmhost
+                   add type int default 0 not null after hostname;"
+      - "alter table vmhost
+                   add affinity varchar(255) null after acpi;"
+      - "alter table vmhost
+                   add agent json null after affinity;"
+      - "alter table vmhost
+                   add amd_sev json null after agent;"
+      - "alter table vmhost
+                   add archive varchar(255) null after amd_sev;"
+      - "alter table vmhost
+                   add audio0 json null after archive;"
+      - "alter table vmhost
+                   add autostart int default 0 not null after audio0;"
+      - "alter table vmhost
+                   add balloon int null after autostart;"
+      - "alter table vmhost
+                   add bios varchar(255) default 'seabios' null after balloon;"
+      - "alter table vmhost
+                   add boot json null after bios;"
+      - "alter table vmhost
+                   add cdrom varchar(255) null after boot;"
+      - "alter table vmhost
+                   add cicustom json null after cdrom;"
+      - "alter table vmhost
+                   add ciupgrade int default 1 not null after cicustom;"
+      - "alter table vmhost
+                   add cpulimit int default 0 not null after ciupgrade;"
+      - "alter table vmhost
+                   add description text null after cpulimit;"
+      - "alter table vmhost
+                   add efidisk0 json null after description;"
+      - "alter table vmhost
+                   add freeze int null after efidisk0;"
+      - "alter table vmhost
+                   add hookscript text null after freeze;"
+      - "alter table vmhost
+                   add hostpci json null after hookscript;"
+      - "alter table vmhost
+                   add hotplug varchar(255) null after hostpci;"
+      - "alter table vmhost
+                   add hugepages varchar(255) null after hotplug;"
+      - "alter table vmhost
+                   add ide3 json null after ide2;"
+      - "alter table vmhost
+                   add net json null after ide3;"
+      - "alter table vmhost
+                   add import varchar(255) null after iso;"
+      - "alter table vmhost
+                   add ivshmem json null after import;"
+      - "alter table vmhost
+                   add keephugepages int default 0 not null after ivshmem;"
+      - "alter table vmhost
+                   add keyboard varchar(255) null after keephugepages;"
+      - "alter table vmhost
+                   add live_restore int null after keyboard;"
+      - "alter table vmhost
+                   add machine json null after live_restore;"
+      - "alter table vmhost
+                   add migrate_downtime float default 0.1 not null after machine;"
+      - "alter table vmhost
+                   add migrate_speed int default 0 not null after migrate_downtime;"
+      - "alter table vmhost
+                   add nameserver varchar(255) null after migrate_speed;"
+      - "alter table vmhost
+                   add numa int default 0 not null after nameserver;"
+      - "alter table vmhost
+                   add numan json null after numa;"
+      - "alter table vmhost
+                   add `parallel` varchar(255) null after numan;"
+      - "alter table vmhost
+                   add pool varchar(255) null after `parallel`;"
+      - "alter table vmhost
+                   add protection int default 0 not null after pool;"
+      - "alter table vmhost
+                   add reboot int default 1 not null after protection;"
+      - "alter table vmhost
+                   add rng0 json null after reboot;"
+      - "alter table vmhost
+                   add sata json null after rng0;"
+      - "alter table vmhost
+                   add scsi json null after sata;"
+      - "alter table vmhost
+                   add searchdomain varchar(255) null after scsi;"
+      - "alter table vmhost
+                   add serial json null after searchdomain;"
+      - "alter table vmhost
+                   add shares int default 1000 not null after serial;"
+      - "alter table vmhost
+                   add smbios1 json null after shares;"
+      - "alter table vmhost
+                   add `smp ` int default 1 not null after smbios1;"
+      - "alter table vmhost
+                   add spice_enhancements json null after `smp `;"
+      - "alter table vmhost
+                   add sshkeys text null after spice_enhancements;"
+      - "alter table vmhost
+                   add start int default 0 not null after sshkeys;"
+      - "alter table vmhost
+                   add startdate varchar(255) null after start;"
+      - "alter table vmhost
+                   add startup json null after startdate;"
+      - "alter table vmhost
+                   add tablet int default 1 not null after startup;"
+      - "alter table vmhost
+                   add tags varchar(255) null after tablet;"
+      - "alter table vmhost
+                   add tdf int default 0 not null after tags;"
+      - "alter table vmhost
+                   add template0 int default 0 not null after tdf;"
+      - "alter table vmhost
+                   add tpmstate0 json null after template0;"
+      - "alter table vmhost
+                   add unused varchar(255) null after tpmstate0;"
+      - "alter table vmhost
+                   add usb json null after unused;"
+      - "alter table vmhost
+                   add vcpus int default 0 not null after usb;"
+      - "alter table vmhost
+                   add vga json null after vcpus;"
+      - "alter table vmhost
+                   add virtio json null after vga;"
+      - "alter table vmhost
+                   add vmgenid varchar(255) null after virtio;"
+      - "alter table vmhost
+                   add vmstatestorage varchar(255) null after vmgenid;"
+      - "alter table vmhost
+                   add watchdog json null after vmstatestorage;"
