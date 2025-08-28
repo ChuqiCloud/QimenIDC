@@ -52,6 +52,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", START_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -108,6 +110,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", STOP_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -163,6 +167,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", REBOOT_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -217,6 +223,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", STOP_VM_FORCE);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -267,6 +275,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", SUSPEND_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -323,6 +333,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", RESUME_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -397,6 +409,8 @@ public class VmStatusCron {
         // 暂停为挂起操作
         queryWrap.eq("type", PAUSE_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -468,6 +482,8 @@ public class VmStatusCron {
         // 暂停为挂起操作
         queryWrap.eq("type", QOS_PAUSE);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行
@@ -525,6 +541,8 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", UNPAUSE_VM);
         queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
             // 设置任务状态为1 1为正在执行

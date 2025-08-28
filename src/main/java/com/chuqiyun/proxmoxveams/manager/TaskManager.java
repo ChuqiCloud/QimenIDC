@@ -45,7 +45,7 @@ public class TaskManager {
         Config config =  configService.getConfig();
 
         // 最大同时导入磁盘数量
-        int maxImportDiskCount = config.getImportDiskMax();
+        int maxImportDiskCount = 2;//config.getImportDiskMax();
 
         QueryWrapper<Task> importDiskQueryWrapper = new QueryWrapper<>();
         importDiskQueryWrapper.eq("type", TaskType.IMPORT_SYSTEM_DISK);
