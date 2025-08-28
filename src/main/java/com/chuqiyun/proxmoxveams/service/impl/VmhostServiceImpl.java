@@ -1289,9 +1289,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Object getVmhostNatAddrByVmid (int hostId) {
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
-        String natAddr = node.getNataddr();
+        String nataddr = node.getNataddr();
         Map<String, Object> resultData = new HashMap<>();
-        resultData.put("natAddr", natAddr);
+        resultData.put("nataddr", nataddr);
         return ResponseResult.ok(resultData);
     }
 }

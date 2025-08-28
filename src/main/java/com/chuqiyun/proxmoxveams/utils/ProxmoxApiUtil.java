@@ -5,12 +5,19 @@ import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.springframework.http.*;
+import org.springframework.http.converter.FormHttpMessageConverter;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -72,23 +79,23 @@ public class ProxmoxApiUtil {
     * @Params: Master node, HashMap<String,String> cookie,String url, HashMap<String, String> params
     * @Return JSONObject
     */
-    public JSONObject postNodeApiForm(Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params) throws UnauthorizedException {
-        // 构建请求主体
+    public JSONObject postNodeApiForm(Master node, HashMap<String,String> cookie, String url, HashMap<String, Object> params) throws UnauthorizedException {
+        // 构建请求头
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.add("Cookie", cookie.get("cookie"));
         headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        Map<String, Object> requestBody = new HashMap<>();
+        // 将参数转换为表单格式（MultiValueMap）
+        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         for (String key : params.keySet()) {
-            requestBody.put(key, params.get(key));
+            Object value = params.get(key);
+            formData.add(key, value != null ? value.toString() : "");
         }
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        // 忽略证书验证
+        HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(formData, headers);
         TrustSslUtil.initDefaultSsl();
-        // 发送 POST 请求
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = createRestTemplateWithFormSupport();
         ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.POST, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {
@@ -99,6 +106,19 @@ public class ProxmoxApiUtil {
         } else {
             throw new UnauthorizedException("请求失败");
         }
+    }
+
+    // 创建配置了表单支持的 RestTemplate
+    private RestTemplate createRestTemplateWithFormSupport() {
+        RestTemplate restTemplate = new RestTemplate();
+
+        // 添加支持表单数据的消息转换器
+        List<HttpMessageConverter<?>> messageConverters = new ArrayList<>();
+        messageConverters.add(new FormHttpMessageConverter());
+        messageConverters.add(new StringHttpMessageConverter());
+
+        restTemplate.setMessageConverters(messageConverters);
+        return restTemplate;
     }
 
     /**

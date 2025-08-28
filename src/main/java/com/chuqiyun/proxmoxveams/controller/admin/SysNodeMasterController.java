@@ -4,14 +4,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
-import com.chuqiyun.proxmoxveams.entity.CNat;
-import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.service.ConfigService;
-import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.dto.pvesdn.ZonesParams;
+import com.chuqiyun.proxmoxveams.entity.*;
+import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
-import com.chuqiyun.proxmoxveams.service.VmhostService;
-import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -33,6 +30,8 @@ public class SysNodeMasterController {
     private VncnodeService vncnodeService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private PveSdnService pveSdnService;
     @AdminApiCheck
     @PostMapping("/insertNodeMaster")
     public ResponseResult<String> insertNodeMaster(@RequestBody Master master) throws UnauthorizedException {
@@ -108,23 +107,50 @@ public class SysNodeMasterController {
             return ResponseResult.fail("该节点已经启用了NAT！");
         }
         //创建IP池并获取IP池ID
-        Integer poolid = masterService.addNodeNatIpPool(nat.getId(),nat.getNataddr());
+        Integer poolid = masterService.addNodeNatIpPool(nat.getId(),nat.getNataddr(),nat.getDns1(),nat.getDns2());
         if (poolid != 0)
         {
-            //提交添加请求
-            String token = configService.getToken();
-            Master node = masterService.getById(nat.getId());
-            if (ClientApiUtil.addNatBridge(node.getHost(), token, node.getControllerPort(), nat.getNataddr(), nat.getNatbridge())) {
-                // 将master信息存入数据库
-                master.setNataddr(nat.getAddrdomain());
-                master.setNatippool(poolid);
-                master.setNaton(1);
-                master.setNatbridge(nat.getNatbridge());
-                //更新被控IP池ID、naton、网口等相关信息
-                masterService.updateById(master);
-                return ResponseResult.ok("添加成功！");
+            //创建SDN区域
+            ZonesParams zonesParams = new ZonesParams();
+            zonesParams.setNodeId(nat.getId());
+            zonesParams.setType("simple");
+            zonesParams.setZone(nat.getNatbridge());
+            UnifiedResultDto<Object> resultDto = pveSdnService.addZone(zonesParams);
+            if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
             } else {
-                return ResponseResult.fail("添加失败！");
+                //创建Vnets
+                Vnets vnets = new Vnets();
+                vnets.setVnet(nat.getNatbridge());
+                vnets.setZone(nat.getNatbridge());
+                resultDto = pveSdnService.addVnet(vnets);
+                if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                    return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+                } else {
+                    //创建子网
+                    Subnet subnet = new Subnet();
+                    subnet.setNodeid(nat.getId());
+                    subnet.setVnet(nat.getNatbridge());
+                    String[] parts = nat.getNataddr().split("/");
+                    subnet.setSubnet(parts[0]);
+                    subnet.setGateway(parts[0]);
+                    subnet.setMask(Integer.valueOf(parts[1]));
+                    subnet.setSnat(1);
+                    subnet.setDns(nat.getDns1());
+                    resultDto = pveSdnService.addSubnet(subnet);
+                    if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                        return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+                    }   else {
+                        pveSdnService.applySdn(nat.getId());
+                        master.setNataddr(nat.getAddrdomain());
+                        master.setNatippool(poolid);
+                        master.setNaton(1);
+                        master.setNatbridge(nat.getNatbridge());
+                        //更新被控IP池ID、naton、网口等相关信息
+                        masterService.updateById(master);
+                        return ResponseResult.ok("添加成功！");
+                    }
+                }
             }
         } else {
             return ResponseResult.fail("添加失败！");

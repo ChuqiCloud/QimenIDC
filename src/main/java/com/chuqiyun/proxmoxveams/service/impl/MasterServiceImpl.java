@@ -341,15 +341,15 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
      * @Return Integer 虚拟机状态码
      */
     @Override
-    public Integer addNodeNatIpPool(Integer nodeId, String nataddr) {
+    public Integer addNodeNatIpPool(Integer nodeId, String nataddr, String dns1, String dns2) {
         // 创建所有掩码位列表
         List<Integer> maskList = List.of(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32);
         // 判断掩码位是否合法
         IpParams ipParams = new IpParams();
         ipParams.setPoolName("NAT池");
         ipParams.setNodeId(nodeId);
-        ipParams.setDns1("8.8.8.8");
-        ipParams.setDns2("223.5.5.5");
+        ipParams.setDns1(dns1);
+        ipParams.setDns2(dns2);
         String[] parts = nataddr.split("/");
         String ipAddress = parts[0];
         Integer mask = Integer.valueOf(parts[1]);

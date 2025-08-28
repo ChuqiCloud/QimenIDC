@@ -73,6 +73,6 @@ public interface MasterService extends IService<Master> {
 
     UnifiedResultDto<Object> deleteNode(VmhostService vmhostService,Integer nodeId);
 
-    Integer addNodeNatIpPool(Integer nodeId, String nataddr);
+    Integer addNodeNatIpPool(Integer nodeId, String nataddr, String dns1, String dns2);
 }
 
