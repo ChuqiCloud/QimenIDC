@@ -1,3 +1,31 @@
+buildscript {
+    repositories {
+        // 阿里云镜像
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+
+        // 华为云镜像
+        maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+
+        // 腾讯云镜像
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+
+        // 网易镜像
+        maven { url 'https://mirrors.163.com/maven/repository/maven-public/' }
+
+        // 首都在线
+        maven { url 'https://maven.oscs.oschina.net/content/groups/public/' }
+
+        // 保留中央仓库
+        mavenCentral()
+
+        // 保留Google仓库(备选)
+        google()
+    }
+}
+
 plugins {
     id 'org.springframework.boot' version '2.7.5'
     id 'io.spring.dependency-management' version '1.1.0'
@@ -18,36 +46,98 @@ configurations {
     }
 }
 
-repositories {
-    mavenCentral()
+// 依赖分组管理
+ext {
+    // Spring相关依赖
+    springVersion = '2.7.5'
+    
+    // 数据库相关依赖
+    mybatisPlusVersion = '3.5.3.1'
+    mysqlConnectorVersion = '8.2.0'
+    
+    // 工具类依赖
+    commonsLang3Version = '3.18.0'
+    fastjsonVersion = '2.0.25'
+    jschVersion = '0.1.55'
+    jwtVersion = '4.4.0'
+    commonsCodecVersion = '1.15'
+    shiroVersion = '1.10.0'
+    
+    // 文档相关依赖
+    springfoxVersion = '3.0.0'
+    swaggerBootstrapUiVersion = '1.8.5'
 }
 
 dependencies {
+    // Spring Boot 基础依赖
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // 监控相关
     implementation 'io.micrometer:micrometer-registry-prometheus'
-    implementation 'com.baomidou:mybatis-plus-boot-starter:3.5.3.1'
+    
+    // 数据库相关
+    implementation "com.baomidou:mybatis-plus-boot-starter:$mybatisPlusVersion"
+    
+    // Java EE 相关
     implementation 'javax.annotation:javax.annotation-api:1.3.2'
     implementation 'javax.servlet:javax.servlet-api:4.0.1'
-    implementation 'org.apache.commons:commons-lang3:3.12.0'
-    implementation 'com.alibaba.fastjson2:fastjson2:2.0.25'
+    
+    // 工具类依赖
+    implementation "org.apache.commons:commons-lang3:$commonsLang3Version"
+    implementation "com.alibaba.fastjson2:fastjson2:$fastjsonVersion"
     implementation 'org.jetbrains:annotations:23.0.0'
-    implementation 'com.jcraft:jsch:0.1.55'
-    implementation 'com.auth0:java-jwt:4.4.0'
-    implementation 'commons-codec:commons-codec:1.15'
-    implementation 'org.apache.shiro:shiro-spring:1.10.0'
+    implementation "com.jcraft:jsch:$jschVersion"
+    implementation "com.auth0:java-jwt:$jwtVersion"
+    implementation "commons-codec:commons-codec:$commonsCodecVersion"
+    implementation "org.apache.shiro:shiro-spring:$shiroVersion"
     implementation 'org.apache.httpcomponents:httpclient'
-    implementation 'io.springfox:springfox-boot-starter:3.0.0'
-    implementation 'com.github.xiaoymin:swagger-bootstrap-ui:1.8.5'
+    
+    // API文档相关
+    implementation "io.springfox:springfox-boot-starter:$springfoxVersion"
+    implementation "com.github.xiaoymin:swagger-bootstrap-ui:$swaggerBootstrapUiVersion"
+    
+    // Lombok
     compileOnly 'org.projectlombok:lombok'
-    runtimeOnly 'com.mysql:mysql-connector-j:8.0.33'
     annotationProcessor 'org.projectlombok:lombok'
+    
+    // 运行时依赖
+    runtimeOnly "com.mysql:mysql-connector-j:$mysqlConnectorVersion"
+    
+    // 测试依赖
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
-
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// 统一所有项目的仓库配置
+allprojects {
+    repositories {
+        // 阿里云镜像
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+
+        // 华为云镜像
+        maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+
+        // 腾讯云镜像
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+
+        // 网易镜像
+        maven { url 'https://mirrors.163.com/maven/repository/maven-public/' }
+
+        // 首都在线
+        maven { url 'https://maven.oscs.oschina.net/content/groups/public/' }
+
+        // 保留中央仓库
+        mavenCentral()
+
+        // 保留Google仓库(备选)
+        google()
+    }
 }
