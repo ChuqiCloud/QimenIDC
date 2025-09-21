@@ -124,7 +124,7 @@ public class CreateVmCron {
                 task.setStatus(3);
                 // 记录错误信息
                 vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 task.setError("创建基础虚拟机失败");
                 taskService.updateById(task);
@@ -173,7 +173,7 @@ public class CreateVmCron {
                 task.setStatus(3);
                 // 记录错误信息
                 vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 task.setError("创建导入操作系统任务失败");
                 taskService.updateById(importTask);
@@ -196,7 +196,7 @@ public class CreateVmCron {
                     // 任务状态为3，任务失败
                     // 结束任务
                     vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }
@@ -221,7 +221,7 @@ public class CreateVmCron {
                 // 记录错误信息
                 task.setError("添加修改系统盘IO限制任务失败");
                 vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 return;
             }
@@ -261,7 +261,7 @@ public class CreateVmCron {
                 task.setStatus(3);
                 // 记录错误信息
                 vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 task.setError("创建修改系统盘大小任务");
                 taskService.updateById(updateSystemDiskTask);
@@ -274,7 +274,7 @@ public class CreateVmCron {
             // 等待修改系统盘大小任务完成
             do {
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(20000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -285,7 +285,7 @@ public class CreateVmCron {
                     // 任务状态为3，任务失败
                     // 结束任务
                     vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }
@@ -307,7 +307,7 @@ public class CreateVmCron {
                 if (!taskService.save(createDataDiskTask)){
                     UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_DATA_DISK,"添加创建数据盘任务: NodeID:{} VM-ID:{} 失败",vmParams.getNodeid(),vmId);
                     vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     // 修改任务状态为失败
                     task.setStatus(3);
@@ -357,7 +357,7 @@ public class CreateVmCron {
                 task.setError("创建修改启动项任务失败");
                 taskService.updateById(updateBootDiskTask);
                 vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
             }
             // 添加任务流程
@@ -377,7 +377,7 @@ public class CreateVmCron {
                     // 任务状态为3，任务失败
                     // 结束任务
                     vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }

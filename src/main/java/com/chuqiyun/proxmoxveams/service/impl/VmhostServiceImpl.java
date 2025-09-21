@@ -1291,7 +1291,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
         String nataddr = node.getNataddr();
         Map<String, Object> resultData = new HashMap<>();
-        resultData.put("nataddr", nataddr);
+        resultData.put("natAddr", nataddr);
         return ResponseResult.ok(resultData);
     }
 }

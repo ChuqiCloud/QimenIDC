@@ -137,7 +137,7 @@ public class ResetSystemCron {
             // 记录错误信息
             importTask.setError("创建导入操作系统任务失败");
             taskService.updateById(importTask);
-            vmhost.setStatus(4);
+            vmhost.setStatus(1);
             vmhostService.updateById(vmhost);
             return;
         }
@@ -177,14 +177,14 @@ public class ResetSystemCron {
             // 记录错误信息
             updateSystemDiskTask.setError("创建导入操作系统任务失败");
             taskService.updateById(updateSystemDiskTask);
-            vmhost.setStatus(4);
+            vmhost.setStatus(1);
             vmhostService.updateById(vmhost);
             return;
         }
         // 等待修改系统盘大小任务完成
         do {
             try {
-                Thread.sleep(1000);
+                Thread.sleep(20000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -194,7 +194,7 @@ public class ResetSystemCron {
             if (taskStatus.getStatus() == 3) {
                 // 任务状态为3，任务失败
                 // 结束任务
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 return;
             }
@@ -228,7 +228,7 @@ public class ResetSystemCron {
                     // 记录错误信息
                     resetPasswordTask.setError("创建重置密码任务失败");
                     taskService.updateById(resetPasswordTask);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }
@@ -245,7 +245,7 @@ public class ResetSystemCron {
                     if (taskStatus.getStatus() == 3) {
                         // 任务状态为3，任务失败
                         // 结束任务
-                        vmhost.setStatus(4);
+                        vmhost.setStatus(1);
                         vmhostService.updateById(vmhost);
                         return;
                     }
@@ -271,7 +271,7 @@ public class ResetSystemCron {
                 createDataDiskTask.setStatus(3);
                 createDataDiskTask.setError("创建数据盘任务失败");
                 taskService.updateById(createDataDiskTask);
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 return;
             }
@@ -288,7 +288,7 @@ public class ResetSystemCron {
                 if (taskStatus.getStatus() == 3) {
                     // 任务状态为3，任务失败
                     // 结束任务
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }
@@ -318,7 +318,7 @@ public class ResetSystemCron {
                     // 记录错误信息
                     resetPasswordTask.setError("创建重置密码任务失败");
                     taskService.updateById(resetPasswordTask);
-                    vmhost.setStatus(4);
+                    vmhost.setStatus(1);
                     vmhostService.updateById(vmhost);
                     return;
                 }
@@ -375,7 +375,7 @@ public class ResetSystemCron {
             if (taskStatus.getStatus() == 3) {
                 // 任务状态为3，任务失败
                 // 结束任务
-                vmhost.setStatus(4);
+                vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 return;
             }
