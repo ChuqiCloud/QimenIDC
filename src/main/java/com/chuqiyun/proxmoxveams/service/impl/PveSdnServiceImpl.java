@@ -76,7 +76,8 @@ public class PveSdnServiceImpl implements PveSdnService {
         zones.setNodes(node.getNodeName());
         zones.setNodeId(node.getId());
         if (zonesParams.getIpam() == null){
-            zones.setIpam(node.getNodeName());
+            //zones.setIpam(node.getNodeName());
+            zones.setIpam("pve");
         }else {
             zones.setIpam(zonesParams.getIpam());
         }
