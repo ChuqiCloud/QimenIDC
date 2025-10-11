@@ -278,12 +278,12 @@ public class ClientApiUtil {
         String url = "http://"+ip+":"+controllerPort+"/vnc/stop";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vnc_file_path","/home/software/vnc");
-        paramMap.put("vmid",null);
-        paramMap.put("username",null);
-        paramMap.put("password",null);
+        paramMap.put("vmid","1");//被控写了不能传空置，随机填个数
+        paramMap.put("username","1");
+        paramMap.put("password","1");
         paramMap.put("port",vncPort);
-        paramMap.put("host",null);
-        paramMap.put("time",null);
+        paramMap.put("host","1");
+        paramMap.put("time","1");
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Vncinfo;
 import com.chuqiyun.proxmoxveams.entity.Vncnode;
+import io.swagger.models.auth.In;
 
 import java.util.HashMap;
 
@@ -19,4 +20,6 @@ public interface VncService {
     void syncVncInfo(Vncinfo vncinfo);
 
     Integer calculateVncPort(String host);
+
+    boolean resetVmVncPassword(Integer vmHostId,String newPassword);
 }

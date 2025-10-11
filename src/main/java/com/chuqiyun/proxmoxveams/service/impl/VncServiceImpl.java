@@ -1,9 +1,9 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VncInfoDto;
@@ -271,6 +271,31 @@ public class VncServiceImpl implements VncService {
 
         // 如果列表中的端口都被使用，返回下一个可用的端口
         return (minPort <= maxPort) ? minPort : -1; // 返回 -1 表示没有可用端口
+    }
+
+    public boolean resetVmVncPassword(Integer vmHostId,String newPassword) {
+        // 获取虚拟机VNC连接信息
+        Vncinfo currentVncinfo = vncinfoService.selectVncinfoByHostId(Long.valueOf(vmHostId));
+        // 如果虚拟机没有vnc信息
+        if (currentVncinfo != null){
+            currentVncinfo.setPassword(newPassword);
+            // 修改vnc密码
+            if (vncinfoService.updateVncinfo(currentVncinfo)){
+                Vncinfo vncinfo = vncinfoService.selectVncinfoByHostId(Long.valueOf(vmHostId));
+                // 判空
+                if (vncinfo != null){
+                    Vncdata vncdata = vncdataService.selectVncdataByVncinfoIdAndStatusOk(Long.valueOf(vncinfo.getId()));
+                    // 判空
+                    if (vncdata != null){
+                        vncdata.setStatus(1);
+                        vncdataService.updateVncdata(vncdata);
+                        return true;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

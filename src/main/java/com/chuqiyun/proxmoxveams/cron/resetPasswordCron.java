@@ -2,11 +2,9 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
-import com.chuqiyun.proxmoxveams.entity.Master;
-import com.chuqiyun.proxmoxveams.entity.Os;
-import com.chuqiyun.proxmoxveams.entity.Task;
-import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
@@ -41,6 +39,8 @@ public class resetPasswordCron {
     private OsService osService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private VncService vncService;
 
     /**
     * @Author: mryunqi
@@ -106,7 +106,12 @@ public class resetPasswordCron {
         vmhost.setPassword(newPassword);
         vmhostService.updateById(vmhost);
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_PASSWORD,"重置密码成功: NodeID:{} VM-ID:{}",node.getId(), task.getVmid());
-
+        try {
+            vncService.resetVmVncPassword(vmhost.getId(),newPassword);
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_PASSWORD,"重置VNC密码成功: NodeID:{} VM-ID:{}",node.getId(), task.getVmid());
+        } catch (Exception e) {
+            throw new RuntimeException(UnifiedLogger.LogType.TASK_RESET_PASSWORD + "重置VNC密码失败：" + e);
+        }
 
         // 添加开机任务
         Task startTask = new Task();
