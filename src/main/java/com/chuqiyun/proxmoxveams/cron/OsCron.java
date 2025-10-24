@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpServerErrorException;
 
 import javax.annotation.Resource;
 import java.util.Map;
@@ -114,16 +115,25 @@ public class OsCron {
                         if (node.getControllerStatus() != 0) {
                             continue;
                         }
-                        // 如果节点状态为0,2，则直接跳过 0=未下载;1=下载中;2=已下载;3=下载失败
-                        if (osNodeStatus.getStatus() == 0 || osNodeStatus.getStatus() == 2) {
+                        // 如果节点状态为0,2,3，则直接跳过 0=未下载;1=下载中;2=已下载;3=下载失败
+                        if (osNodeStatus.getStatus() == 0 || osNodeStatus.getStatus() == 2 || osNodeStatus.getStatus() == 3) {
                             continue;
                         }
                         JSONObject downloadInfo;
                         try {
                             // 获取节点下载进度
                             downloadInfo = osService.getDownloadProgress(os.getId(), osNodeStatus.getNodeId());
+                        } catch (HttpServerErrorException e) {
+                            // 专门处理HTTP 500错误
+                            System.out.println("Proxmox节点["+node.getId()+"]返回500错误，响应内容: "
+                                    + e.getResponseBodyAsString());
+                            osNodeStatus.setStatus(3);
+                            // 更新节点状态
+                            os.getNodeStatus().put(key, osNodeStatus);
+                            osService.updateById(os);
+                            continue;
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            System.out.println("获取下载进度异常" + e);
                             continue;
                         }
                         String progress = downloadInfo.getString("progress");

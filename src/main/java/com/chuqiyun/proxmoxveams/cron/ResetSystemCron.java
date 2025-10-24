@@ -333,9 +333,10 @@ public class ResetSystemCron {
                     taskStatus = taskService.getById(resetPasswordTask.getId());
                     // 判断任务状态
                     if (taskStatus.getStatus() == 3) {
+                        UnifiedLogger.warn(UnifiedLogger.LogType.TASK_RESET_PASSWORD, "重置密码任务失败: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());
                         // 任务状态为3，任务失败
                         // 结束任务
-                        return;
+                        //return;
                     }
                 } while (taskStatus.getStatus() != 2);
             }

@@ -543,7 +543,7 @@ public class VmUtil {
     * @Return List<Integer> 恢复中状态列表
     */
     public static List<Integer> getRecoveringStatusList(){
-        return Arrays.asList(3, 7, 8, 9, 10, 11, 12, 13, 14);
+        return Arrays.asList(3, 7, 8, 9, 10, 11, 12, 14);
     }
 
     /**

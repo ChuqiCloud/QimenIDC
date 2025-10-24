@@ -81,6 +81,9 @@ public class resetPasswordCron {
 
         String osName = vmhost.getOs();
         Os os = osService.selectOsByFileName(osName);
+        if (os == null) {
+            os = osService.selectOsByFileName(vmhost.getOsName());
+        }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // cloud-init
         int cloudInit = os.getCloud();
@@ -113,20 +116,23 @@ public class resetPasswordCron {
             throw new RuntimeException(UnifiedLogger.LogType.TASK_RESET_PASSWORD + "重置VNC密码失败：" + e);
         }
 
-        // 添加开机任务
-        Task startTask = new Task();
-        startTask.setNodeid(vmhost.getNodeid());
-        startTask.setVmid(vmhost.getVmid());
-        startTask.setHostid(vmhost.getId());
-        startTask.setType(START_VM);
-        startTask.setStatus(0);
-        startTask.setCreateDate(System.currentTimeMillis());
-        if (!taskService.insertTask(startTask)){
-            UnifiedLogger.error(UnifiedLogger.LogType.TASK_START_VM,"添加创建开机任务: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());
-            // 修改任务状态为失败
-            task.setStatus(3);
-            task.setError("创建修改启动项任务失败");
-            taskService.updateById(task);
+        if( vmhost.getStatus() != 13)
+        {
+            // 添加开机任务 13为重装系统任务，重装系统不需要创建开机任务
+            Task startTask = new Task();
+            startTask.setNodeid(vmhost.getNodeid());
+            startTask.setVmid(vmhost.getVmid());
+            startTask.setHostid(vmhost.getId());
+            startTask.setType(START_VM);
+            startTask.setStatus(0);
+            startTask.setCreateDate(System.currentTimeMillis());
+            if (!taskService.insertTask(startTask)){
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_START_VM,"添加创建开机任务: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());
+                // 修改任务状态为失败
+                task.setStatus(3);
+                task.setError("创建修改启动项任务失败");
+                taskService.updateById(task);
+            }
         }
         // 修改任务状态为2
         task.setStatus(2);
