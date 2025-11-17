@@ -155,7 +155,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setKvm(true);
         }
         // 判断cpu是否支持
-        else if (!VmUtil.isCpuTypeExist(vmParams.getCpu())) {
+        if (!VmUtil.isCpuTypeExist(vmParams.getCpu())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CPU_TYPE_NOT_EXIST, null);
         }
         // 如果开启了nested，但是cpu必须为host或max
@@ -448,6 +448,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         int vmId = vmid;
         param.put("vmid", vmId);
         param.put("name", vmParams.getHostname());
+        // 设置CPU
+        param.put("cpu", vmParams.getCpu());
         // 设置CPU插槽
         param.put("sockets", vmParams.getSockets());
         // 设置CPU
