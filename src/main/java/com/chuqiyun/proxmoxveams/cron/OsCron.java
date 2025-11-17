@@ -49,20 +49,23 @@ public class OsCron {
             if (osPage.getRecords().size() > 0) {
                 for (Os os : osPage.getRecords()) {
                     String url = os.getUrl();
+                    long size = 0;
                     // 获取镜像大小
-                    long size = ModUtil.getUrlFileSize(url);
-                    // 如果为0，说明url不可用
-                    if (size == 0) {
-                        // 设置镜像状态为2，2为异常
+                    try {
+                        size = ModUtil.getUrlFileSize(url);
+                    } catch (Exception e) {
                         os.setStatus(2);
-                        // 记录异常信息
-                        os.setReason("镜像下载地址不可用");
+                        os.setReason("连接超时: " + url + ", 错误: " + e.getMessage());
                         osService.updateById(os);
                         continue;
                     }
-                    // 设置镜像大小
+                    if (size == 0) {
+                        os.setStatus(2);
+                        os.setReason("镜像下载地址不可用: " + url);
+                        osService.updateById(os);
+                        continue;
+                    }
                     os.setSize(ModUtil.formatFileSize(size));
-                    // 如果镜像状态为2，说明之前镜像下载地址不可用，现在可用了，所以设置镜像状态为0，并清空异常信息
                     if (os.getStatus() == 2) {
                         os.setStatus(0);
                         os.setReason("");

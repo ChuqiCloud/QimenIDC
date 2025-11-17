@@ -112,7 +112,8 @@ public class ModUtil {
             fileSize = httpUrl.getContentLengthLong();
             httpUrl.disconnect();
         } catch (Exception e) {
-            e.printStackTrace();
+            System.out.println("获取镜像大小异常：" + url);
+//            e.printStackTrace();
         }
         return fileSize;
     }

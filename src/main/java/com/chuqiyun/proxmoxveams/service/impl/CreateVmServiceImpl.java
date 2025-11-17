@@ -510,15 +510,17 @@ public class CreateVmServiceImpl implements CreateVmService {
             param.put("ide2", vmParams.getStorage()+":cloudinit");
         }
         // 设置网络
+        double bandWidthValue = vmParams.getBandwidth() / 8.0;
+        String bandWidth = String.format("%.2f", bandWidthValue);
         if (vmParams.getBridge() == null) {
             if(vmParams.getIfnat() == 1 && node.getNatbridge() != null) //nat网口
             {
-                param.put("net0", "virtio,bridge="+node.getNatbridge()+",rate="+vmParams.getBandwidth());
+                param.put("net0", "virtio,bridge="+node.getNatbridge()+",rate="+bandWidth);
             } else {
-                param.put("net0", "virtio,bridge=vmbr0,rate="+vmParams.getBandwidth());
+                param.put("net0", "virtio,bridge=vmbr0,rate="+bandWidth);
             }
         }else {
-            param.put("net0", "virtio,bridge="+vmParams.getBridge()+",rate="+vmParams.getBandwidth());
+            param.put("net0", "virtio,bridge="+vmParams.getBridge()+",rate="+bandWidth);
         }
 
         // 获取cookie

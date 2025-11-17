@@ -107,8 +107,8 @@ public class DeleteVmCron {
             }
             // 如果vmInfo不为空，才进行下一步操作
             if (vmInfo != null) {
-                // 判断虚拟机状态是否为1或者为4
-                if (vmhost.getStatus() != 1 && vmhost.getStatus() != 4) {
+                // 判断虚拟机状态是否为1关机或2停止或4禁用
+                if (vmhost.getStatus() != 1 && vmhost.getStatus() != 2 && vmhost.getStatus() != 4) {
                     return;
                 }
 
