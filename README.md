@@ -39,7 +39,7 @@
 [https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd](https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd)
 
 ## 前端项目
-[前端项目](https://gitee.com/lvyunqi/QimenIDC-Client)
+[前端部署](https://docs.acmecloud.cn/docs/qimenidc/installation/client)
 
 ## 快速开始
 
@@ -135,7 +135,7 @@ wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash
 
 更换源教程：
 
-[https://bbs.acmecloud.cn/thread-6-1-1.html](https://www.mryunqi.com/archives/576)
+[https://docs.acmecloud.cn/docs/qimenidc/replace-mirror-source](https://docs.acmecloud.cn/docs/qimenidc/replace-mirror-source)
 
 ### 节点端口开放（宿主机）
     
