@@ -42,14 +42,37 @@ public class FlowServiceImpl implements FlowService {
     public Boolean insertFlowdata(Integer hostId) {
         // 获取该主机的最新流量临表数据
         Flowdata flowdata = flowdataService.selectFlowdataByHostid(hostId);
-        // 判空
-        if (flowdata == null) {
-            return false;
-        }
         // 获取该主机的信息
         Vmhost vmhost = vmhostService.getById(hostId);
         // 判空
         if (vmhost == null) {
+            return false;
+        }
+        // 判空
+        if (flowdata == null) {
+            // 筛选出最大的时间戳
+            JSONObject hourHistoryData = vmInfoService.getVmInfoRrdData(hostId, "hour", "AVERAGE");
+            // 判空
+            if (hourHistoryData == null) {
+                return false;
+            }
+            JSONArray hourHistoryDataArray = hourHistoryData.getJSONArray("data"); // 获取小时历史数据数组
+            Map<String,String> hourHistoryDataMap = new HashMap<>();
+            long maxTime = 0L;
+            maxTime = hourHistoryDataArray.stream()
+                    .mapToLong(item -> Long.parseLong(((JSONObject) item).getString("time")))
+                    .map(TimeUtil::tenToThirteen)
+                    .max()
+                    .orElse(0L);
+            // 创建流量临表对象
+            Flowdata newFlowdata = new Flowdata();
+            newFlowdata.setNodeId(vmhost.getNodeid());
+            newFlowdata.setHostid(hostId);
+            newFlowdata.setRrd(hourHistoryDataMap);
+            newFlowdata.setUsedFlow(0.00);
+            newFlowdata.setCreateDate(maxTime);
+            // 插入新的流量临表数据
+            flowdataService.insertFlowdata(newFlowdata);
             return false;
         }
         // 该主机获取到的最新流量临表同步时间戳
