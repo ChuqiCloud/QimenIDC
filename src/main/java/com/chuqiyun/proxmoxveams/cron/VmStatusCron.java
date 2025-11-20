@@ -497,7 +497,7 @@ public class VmStatusCron {
             // 先获取虚拟机的状态码
             int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
             // 如果虚拟机状态为1或者 2
-            if (vmStatus ==1 || vmStatus == 2){
+            if (vmStatus ==1 || vmStatus == 2 || vmStatus == 15){
                 // 设置任务状态为2 2为执行完成
                 task.setStatus(2);
                 taskService.updateById(task);
@@ -521,7 +521,7 @@ public class VmStatusCron {
                 return;
             }
             // 设置数据库中的vm状态为4 4为暂停
-            vmhost.setStatus(4);
+            vmhost.setStatus(15);
             vmhostService.updateById(vmhost);
             // 设置任务状态为2 2为执行完成
             task.setStatus(2);

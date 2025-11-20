@@ -162,7 +162,8 @@ public class FlowDataCron {
         int i = 1;
         while (true){
             QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
-            // 获取状态为15的虚拟机 15：流量超限
+            // 获取状态为15的虚拟机 15：流量超限 .eq("status", 2).eq("pause_info", "流量超限")
+            //queryWrapper.eq("status", 2).eq("pause_info", "流量超限");
             queryWrapper.ne("status", 4).eq("status", 15).ne("status", 5);
             // 分页获取100台虚拟机
             Page<Vmhost> vmhostPage = vmhostService.selectPage(i, 100, queryWrapper);

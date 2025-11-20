@@ -805,8 +805,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 this.power(vmhost.getId(),"pause",null);
                 continue;
             }
-            if (vmStatus == 6 || vmStatus == 13){
-                // 6创建中 13重装系统中 两个状态不更新
+            if (vmStatus == 6 || vmStatus == 13 || vmStatus == 15){
+                // 6创建中 13重装系统中 15超流暂停 状态不更新
                 continue;
             }
             // 其他情况，直接更新数据库中的状态
