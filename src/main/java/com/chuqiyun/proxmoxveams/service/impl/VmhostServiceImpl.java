@@ -212,7 +212,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setIpList(vmParams.getIpList());
         vmhost.setIfnat(vmParams.getIfnat());
         vmhost.setNatnum(vmParams.getNatnum());
-        vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024);
+        vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
         }

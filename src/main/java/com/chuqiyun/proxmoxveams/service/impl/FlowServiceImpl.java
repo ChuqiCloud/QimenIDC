@@ -94,6 +94,14 @@ public class FlowServiceImpl implements FlowService {
             if (time > flowdataTimestamp) {
                 // 判断是否存在netin和netout的键值对
                 if (hourHistoryDataObject.containsKey("netin") && hourHistoryDataObject.containsKey("netout")) {
+                    BigDecimal lastTime;
+                    if (i == 0){
+                        lastTime = BigDecimal.valueOf(flowdataTimestamp / 1000);
+                    } else {
+                        JSONObject lastHourHistoryDataObject = hourHistoryDataArray.getJSONObject(i-1);
+                        lastTime = lastHourHistoryDataObject.getBigDecimal("time");
+                    }
+                    BigDecimal dtime = hourHistoryDataObject.getBigDecimal("time").subtract(lastTime);
                     // netin 143.926666666667
                     // 将netin与netout数据准确相加
                     String netin = hourHistoryDataObject.getString("netin");
@@ -101,7 +109,8 @@ public class FlowServiceImpl implements FlowService {
                     // 使用BigDecimal进行精确计算
                     BigDecimal netinBigDecimal = new BigDecimal(netin);
                     BigDecimal netoutBigDecimal = new BigDecimal(netout);
-                    String netinAndNetout = netinBigDecimal.add(netoutBigDecimal).toString();
+                    BigDecimal netinAndNetoutBigDecimal = netinBigDecimal.add(netoutBigDecimal);
+                    String netinAndNetout = netinAndNetoutBigDecimal.multiply(dtime).toString();
                     // 将时间戳作为key，流量作为value存入map
                     hourHistoryDataMap.put(Long.toString(time),netinAndNetout);
                 }else{
