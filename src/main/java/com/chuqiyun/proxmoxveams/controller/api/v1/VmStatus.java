@@ -82,4 +82,22 @@ public class VmStatus {
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
+    /**
+     * @Author: 星禾
+     * @Description: 重置虚拟机流量接口
+     * @DateTime: 2025/11/21 23:07
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/resetVmHostFlow/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object resetVmHostFlow(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        // 判断虚拟机是否存在
+        if (vmhostService.getById(hostId) == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Boolean result = vmhostService.resetVmHostFlow(Math.toIntExact(hostId));
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
 }

@@ -66,7 +66,7 @@ public interface VmhostService extends IService<Vmhost> {
     Long getVmhostCountByStatus(int status);
 
     Integer getVmhostNodeId(int hostId);
-
+    Boolean resetVmHostFlow(int hostId);
     Object getVmhostNatByVmid(int page, int size, int hostId);
     Object getVmhostNatAddrByVmid(int hostId);
     Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);

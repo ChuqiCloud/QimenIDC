@@ -1295,5 +1295,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         resultData.put("natAddr", nataddr);
         return ResponseResult.ok(resultData);
     }
+    /**
+     * @Author: 星禾
+     * @Description: 重置虚拟机流量
+     * @DateTime: 2025/11/21 21:00
+     * @Params: hostId 虚拟机id
+     */
+    @Override
+    public Boolean resetVmHostFlow (int hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        vmhost.setUsedFlow(0.0);
+        return this.updateById(vmhost);
+    }
 }
 
