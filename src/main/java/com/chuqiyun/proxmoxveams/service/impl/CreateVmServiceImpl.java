@@ -348,6 +348,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getNatnum() == null) {
             vmParams.setNatnum(0);
         }
+        if (vmParams.getExtraFlowLimit() == null)
+        {
+            vmParams.setExtraFlowLimit(0L);
+        }
         // 将vmParams转换为HashMap
         HashMap<Object, Object> vmParamsMap;
         try {

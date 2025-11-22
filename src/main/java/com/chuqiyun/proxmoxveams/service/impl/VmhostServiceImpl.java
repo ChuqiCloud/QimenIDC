@@ -212,6 +212,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setIpList(vmParams.getIpList());
         vmhost.setIfnat(vmParams.getIfnat());
         vmhost.setNatnum(vmParams.getNatnum());
+        vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit());
         vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
@@ -1305,6 +1306,20 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Boolean resetVmHostFlow (int hostId) {
         Vmhost vmhost = this.getById(hostId);
         vmhost.setUsedFlow(0.0);
+        return this.updateById(vmhost);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 虚拟添加机流量包
+     * @DateTime: 2025/11/22 20:20
+     * @Params: hostId 虚拟机id flow 流量 单位G
+     */
+    @Override
+    public Boolean addVmHostFlow (int hostId, Long flow) {
+        Vmhost vmhost = this.getById(hostId);
+        Long oldFlow = vmhost.getExtraFlowLimit();
+        Long newFlow = flow * 1024 * 1024 * 1024 + oldFlow;
+        vmhost.setExtraFlowLimit(newFlow);
         return this.updateById(vmhost);
     }
 }

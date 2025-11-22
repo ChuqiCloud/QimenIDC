@@ -196,6 +196,8 @@ public class Vmhost extends Model<Vmhost> {
     private List<String> ipList;
     private Integer ifnat;
     private Integer natnum;
+    // 额外流量包
+    private Long extraFlowLimit;
 
 
 

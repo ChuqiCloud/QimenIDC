@@ -82,7 +82,6 @@ public class SysVmHostController {
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
-
     /**
      * @Author: 星禾
      * @Description: pve虚拟机重置流量操作
@@ -90,11 +89,35 @@ public class SysVmHostController {
      */
     @AdminApiCheck
     @RequestMapping(value = "/resetVmHostFlow/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT})
-    public Object resetVmHostFlow(@PathVariable("hostId") Integer hostId,
-                        @RequestBody(required = false) JSONObject data) throws UnauthorizedException {
+    public Object resetVmHostFlow(@PathVariable("hostId") Integer hostId) throws UnauthorizedException {
         // 判断虚拟机是否存在
         if (vmhostService.getById(hostId) == null) {
             return ResponseResult.fail("虚拟机不存在");
+        }
+
+        Boolean result = vmhostService.resetVmHostFlow(hostId);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: pve虚拟机添加流量包操作
+     * @DateTime: 2025/11/22 20:11
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/addVmHostFlow/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object addVmHostFlow(@PathVariable("hostId") Integer hostId,
+                                  @RequestParam("flow") Long flow) throws UnauthorizedException {
+        // 判断虚拟机是否存在
+        if (vmhostService.getById(hostId) == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+
+        if (flow < 0 || flow > 1000000){
+            return ResponseResult.fail("流量包不能过大（1000000G）或小于0");
         }
 
         Boolean result = vmhostService.resetVmHostFlow(hostId);

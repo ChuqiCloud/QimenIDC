@@ -196,6 +196,10 @@ public class VmParams {
     private Long expirationTime;
     // 临时ip list
     private List<String> ipList;
+    // 是否开启Nat 0关闭 1开启
     private Integer ifnat;
+    // nat数量
     private Integer natnum;
+    // 额外流量包
+    private Long extraFlowLimit;
 }
