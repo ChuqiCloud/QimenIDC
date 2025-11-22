@@ -330,7 +330,8 @@ create table vmhost
     expiration_time       mediumtext                                 not null comment '到期时间',
     ip_list               text                                       null,
     ifnat                 int          default 0                     not null comment '是否nat 0否 1是',
-    natnum                int          default 0                     not null comment 'nat端口转发数量'
+    natnum                int          default 0                     not null comment 'nat端口转发数量',
+    extra_flow_limit      bigint       default 0                     not null comment '临时流量包'
 );
 
 create table vncdata
