@@ -116,7 +116,7 @@ public class FlowDataCron {
             Page<Vmhost> vmhostPage = vmhostService.selectPage(i, 100, queryWrapper);
             List<Vmhost> vmhostList = vmhostPage.getRecords();
             // 如果为空或者等于0，跳出循环
-            if (vmhostList == null || vmhostList.size() == 0) {
+            if (vmhostList == null || vmhostList.isEmpty()) {
                 break;
             }
             // 遍历虚拟机
@@ -127,6 +127,7 @@ public class FlowDataCron {
                 }
                 // 虚拟机流量上限
                 long flowLimit = vmhost.getFlowLimit();
+                long extraFlowLimit = vmhost.getExtraFlowLimit();
                 // 如果为0，跳出循环
                 if (flowLimit == 0){
                     continue;
@@ -134,7 +135,7 @@ public class FlowDataCron {
                 // 虚拟机已用流量
                 double usedFlow = vmhost.getUsedFlow();
                 // 如果已用流量大于流量上限
-                if (usedFlow > flowLimit){
+                if (usedFlow > (flowLimit + extraFlowLimit)){
                     // 暂停虚拟机
                     vmhostService.power(vmhost.getId(),"qosPause",null);
                     // 修改虚拟机状态为流量超限
@@ -180,6 +181,7 @@ public class FlowDataCron {
                 }
                 // 虚拟机流量上限
                 long flowLimit = vmhost.getFlowLimit();
+                long extraFlowLimit = vmhost.getExtraFlowLimit();
                 // 如果为0
                 if (flowLimit == 0){
                     vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
@@ -190,7 +192,7 @@ public class FlowDataCron {
                 // 虚拟机已用流量
                 double usedFlow = vmhost.getUsedFlow();
                 // 如果已用流量小于流量上限
-                if (usedFlow < flowLimit){
+                if (usedFlow < (flowLimit + extraFlowLimit)){
                     vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
                     vmhost.setPauseInfo(null);
                     vmhost.setStatus(0);
@@ -219,12 +221,13 @@ public class FlowDataCron {
             Page<Vmhost> vmhostPage = vmhostService.selectPage(i, 100);
             List<Vmhost> vmhostList = vmhostPage.getRecords();
             // 如果为空或者等于0，跳出循环
-            if (vmhostList == null || vmhostList.size() == 0) {
+            if (vmhostList == null || vmhostList.isEmpty()) {
                 break;
             }
             // 遍历虚拟机
             for (Vmhost vmhost : vmhostList) {
                 vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
+                vmhost.setExtraFlowLimit(0L); // 重置流量包0
                 vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
                 vmhostService.updateById(vmhost);
             }
