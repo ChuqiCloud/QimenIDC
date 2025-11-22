@@ -116,7 +116,7 @@ public class VmStatus {
         if (flow < 0 || flow > 1000000){
             return ResponseResult.fail("流量包不能过大（1000000G）或小于0");
         }
-        Boolean result = vmhostService.resetVmHostFlow(Math.toIntExact(hostId));
+        Boolean result = vmhostService.addVmHostFlow(Math.toIntExact(hostId),flow);
         if (result == null) {
             return ResponseResult.fail("操作失败");
         }

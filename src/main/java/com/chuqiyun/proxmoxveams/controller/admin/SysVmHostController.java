@@ -120,7 +120,7 @@ public class SysVmHostController {
             return ResponseResult.fail("流量包不能过大（1000000G）或小于0");
         }
 
-        Boolean result = vmhostService.resetVmHostFlow(hostId);
+        Boolean result = vmhostService.addVmHostFlow(hostId,flow);
         if (result == null) {
             return ResponseResult.fail("操作失败");
         }
