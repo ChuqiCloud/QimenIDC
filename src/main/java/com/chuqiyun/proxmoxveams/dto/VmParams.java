@@ -202,4 +202,5 @@ public class VmParams {
     private Integer natnum;
     // 额外流量包
     private Long extraFlowLimit;
+    private Integer resetFlowTime;
 }

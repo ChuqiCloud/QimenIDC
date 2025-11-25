@@ -13,6 +13,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 
 /**
@@ -226,6 +230,7 @@ public class FlowDataCron {
             }
             // 遍历虚拟机
             for (Vmhost vmhost : vmhostList) {
+                if (vmhost.getResetFlowTime() == 0) continue; // 跳过0 0表示开通日
                 vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
                 vmhost.setExtraFlowLimit(0L); // 重置流量包0
                 vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
@@ -238,7 +243,6 @@ public class FlowDataCron {
             i++;
         }
     }
-
     /**
     * @Author: mryunqi
     * @Description: 遗漏重置流量
@@ -258,11 +262,13 @@ public class FlowDataCron {
             }
             // 遍历虚拟机
             for (Vmhost vmhost : vmhostList) {
+                if (vmhost.getResetFlowTime() == 0) continue; // 跳过0 0表示开通日
                 // 上一次重置时间戳
                 long lastResetTime = vmhost.getLastResetFlow();
                 // 如果为空，则重置流量
                 if (lastResetTime == 0) {
                     vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
+                    vmhost.setExtraFlowLimit(0L); // 重置流量包0
                     vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
                     vmhostService.updateById(vmhost);
                     continue;
@@ -271,6 +277,7 @@ public class FlowDataCron {
                 if (TimeUtil.isLessThanThirtyDays(lastResetTime)) {
                     // 重置流量
                     vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
+                    vmhost.setExtraFlowLimit(0L); // 重置流量包0
                     vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
                     vmhostService.updateById(vmhost);
                 }
@@ -281,5 +288,65 @@ public class FlowDataCron {
             }
             i++;
         }
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 开通日流量重置定时任务
+     * @DateTime: 2025/11/25 09:25
+     */
+    @Async
+    @Scheduled(cron = "0 0 0 * * ?") // 每天0点执行
+    public void vmFlowDayResetCron() {
+        int i = 1;
+        while (true) {
+            Page<Vmhost> vmhostPage = vmhostService.selectPage(i, 100);
+            List<Vmhost> vmhostList = vmhostPage.getRecords();
+            if (vmhostList == null || vmhostList.isEmpty()) break;
+
+            for (Vmhost vmhost : vmhostList) {
+                // 跳过按月重置的机器（月重置已单独处理）
+                if (vmhost.getResetFlowTime() == 1) continue;
+
+                // 处理开通日重置逻辑
+                long createTime = vmhost.getCreateTime();
+                LocalDate createDate = Instant.ofEpochMilli(createTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate();
+
+                // 计算有效重置日（自动处理31日等特殊情况）
+                LocalDate nextResetDate = calculateResetDate(createDate);
+                LocalDate today = LocalDate.now();
+
+                // 仅在匹配日期执行重置
+                if (today.equals(nextResetDate)) {
+                    vmhost.setUsedFlow(0.00);
+                    vmhost.setExtraFlowLimit(0L);
+                    vmhost.setLastResetFlow(System.currentTimeMillis());
+                    vmhostService.updateById(vmhost);
+                }
+            }
+
+            if (i == vmhostPage.getPages()) break;
+            i++;
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description 计算有效重置日期（自动处理月末情况）
+     * @param createDate 开通日期
+     * @return 次月有效重置日期
+     */
+    private LocalDate calculateResetDate(LocalDate createDate) {
+        // 获取开通日（1-31）
+        int dayOfMonth = createDate.getDayOfMonth();
+        // 特殊处理31日开通情况
+        if (dayOfMonth > 28) {
+            // 获取次月最后一天
+            LocalDate nextMonth = createDate.plusMonths(1);
+            return nextMonth.with(TemporalAdjusters.lastDayOfMonth());
+        }
+        // 常规情况：次月同一天
+        return createDate.plusMonths(1).withDayOfMonth(dayOfMonth);
     }
 }

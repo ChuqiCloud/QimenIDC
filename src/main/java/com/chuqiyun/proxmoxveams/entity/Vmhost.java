@@ -198,6 +198,7 @@ public class Vmhost extends Model<Vmhost> {
     private Integer natnum;
     // 额外流量包
     private Long extraFlowLimit;
+    private Integer resetFlowTime;
 
 
 

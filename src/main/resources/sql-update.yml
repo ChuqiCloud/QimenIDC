@@ -139,3 +139,6 @@ build: # 内部构建版本信息
     1:
       - "alter table vmhost
                    add extra_flow_limit bigint default 0 not null comment '临时流量包' after natnum;"
+    2:
+      - "alter table vmhost
+                   add reset_flow_time int default 0 not null comment '流量重置日 0开通日 1月初' after extra_flow_limit;"
