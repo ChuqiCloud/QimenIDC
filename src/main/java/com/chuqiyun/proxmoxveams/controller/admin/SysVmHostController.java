@@ -6,6 +6,8 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -125,5 +127,19 @@ public class SysVmHostController {
             return ResponseResult.fail("操作失败");
         }
         return ResponseResult.ok("操作成功");
+    }
+    /**
+     * @Author: 星禾
+     * @Description: pve虚拟机修改配置
+     * @DateTime: 2025/11/22 20:11
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/updateVm",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object updateVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = vmhostService.updateVm(vmParams);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
 }

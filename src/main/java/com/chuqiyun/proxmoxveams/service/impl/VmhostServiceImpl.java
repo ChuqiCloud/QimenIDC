@@ -999,6 +999,77 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 更新虚拟机
+     * @DateTime: 2025/11/25 11:22
+     * @Params: VmParams vmParams
+     * @Return UnifiedResultDto<Object> 统一返回结果
+     */
+    @Override
+    public UnifiedResultDto<Object> updateVm(VmParams vmParams){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmParams.getHostid());
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit());
+        if (vmParams.getNatnum() != null ) vmhost.setNatnum(vmParams.getNatnum());
+        if (vmParams.getResetFlowTime() != null ) vmhost.setResetFlowTime(vmParams.getResetFlowTime());
+        if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
+        || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
+            // 判断状态，先关机
+            if (vmhost.getStatus() == 0){
+                this.power(vmhost.getId(), "shutdown",null);
+            }
+            Master node = masterService.getById(vmhost.getNodeid());
+            // 获取cookie
+            HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            if (vmParams.getSockets() != null) {
+                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"sockets",vmParams.getSockets().toString());
+                vmhost.setSockets(vmParams.getSockets());
+            }
+            if (vmParams.getCores() != null) {
+                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"cores",vmParams.getCores().toString());
+                vmhost.setCores(vmParams.getCores());
+            }
+            if (vmParams.getThreads() != null) {
+                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"threads",vmParams.getThreads().toString());
+                vmhost.setThreads(vmParams.getThreads());
+            }
+            if (vmParams.getMemory() != null) {
+                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"memory",vmParams.getMemory().toString());
+                vmhost.setMemory(vmParams.getMemory());
+            }
+            if (vmParams.getSystemDiskSize() != null) {
+                // 硬盘只增不减
+                if (vmParams.getSystemDiskSize() < vmhost.getSystemDiskSize()){
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null);
+                } else {
+                    HashMap<String, Object> params = new HashMap<>();
+                    params.put("disk","scsi0");
+                    params.put("size",vmParams.getSystemDiskSize()+"G");
+                    try {
+                        proxmoxApiUtil.putNodeApi(node,cookieMap, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/resize", params);
+                        vmhost.setSystemDiskSize(vmParams.getSystemDiskSize());
+                    } catch (Exception e) {
+                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null);
+                    }
+                }
+            }
+            if (vmParams.getBandwidth() != null) {
+                double bandWidthValue = vmParams.getBandwidth() / 8.0;
+                String bandWidth = String.format("%.2f", bandWidthValue);
+                proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
+            }
+            this.power(vmhost.getId(), "start",null);
+        }
+        this.updateById(vmhost);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 创建重置密码任务
     * @DateTime: 2023/9/29 15:09

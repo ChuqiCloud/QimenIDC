@@ -51,6 +51,8 @@ public interface VmhostService extends IService<Vmhost> {
 
     UnifiedResultDto<Object> deleteVm(Long vmHostId);
 
+    UnifiedResultDto<Object> updateVm(VmParams vmParams);
+
     UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword);
 
     Boolean addVmHostTask(Object hostId, Object taskId);

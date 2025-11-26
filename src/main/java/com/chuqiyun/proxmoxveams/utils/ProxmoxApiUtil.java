@@ -400,4 +400,16 @@ public class ProxmoxApiUtil {
         params.put("citype",citype);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
     }
+    /**
+     * @Author: 星禾
+     * @Description: 统一接口-重置虚拟机配置
+     * @DateTime: 2025/11/26 21:00
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String password 密码
+     */
+    public void resetVmConfig(Master node, HashMap<String,String> cookie, Integer vmid, String type, String values) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        // 设置虚拟机citype
+        params.put(type,values);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
 }

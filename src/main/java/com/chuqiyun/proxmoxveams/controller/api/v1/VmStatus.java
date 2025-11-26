@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -121,5 +123,19 @@ public class VmStatus {
             return ResponseResult.fail("操作失败");
         }
         return ResponseResult.ok("操作成功");
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 更新虚拟机信息接口
+     * @DateTime: 2025/11/25 11:07
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/updateVm",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object addVmHostFlow(@RequestBody VmParams vmParams) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = vmhostService.updateVm(vmParams);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
 }
