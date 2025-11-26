@@ -332,7 +332,8 @@ create table vmhost
     ifnat                 int          default 0                     not null comment '是否nat 0否 1是',
     natnum                int          default 0                     not null comment 'nat端口转发数量',
     extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
-    reset_flow_time      int       default 0                     not null comment '流量重置日 0开通日 1月初'
+    reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
+    out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb'
 );
 
 create table vncdata

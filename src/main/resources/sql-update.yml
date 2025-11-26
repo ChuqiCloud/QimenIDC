@@ -142,3 +142,6 @@ build: # 内部构建版本信息
     2:
       - "alter table vmhost
                    add reset_flow_time int default 0 not null comment '流量重置日 0开通日 1月初' after extra_flow_limit;"
+    3:
+      - "alter table vmhost
+                   add out_flow int default 0 not null comment '超流操作0挂起 大于0表示限速x 单位kb' after reset_flow_time;"

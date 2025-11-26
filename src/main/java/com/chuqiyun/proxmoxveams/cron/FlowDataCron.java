@@ -2,10 +2,12 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.FlowService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -17,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -140,12 +143,25 @@ public class FlowDataCron {
                 double usedFlow = vmhost.getUsedFlow();
                 // 如果已用流量大于流量上限
                 if (usedFlow > (flowLimit + extraFlowLimit)){
-                    // 暂停虚拟机
-                    vmhostService.power(vmhost.getId(),"qosPause",null);
-                    // 修改虚拟机状态为流量超限
-                    vmhost.setStatus(15);
-                    vmhost.setPauseInfo("流量超限");
-                    vmhostService.updateById(vmhost);
+                    if (vmhost.getOutFlow() == 0){
+                        // 暂停虚拟机
+                        vmhostService.power(vmhost.getId(),"qosPause",null);
+                        // 修改虚拟机状态为流量超限
+                        vmhost.setStatus(15);
+                        vmhost.setPauseInfo("流量超限");
+                        vmhostService.updateById(vmhost);
+                    } else {
+                        vmhost.setStatus(15);
+                        vmhost.setPauseInfo("流量超限");
+                        vmhostService.updateById(vmhost);
+                        Master node = masterService.getById(vmhost.getNodeid());
+                        // 获取cookie
+                        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+                        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+                        double bandWidthValue = vmhost.getOutFlow() / 1024.0 / 8.0;
+                        String bandWidth = String.format("%.3f", bandWidthValue);
+                        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
+                    }
                 }
             }
             // 如果当前页数等于总页数则跳出循环
@@ -188,19 +204,13 @@ public class FlowDataCron {
                 long extraFlowLimit = vmhost.getExtraFlowLimit();
                 // 如果为0
                 if (flowLimit == 0){
-                    vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
-                    vmhost.setPauseInfo(null);
-                    vmhost.setStatus(0);
-                    vmhostService.updateById(vmhost);
+                    outFlowIsZero(vmhost);
                 }
                 // 虚拟机已用流量
                 double usedFlow = vmhost.getUsedFlow();
                 // 如果已用流量小于流量上限
                 if (usedFlow < (flowLimit + extraFlowLimit)){
-                    vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
-                    vmhost.setPauseInfo(null);
-                    vmhost.setStatus(0);
-                    vmhostService.updateById(vmhost);
+                    outFlowIsZero(vmhost);
                 }
             }
             // 如果当前页数等于总页数则跳出循环
@@ -208,6 +218,22 @@ public class FlowDataCron {
                 break;
             }
             i++;
+        }
+    }
+
+    private void outFlowIsZero(Vmhost vmhost) {
+        if (vmhost.getOutFlow() == 0){
+            vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
+            vmhost.setPauseInfo(null);
+            vmhost.setStatus(0);
+            vmhostService.updateById(vmhost);
+        } else {
+            vmhost.setPauseInfo(null);
+            vmhost.setStatus(0);
+            vmhostService.updateById(vmhost);
+            double bandWidthValue = vmhost.getBandwidth() / 8.0;
+            String bandWidth = String.format("%.3f", bandWidthValue);
+            vmhostService.changeVmHostBandWidth(vmhost,bandWidth);
         }
     }
 

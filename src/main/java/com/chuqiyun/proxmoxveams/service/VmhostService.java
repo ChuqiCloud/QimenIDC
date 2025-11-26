@@ -74,5 +74,6 @@ public interface VmhostService extends IService<Vmhost> {
     Object getVmhostNatAddrByVmid(int hostId);
     Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
+    Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth);
 }
 

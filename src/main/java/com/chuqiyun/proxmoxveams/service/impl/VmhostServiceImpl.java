@@ -214,6 +214,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setNatnum(vmParams.getNatnum());
         vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit());
         vmhost.setResetFlowTime(vmParams.getResetFlowTime());
+        vmhost.setOutFlow(vmParams.getOutFlow());
         vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
@@ -1393,6 +1394,21 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Long newFlow = flow * 1024 * 1024 * 1024 + oldFlow;
         vmhost.setExtraFlowLimit(newFlow);
         return this.updateById(vmhost);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 修改虚拟机带宽
+     * @DateTime: 2025/11/26 22:20
+     * @Params: vmhost bandwidth
+     */
+    @Override
+    public Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth){
+        Master node = masterService.getById(vmhost.getNodeid());
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandwidth);
+        return true;
     }
 }
 

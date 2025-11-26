@@ -356,6 +356,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         {
             vmParams.setResetFlowTime(0);
         }
+        if (vmParams.getOutFlow() == null)
+        {
+            vmParams.setOutFlow(0);
+        }
         // 将vmParams转换为HashMap
         HashMap<Object, Object> vmParamsMap;
         try {
