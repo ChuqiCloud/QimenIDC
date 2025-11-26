@@ -1017,6 +1017,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit());
         if (vmParams.getNatnum() != null ) vmhost.setNatnum(vmParams.getNatnum());
         if (vmParams.getResetFlowTime() != null ) vmhost.setResetFlowTime(vmParams.getResetFlowTime());
+        if (vmParams.getOutFlow() != null ) vmhost.setOutFlow(vmParams.getOutFlow());
         if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
         || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
             // 判断状态，先关机
