@@ -1014,10 +1014,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
-        if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit());
+        if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
+        if (vmParams.getExtraFlowLimit() != null) vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit()*1024*1024*1024);
         if (vmParams.getNatnum() != null ) vmhost.setNatnum(vmParams.getNatnum());
         if (vmParams.getResetFlowTime() != null ) vmhost.setResetFlowTime(vmParams.getResetFlowTime());
         if (vmParams.getOutFlow() != null ) vmhost.setOutFlow(vmParams.getOutFlow());
+        this.updateById(vmhost);
         if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
         || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
             // 判断状态，先关机
@@ -1065,7 +1067,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 String bandWidth = String.format("%.2f", bandWidthValue);
                 proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
             }
-            this.power(vmhost.getId(), "start",null);
+            Task vmStartTask = new Task();
+            vmStartTask.setNodeid(vmhost.getNodeid());
+            vmStartTask.setVmid(vmhost.getVmid());
+            vmStartTask.setHostid(vmhost.getId());
+            vmStartTask.setType(START_VM);
+            vmStartTask.setStatus(0);
+            vmStartTask.setCreateDate(System.currentTimeMillis());
+            if (taskService.save(vmStartTask)) {
+                log.info("[Task-StartVm] 改配-开机任务创建成功: NodeId: " + vmhost.getNodeid() + ",VmId: " + vmhost.getVmid() + ",HostId: " + vmhost.getId());
+            }
         }
         this.updateById(vmhost);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
