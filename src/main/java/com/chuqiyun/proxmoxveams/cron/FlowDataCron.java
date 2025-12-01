@@ -356,6 +356,70 @@ public class FlowDataCron {
             i++;
         }
     }
+    /**
+     * @Author: 星禾
+     * @Description: 遗漏重置流量2
+     * @DateTime: 2025/12/1 16:04
+     */
+    @Async
+    @Scheduled(fixedRate = 1000*5) // 5分钟执行一次
+    public void vmFlowDayResetCron2() {
+        int i = 1;
+        while (true) {
+            // 分页获取100台虚拟机
+            Page<Vmhost> vmhostPage = vmhostService.selectPage(i, 100);
+            List<Vmhost> vmhostList = vmhostPage.getRecords();
+            // 如果为空或者等于0，跳出循环
+            if (vmhostList == null || vmhostList.size() == 0) {
+                break;
+            }
+            // 遍历虚拟机
+            for (Vmhost vmhost : vmhostList) {
+                if (vmhost.getResetFlowTime() == 1) continue; // 跳过按月重置的机器
+
+                // 处理开通日重置逻辑
+                long createTime = vmhost.getCreateTime();
+                if (TimeUtil.isSameDay(createTime)) {
+                    // 该逻辑需要跳过开通日
+                    continue;
+                }
+                LocalDate createDate = Instant.ofEpochMilli(createTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate();
+
+                // 计算有效重置日（自动处理31日等特殊情况）
+                LocalDate nextResetDate = calculateResetDate(createDate);
+                LocalDate today = LocalDate.now();
+
+                // 仅在匹配日期执行重置
+                if (today.equals(nextResetDate)) {
+                    // 上一次重置时间戳
+                    long lastResetTime = vmhost.getLastResetFlow();
+                    // 如果为空，则重置流量
+                    if (lastResetTime == 0) {
+                        vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
+                        vmhost.setExtraFlowLimit(0L); // 重置流量包0
+                        vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
+                        vmhostService.updateById(vmhost);
+                        continue;
+                    }
+                    // 判断是否为本月1号之前的
+                    if (!TimeUtil.isSameDay(lastResetTime)) {
+                        // 如果不是同一天，则重置流量
+                        vmhost.setUsedFlow(0.00); // 已用流量重置为0.00
+                        vmhost.setExtraFlowLimit(0L); // 重置流量包0
+                        vmhost.setLastResetFlow(System.currentTimeMillis()); // 重置时间
+                        vmhostService.updateById(vmhost);
+                    }
+                }
+            }
+            // 如果当前页数等于总页数则跳出循环
+            if (i == vmhostPage.getPages()) {
+                break;
+            }
+            i++;
+        }
+    }
 
     /**
      * @Author: 星禾

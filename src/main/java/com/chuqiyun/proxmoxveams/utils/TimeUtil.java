@@ -58,4 +58,25 @@ public class TimeUtil {
         long firstDayOfMonthTimestamp = firstDayOfMonth.toInstant(ZoneId.systemDefault().getRules().getOffset(firstDayOfMonth)).toEpochMilli();
         return timestamp < firstDayOfMonthTimestamp;
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 判断时间戳是否为当天
+     * @DateTime: 2025/12/1 15:52
+     * @Params: long timestamp 时间戳
+     * @Return boolean true:是当天 false:不是当天
+     */
+    public static boolean isSameDay(long timestamp) {
+        // 获取当前时间的毫秒数
+        long now = System.currentTimeMillis();
+        // 将时间戳转换为LocalDate（系统默认时区）
+        LocalDate inputDate = Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+        LocalDate currentDate = Instant.ofEpochMilli(now)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+        // 比较两个日期是否相同
+        return inputDate.equals(currentDate);
+    }
 }
