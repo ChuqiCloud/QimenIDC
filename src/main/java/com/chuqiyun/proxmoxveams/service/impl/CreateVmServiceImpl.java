@@ -14,6 +14,7 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
 
@@ -242,6 +243,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 判断osType是否为空
         if (vmParams.getOsType() == null) {
             vmParams.setOsType(os.getType());
+        }
+        // 临时修复 debian
+        if(Objects.equals(vmParams.getOsType(), "debian") || Objects.equals(vmParams.getOsType(), "ubuntu")){
+            vmParams.setOsType("linux");
         }
         // 判断osType是否支持
         if (!VmUtil.isOsTypeExist(vmParams.getOsType())) {
