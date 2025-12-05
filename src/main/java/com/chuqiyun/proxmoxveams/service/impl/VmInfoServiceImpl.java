@@ -132,11 +132,11 @@ public class VmInfoServiceImpl implements VmInfoService {
         // 如果虚拟机不存在
         if (vmhost == null){
             // 将hostId作为vmid查询
-            vmhost = vmhostService.getVmhostByVmId(hostId);
+            // vmhost = vmhostService.getVmhostByVmId(hostId);
             // 如果虚拟机不存在
-            if (vmhost == null){
-                return null;
-            }
+            //if (vmhost == null){
+            return null;
+            //}
         }
         // 将Map类型的ipConfig转换为HashMap
 
@@ -189,11 +189,11 @@ public class VmInfoServiceImpl implements VmInfoService {
         // 如果虚拟机不存在
         if (vmhost == null){
             // 将hostId作为vmid查询
-            vmhost = vmhostService.getVmhostByVmId(hostId);
+            //vmhost = vmhostService.getVmhostByVmId(hostId);
             // 如果虚拟机不存在
-            if (vmhost == null){
-                return null;
-            }
+            //if (vmhost == null){
+            return null;
+            //}
         }
         Integer nodeId = vmhost.getNodeid();
         Master node = masterService.getById(nodeId);
