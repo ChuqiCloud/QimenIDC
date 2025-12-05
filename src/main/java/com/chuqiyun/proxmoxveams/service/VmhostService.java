@@ -68,6 +68,7 @@ public interface VmhostService extends IService<Vmhost> {
     Long getVmhostCountByStatus(int status);
 
     Integer getVmhostNodeId(int hostId);
+    Boolean resetVmHostStatus(int hostId);
     Boolean resetVmHostFlow(int hostId);
     Boolean addVmHostFlow(int hostId, Long flow);
     Object getVmhostNatByVmid(int page, int size, int hostId);

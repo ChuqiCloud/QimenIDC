@@ -1395,6 +1395,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
     /**
      * @Author: 星禾
+     * @Description: 重置虚拟机状态
+     * @DateTime: 2025/12/05 16:16
+     * @Params: hostId 虚拟机id
+     */
+    @Override
+    public Boolean resetVmHostStatus (int hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        vmhost.setStatus(0);
+        return this.updateById(vmhost);
+    }
+    /**
+     * @Author: 星禾
      * @Description: 虚拟添加机流量包
      * @DateTime: 2025/11/22 20:20
      * @Params: hostId 虚拟机id flow 流量 单位G

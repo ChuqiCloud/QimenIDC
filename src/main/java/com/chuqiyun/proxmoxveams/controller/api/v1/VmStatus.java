@@ -105,6 +105,24 @@ public class VmStatus {
     }
     /**
      * @Author: 星禾
+     * @Description: 重置虚拟机状态
+     * @DateTime: 2025/12/05 16:16
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/resetVmHostStatus/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object resetVmHostStatus(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        // 判断虚拟机是否存在
+        if (vmhostService.getById(hostId) == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Boolean result = vmhostService.resetVmHostStatus(Math.toIntExact(hostId));
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
+    /**
+     * @Author: 星禾
      * @Description: 添加虚拟机流量包接口
      * @DateTime: 2025/11/21 23:07
      */
