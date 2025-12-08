@@ -495,9 +495,9 @@ public class VmUtil {
     */
     public static List<IpDto> splitIpAddress(HashMap<String,String> ipConfig){
         List<IpDto> ipList = new ArrayList<>();
-        IpDto ipAddressEntity = new IpDto();
         // count为key,ip地址为value,如1=ip=192.168.1.2/28,gw=192.168.1.1
         for (String s : ipConfig.keySet()) {
+            IpDto ipAddressEntity = new IpDto();
             String[] split = ipConfig.get(s).split(",");
             for (String s1 : split) {
                 // 再以等号分割
