@@ -130,8 +130,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return Vmhost 虚拟机实例信息
     */
     @Override
-    public Vmhost getVmhostByName(String name) {
-        return this.getOne(new QueryWrapper<Vmhost>().eq("name",name));
+    public Page<Vmhost> getVmhostByName(Integer page, Integer limit, String hostname) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("hostname",hostname));
     }
 
     /**

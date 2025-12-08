@@ -94,8 +94,8 @@ public class VmInfoServiceImpl implements VmInfoService {
             return pageMap;
         }
         // 如果参数为主机名
-        if (param.equals("name")){
-            return vmhostService.getVmhostByName(value);
+        if (param.equals("hostname")){
+            return vmhostService.getVmhostByName(page,size,value);
         }
         // 如果参数为虚拟机ID
         if (param.equals("vmid")){

@@ -33,7 +33,7 @@ public interface VmhostService extends IService<Vmhost> {
 
     Page<Vmhost> selectPageByIp(Integer page, Integer limit, String ip);
 
-    Vmhost getVmhostByName(String name);
+    Page<Vmhost> getVmhostByName(Integer page, Integer limit, String hostname);
 
     Page<Vmhost> selectPageByNodeId(Integer page, Integer limit, String nodeId);
 
