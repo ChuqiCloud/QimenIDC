@@ -10,6 +10,7 @@ import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.security.KeyManagementException;
@@ -127,31 +128,37 @@ public class ProxmoxApiUtil {
     * @DateTime: 2023/6/20 16:39
     */
     public JSONObject getNodeApi(Master node, HashMap<String,String> cookie,String url, HashMap<String, Object> params) throws UnauthorizedException {
-        // 构建请求主体
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.add("Cookie", cookie.get("cookie"));
-        headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
+        try {
+            // 构建请求主体
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.add("Cookie", cookie.get("cookie"));
+            headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
 
-        Map<String, Object> requestBody = new HashMap<>();
-        for (String key : params.keySet()) {
-            requestBody.put(key, params.get(key));
-        }
+            Map<String, Object> requestBody = new HashMap<>();
+            for (String key : params.keySet()) {
+                requestBody.put(key, params.get(key));
+            }
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        // 忽略证书验证
-        TrustSslUtil.initDefaultSsl();
-        // 发送 POST 请求
-        RestTemplate restTemplate = new RestTemplate();
-        ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.GET, entity, String.class);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+            // 忽略证书验证
+            TrustSslUtil.initDefaultSsl();
+            // 发送 POST 请求
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.GET, entity, String.class);
 
-        if (response.getStatusCode().is2xxSuccessful()) {
-            // 提取 Cookie 和 CSRF 预防令牌
-            JSONObject body = JSONObject.parseObject(response.getBody());
-            assert body != null;
-            return body;
-        } else {
-            throw new UnauthorizedException("请求失败");
+            if (response.getStatusCode().is2xxSuccessful()) {
+                // 提取 Cookie 和 CSRF 预防令牌
+                JSONObject body = JSONObject.parseObject(response.getBody());
+                assert body != null;
+                return body;
+            } else {
+                throw new UnauthorizedException("请求失败");
+            }
+        } catch (ResourceAccessException e) {
+            String logError = "Proxmox API请求超时 [URL: "+url+"] [错误码: " +e.getMostSpecificCause().getClass().getSimpleName() +"]";
+            System.err.println(logError);
+            return null;
         }
     }
 
