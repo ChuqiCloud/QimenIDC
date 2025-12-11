@@ -336,29 +336,80 @@ class Manager:
         self.iptables_forward_rule_manager = IptablesForwardRuleManager()
 
     '''
-    分页递增激活转发规则
-    paging incrementally activate forwarding rules
+    检查 NAT 回流规则是否存在
+    Avoid duplicate iptables rules
     '''
-    def active_forward_rules(self,page_size=50):
+    def nat_back_rule_exists(self, cidr):
+        try:
+            output = subprocess.check_output("iptables-save", shell=True, universal_newlines=True)
+            pattern = f"-A POSTROUTING -s {cidr} -d {cidr} -j MASQUERADE"
+            return pattern in output
+        except subprocess.CalledProcessError:
+            return False
+
+    '''
+    激活 NAT 回流（仅添加，不重复）
+    cidr: 例如 192.168.1.0/24
+    '''
+    def active_nat_back(self, cidr):
+        rule = f"iptables -t nat -A POSTROUTING -s {cidr} -d {cidr} -j MASQUERADE"
+        if self.nat_back_rule_exists(cidr):
+            return True  # 已存在
+        try:
+            subprocess.check_output(rule, shell=True, universal_newlines=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing iptables for NAT back: {e}")
+            return False
+
+    '''
+    分页递增激活转发规则：
+    '''
+    def active_forward_rules(self, page_size=50):
+        try:
+            data = self.forward_rule_manager.get_forward_rules_by_protocol(
+                'all', page_size=page_size, page_number=1
+            )
+            rules = data['data']
+        except:
+            return False
+
+        if len(rules) == 0:
+            return False
+        first_rule = rules[0]
+        destination_ip = first_rule['destination_ip']
+        ip_segments = destination_ip.split('.')
+        cidr_prefix = '.'.join(ip_segments[:3])
+        cidr = f"{cidr_prefix}.0/24"
+
+        self.active_nat_back(cidr)
+
+        # 5. 激活转发规则
         total_page = 0
-        # 获取总页数
         try:
             total_page = self.forward_rule_manager.get_total_page(page_size)
         except:
             return False
-        
-        # 逐页激活规则
-        for page_number in range(1,total_page+1):
-            # 查询数据库
-            data = self.forward_rule_manager.get_forward_rules_by_protocol('all',page_size,page_number)
-            for rule in data:
-                # 添加iptables规则
-                self.iptables_forward_rule_manager.add_iptables_rule(rule['source_ip'],rule['source_port'],rule['destination_ip'],rule['destination_port'],rule['protocol'])
+
+        for page_number in range(1, total_page + 1):
+            data = self.forward_rule_manager.get_forward_rules_by_protocol(
+                'all', page_size, page_number
+            )
+            rules = data['data']
+
+            for rule in rules:
+                self.iptables_forward_rule_manager.add_iptables_rule(
+                    rule['source_ip'],
+                    rule['source_port'],
+                    rule['destination_ip'],
+                    rule['destination_port'],
+                    rule['protocol']
+                )
+
         return True
-    
+
     '''
-    每5分钟激活一次转发规则
-    activate forwarding rules every 5 minutes
+    每5分钟激活一次
     '''
     def active_forward_rules_scheduler(self):
         scheduler = BackgroundScheduler()
