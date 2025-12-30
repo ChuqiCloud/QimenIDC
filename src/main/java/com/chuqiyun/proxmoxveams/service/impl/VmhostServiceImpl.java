@@ -804,7 +804,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 continue;
             }
             // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
-            if (vmStatus == 4){
+            if (vmStatus == 4 && initStatus != 2){
                 // 暂停pve中的虚拟机
                 this.power(vmhost.getId(),"pause",null);
                 continue;
@@ -1067,6 +1067,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 double bandWidthValue = vmParams.getBandwidth() / 8.0;
                 String bandWidth = String.format("%.2f", bandWidthValue);
                 proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
+                vmhost.setBandwidth(vmParams.getBandwidth());
             }
             Task vmStartTask = new Task();
             vmStartTask.setNodeid(vmhost.getNodeid());
