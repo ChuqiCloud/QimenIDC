@@ -45,7 +45,7 @@ public class ResetSystemCron {
      * 重装系统
      */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void reinstallSystemCron() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", REINSTALL_VM);

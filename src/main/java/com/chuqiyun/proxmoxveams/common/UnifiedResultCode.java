@@ -96,6 +96,8 @@ public enum UnifiedResultCode {
     ERROR_SDN_APPLY_CONFIG_FAILED(1041, "Failed to apply SDN config"),
     //虚拟机创建/重装系统中
     ERROR_VM_IS_INSTALLOS(1042, "Virtual machine is creating or reinstall"),
+    //主机名已存在
+    ERROR_HOSTNAME_IS_EXIST(1043, "Virtual hostname is exist"),
 
     /*pve错误码范围：2xxx*/
 

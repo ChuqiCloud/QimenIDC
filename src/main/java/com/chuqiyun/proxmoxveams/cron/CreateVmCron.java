@@ -2,8 +2,12 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.common.VmCreateLock;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
@@ -20,6 +24,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -46,7 +51,7 @@ public class CreateVmCron {
      * 创建虚拟机
      */
     @Async
-    @Scheduled(fixedDelay = 500)
+    @Scheduled(fixedDelay = 2000)
     public void createVm() {
         // 获取TaskType为CREATE_VM的任务列表
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
@@ -76,6 +81,19 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 e.printStackTrace();
                 // 结束任务
+                return;
+            }
+            String hostname = vmParams.getHostname();
+            TimedLock timedLock = VmCreateLock.getTimedLock(hostname);
+            ReentrantLock lock = timedLock.getLock();
+
+            if (!lock.tryLock()) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "【重复创建提示】已被锁拦截，主机名："  + vmParams.getHostname());
+                // 更新任务状态为3 3为失败
+                task.setStatus(3);
+                // 记录错误信息
+                task.setError("【重复创建提示】已被锁拦截，主机名：" + vmParams.getHostname());
+                taskService.updateById(task);
                 return;
             }
             Map<Object, Object> taskMap = new HashMap<>();

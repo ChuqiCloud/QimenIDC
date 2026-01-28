@@ -47,7 +47,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 22:31
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void startVm() {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", START_VM);
@@ -105,7 +105,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 22:31
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void stopVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", STOP_VM);
@@ -162,7 +162,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 22:38
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void rebootVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", REBOOT_VM);
@@ -218,7 +218,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 22:43
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void stopVmNow(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", STOP_VM_FORCE);
@@ -270,7 +270,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 22:54
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void suspendVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", SUSPEND_VM);
@@ -328,7 +328,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 23:09
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void resumeVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", RESUME_VM);
@@ -403,7 +403,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 23:20
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void pauseVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         // 暂停为挂起操作
@@ -476,7 +476,7 @@ public class VmStatusCron {
      * @DateTime: 2023/7/18 23:20
      */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void qosPauseVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         // 暂停为挂起操作
@@ -536,7 +536,7 @@ public class VmStatusCron {
     * @DateTime: 2023/7/18 23:24
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void unpauseVm(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", UNPAUSE_VM);
@@ -646,7 +646,7 @@ public class VmStatusCron {
      * @DateTime: 2023/9/26 20:45
      */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void expireCron(){
         int i = 1; // 页数
         while (true){

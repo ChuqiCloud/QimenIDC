@@ -48,7 +48,7 @@ public class resetPasswordCron {
     * @DateTime: 2023/9/2 14:14
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void resetPassword() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", RESET_PASSWORD);

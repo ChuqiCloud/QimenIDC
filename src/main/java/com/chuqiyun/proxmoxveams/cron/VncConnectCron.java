@@ -35,7 +35,7 @@ public class VncConnectCron {
     * @DateTime: 2023/11/24 22:38
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void vncConnectCron() {
         // 分页获取VNC连接信息，状态为0的
         QueryWrapper<Vncdata> queryWrapper = new QueryWrapper<>();

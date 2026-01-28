@@ -39,7 +39,7 @@ public class BootCron {
     private TaskService taskService;
 
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void updateBootCron() {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", UPDATE_VM_BOOT);

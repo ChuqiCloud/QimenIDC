@@ -35,6 +35,8 @@ public interface VmhostService extends IService<Vmhost> {
 
     Page<Vmhost> getVmhostByName(Integer page, Integer limit, String hostname);
 
+    Vmhost getVmhostByNameOne(String hostname);
+
     Page<Vmhost> selectPageByNodeId(Integer page, Integer limit, String nodeId);
 
     Page<Vmhost> selectPageByStatus(Integer page, Integer size, Integer status);

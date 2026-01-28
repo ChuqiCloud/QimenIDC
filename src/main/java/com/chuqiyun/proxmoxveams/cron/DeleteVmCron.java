@@ -49,7 +49,7 @@ public class DeleteVmCron {
     * @DateTime: 2023/9/2 16:07
     */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void deleteVm() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", DELETE_VM);

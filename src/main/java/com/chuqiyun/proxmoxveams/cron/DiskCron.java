@@ -69,7 +69,7 @@ public class DiskCron {
     }
 
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void importDiskCron(){
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type",IMPORT_SYSTEM_DISK);
@@ -145,7 +145,7 @@ public class DiskCron {
     }
 
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void monitorImportDiskCron(){
         QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("type",IMPORT_SYSTEM_DISK);
@@ -209,7 +209,7 @@ public class DiskCron {
      * 修改系统盘大小
      */
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void updateSystemDiskSizeCron(){
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type",UPDATE_SYSTEM_DISK_SIZE);
@@ -256,7 +256,7 @@ public class DiskCron {
     }
 
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void createDataDiskCron(){
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type",CREATE_DATA_DISK);
@@ -314,7 +314,7 @@ public class DiskCron {
      * 修改系统盘IO限制
      */
     @Async
-    @Scheduled(fixedDelay = 500)
+    @Scheduled(fixedDelay = 2000)
     public void updateSystemDiskIOLimitCron() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", UPDATE_IO_SYSTEM_DISK);

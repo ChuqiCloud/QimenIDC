@@ -32,7 +32,7 @@ public class TaskManager {
     @Resource
     private ConfigService configService;
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void processTasks() {QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", TaskStatus.WAITING);
         Page<Task> taskPage = taskService.getTaskList(1, 10, queryWrapper);

@@ -1,8 +1,11 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.common.VmCreateLock;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
 
@@ -52,6 +56,13 @@ public class CreateVmServiceImpl implements CreateVmService {
      */
     @Override
     public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams, boolean isApi){
+
+        if (vmParams.getHostname() != null && !vmParams.getHostname().equals("")) {
+            Vmhost vmhost = vmhostService.getVmhostByNameOne(vmParams.getHostname());
+            if (vmhost != null) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_IS_EXIST, null);
+            }
+        }
         // 判断nodeId是否为空
         if (vmParams.getNodeid() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);

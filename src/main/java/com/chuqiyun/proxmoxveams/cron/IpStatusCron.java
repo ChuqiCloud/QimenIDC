@@ -27,7 +27,7 @@ public class IpStatusCron {
     @Resource
     private IppoolService ippoolService;
     @Async
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 2000)
     public void ipStatusCron(){
         // 获取IP池所有ID
         List<Integer> poolIdList = ipstatusService.getAllId();

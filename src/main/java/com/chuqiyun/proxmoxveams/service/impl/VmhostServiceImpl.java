@@ -136,6 +136,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 根据主机名查询虚拟机实例信息 - 精确
+     * @DateTime: 2026/1/16 17:08
+     */
+    @Override
+    public Vmhost getVmhostByNameOne(String hostname) {
+        return this.getOne(new QueryWrapper<Vmhost>().eq("hostname",hostname));
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 根据节点id分页查询虚拟机实例信息
     * @DateTime: 2023/8/24 16:24
@@ -804,7 +814,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 continue;
             }
             // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
-            if (vmStatus == 4 && initStatus != 2){
+            if (vmStatus == 4 && initStatus != 2 && initStatus != 1){
                 // 暂停pve中的虚拟机
                 this.power(vmhost.getId(),"pause",null);
                 continue;
