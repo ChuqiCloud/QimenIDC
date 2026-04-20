@@ -252,8 +252,8 @@ public class VmStatusCron {
                 e.printStackTrace();
                 return;
             }
-            // 设置数据库中的vm状态为1 1为关机 非重装任务才执行
-            if (vmhost.getStatus() != 13) {
+            // 设置数据库中的vm状态为1 1为关机 非重装任务13和暂停(4)才执行
+            if (vmhost.getStatus() != 13 && vmhost.getStatus() != 4) {
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
             }
@@ -448,9 +448,9 @@ public class VmStatusCron {
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
             // 挂起虚拟机硬盘
-            params.put("todisk",true);
+            //params.put("todisk",true);
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/suspend", params);
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);
             } catch (Exception e) {
                 log.error("[Task-PauseVm] 暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 // 修改任务状态为3 3为执行失败
@@ -508,9 +508,9 @@ public class VmStatusCron {
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
             // 挂起虚拟机硬盘
-            params.put("todisk",true);
+            //params.put("todisk",true);
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/suspend", params);
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);
             } catch (Exception e) {
                 log.error("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
                 // 修改任务状态为3 3为执行失败
@@ -558,33 +558,17 @@ public class VmStatusCron {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
-            // 如果虚拟机状态为1 关机
-            if (vmStatus ==1){
-                // 则执行开机操作
-                try {
-                    proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", params);
-                } catch (Exception e) {
-                    log.error("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                    // 修改任务状态为3 3为执行失败
-                    task.setStatus(3);
-                    task.setError(e.getMessage());
-                    taskService.updateById(task);
-                    e.printStackTrace();
-                    return;
-                }
-            }
-            else {
-                try {
-                    proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/resume", params);
-                } catch (Exception e) {
-                    log.error("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                    // 修改任务状态为3 3为执行失败
-                    task.setStatus(3);
-                    task.setError(e.getMessage());
-                    taskService.updateById(task);
-                    e.printStackTrace();
-                    return;
-                }
+            // 执行开机操作
+            try {
+                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", params);
+            } catch (Exception e) {
+                log.error("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
+                // 修改任务状态为3 3为执行失败
+                task.setStatus(3);
+                task.setError(e.getMessage());
+                taskService.updateById(task);
+                e.printStackTrace();
+                return;
             }
             // 设置数据库中的vm状态为3 3为恢复中
             vmhost.setStatus(3);

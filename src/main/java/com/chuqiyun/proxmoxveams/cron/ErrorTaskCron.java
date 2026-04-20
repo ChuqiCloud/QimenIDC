@@ -60,8 +60,10 @@ public class ErrorTaskCron {
         // 获取node信息
         Master node = masterService.getById(task.getNodeid());
         Vmhost vmhost = vmhostService.getById(task.getHostid());
-        vmhost.setStatus(0);
-        vmhostService.updateById(vmhost);
+        if (vmhost != null) {
+            vmhost.setStatus(0);
+            vmhostService.updateById(vmhost);
+        }
         // 更新主线程任务task状态为3
         task.setStatus(3);
         task.setError("异常任务监控处理超时");

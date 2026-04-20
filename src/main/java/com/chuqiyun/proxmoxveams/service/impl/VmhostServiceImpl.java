@@ -816,11 +816,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             // 判断数据库中的状态是否为4(暂停)，且pve中的状态不为2(挂起)
             if (vmStatus == 4 && initStatus != 2 && initStatus != 1){
                 // 暂停pve中的虚拟机
-                this.power(vmhost.getId(),"pause",null);
+                this.power(vmhost.getId(),"shutdown",null);
                 continue;
             }
-            if (vmStatus == 6 || vmStatus == 13 || vmStatus == 15){
-                // 6创建中 13重装系统中 15超流暂停 状态不更新
+            if (vmStatus == 6 || vmStatus == 13 || vmStatus == 15 || vmStatus == 4){
+                // 6创建中 13重装系统中 15超流暂停 4暂停 状态不更新
                 continue;
             }
             // 其他情况，直接更新数据库中的状态
