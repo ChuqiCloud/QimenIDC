@@ -170,8 +170,6 @@ QimenIDC 使用 [AGPL-3.0 License](https://www.gnu.org/licenses/agpl-3.0.html) �
 
 ![03.png](/screenshot/03.png)
 
-![04.png](/screenshot/04.png)
-
 ![05.png](/screenshot/05.png)
 
 ![06.png](/screenshot/06.png)
