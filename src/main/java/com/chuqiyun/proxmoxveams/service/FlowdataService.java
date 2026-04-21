@@ -24,5 +24,7 @@ public interface FlowdataService extends IService<Flowdata> {
     Page<Flowdata> selectFlowdataByPageAndWrapper(Integer page, Integer size, QueryWrapper<Flowdata> queryWrapper);
 
     Flowdata selectFlowdataByHostid(Integer hostid);
+
+    int deleteExpiredFlowData();
 }
 

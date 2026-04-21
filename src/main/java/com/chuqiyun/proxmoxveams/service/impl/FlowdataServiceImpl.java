@@ -3,10 +3,12 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.dao.FlowdataDao;
 import com.chuqiyun.proxmoxveams.entity.Flowdata;
 import com.chuqiyun.proxmoxveams.service.FlowdataService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * (Flowdata)表服务实现类
@@ -92,6 +94,42 @@ public class FlowdataServiceImpl extends ServiceImpl<FlowdataDao, Flowdata> impl
         queryWrapper.orderByDesc("create_date");//按照create_date降序排序
         queryWrapper.last("limit 1");
         return this.getOne(queryWrapper);
+    }
+    /**
+    * @Author: 星禾
+    * @Description: 分页清理超过一个月的流量数据
+    * @DateTime: 2023/12/3 20:37
+     * @Params: int batchSize 每批删除数量
+    * @Return int 总共删除的记录数
+    */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteExpiredFlowData() {
+        int totalDeleted = 0;
+        int batchSize = 10000;
+        boolean hasMore = true;
+        //15天时间戳
+        long oneMonthAgo = System.currentTimeMillis() - 15L * 24 * 60 * 60 * 1000;
+        while (hasMore) {
+            QueryWrapper<Flowdata> queryWrapper = new QueryWrapper<>();
+            queryWrapper.lt("create_date", oneMonthAgo);
+            queryWrapper.last("LIMIT " + batchSize);
+
+            int deleted = this.baseMapper.delete(queryWrapper);
+            totalDeleted += deleted;
+            if (deleted < batchSize) {
+                hasMore = false;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
+                "分页批量清理流量数据完成: 总共删除记录数: {} ",totalDeleted);
+        return totalDeleted;
     }
 
 }

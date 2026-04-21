@@ -7,8 +7,10 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.FlowService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.impl.FlowdataServiceImpl;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,6 +37,8 @@ public class FlowDataCron {
     private VmhostService vmhostService;
     @Resource
     private MasterService masterService;
+    @Autowired
+    private FlowdataServiceImpl flowdataService;
 
     /**
     * @Author: mryunqi
@@ -438,5 +442,16 @@ public class FlowDataCron {
         }
         // 常规情况：次月同一天
         return createDate.plusMonths(1).withDayOfMonth(dayOfMonth);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 定时清理浏览统计数据
+     * @DateTime: 2026/4/21 17:22
+     */
+    @Async
+    @Scheduled(fixedRate = 1000*60*60) // 60分钟执行一次
+    public void CleanFlowdataCron() {
+        flowdataService.deleteExpiredFlowData();
     }
 }
