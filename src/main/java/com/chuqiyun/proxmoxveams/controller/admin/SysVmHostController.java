@@ -78,7 +78,21 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
     public Object delete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
-        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVmToRecycle(hostId);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 恢复虚拟机
+     * @DateTime: 2026/5/23 23:55
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/unDelete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object unDelete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = vmhostService.unDeleteVm(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

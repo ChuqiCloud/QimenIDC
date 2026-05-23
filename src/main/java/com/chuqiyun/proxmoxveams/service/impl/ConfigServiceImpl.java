@@ -114,6 +114,21 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 获取回收站删除天数
+     * @DateTime: 2026/5/23 23:19
+     * @Return Interger 天数
+     */
+    @Override
+    public Integer getDeleteDays(){
+        try {
+            return this.getById(1).getDeleteDays();
+        } catch (Exception e) {
+            return 3; // 如果出现异常，返回3
+        }
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 设置是否已导入数据库
     * @DateTime: 2023/12/3 16:38

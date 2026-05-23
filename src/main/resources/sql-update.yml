@@ -145,3 +145,9 @@ build: # 内部构建版本信息
     3:
       - "alter table vmhost
                    add out_flow int default 0 not null comment '超流操作0挂起 大于0表示限速x 单位kb' after reset_flow_time;"
+    1.1.2:
+      1:
+        - "alter table vmhost
+                     add delete_state int default 0 not null comment '删除状态 0正常 1回收站' after out_flow;"
+        - "alter table config
+                     add delete_days int default 3 not null comment '回收站删除天数' after installed;"

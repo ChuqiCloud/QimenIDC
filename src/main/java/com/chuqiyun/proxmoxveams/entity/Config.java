@@ -45,6 +45,10 @@ public class Config extends Model<Config> {
      * 是否已导入数据库
      */
     private Integer installed;
+    /**
+     * 回收站删除时间，单位天，默认3天
+     */
+    private Integer deleteDays;
 
     /**
      * 获取主键值

@@ -48,6 +48,21 @@ public class VmInfoServiceImpl implements VmInfoService {
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 获取回收站虚拟机分页列表
+     * @DateTime: 2026/5/23 22:50
+     * @Params: Integer page 页码，Integer size 每页数量
+     * @Return HashMap<String, Object> 分页列表
+     */
+    @Override
+    public HashMap<String, Object> getDeleteVmByPage(Integer page, Integer size) {
+        Page<Vmhost> vmhostPage = vmhostService.selectPageByDelete(page, size);
+        HashMap<String, Object> pageMap = new HashMap<>();
+        buildVmHostDto(vmhostPage,pageMap);
+        return pageMap;
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 获取虚拟机分页列表,根据创建时间降序排列
     * @DateTime: 2023/11/26 20:13

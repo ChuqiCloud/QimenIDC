@@ -200,6 +200,7 @@ public class Vmhost extends Model<Vmhost> {
     private Long extraFlowLimit;
     private Integer resetFlowTime;
     private Integer outFlow;
+    private Integer deleteState;
 
 
 

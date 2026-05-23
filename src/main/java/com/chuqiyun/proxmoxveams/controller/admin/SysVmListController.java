@@ -35,6 +35,20 @@ public class SysVmListController {
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 分页查询虚拟机列表
+     * @DateTime: 2026/5/23 23:01
+     */
+    @AdminApiCheck
+    @GetMapping(value = "/getDeleteVmByPage")
+    public ResponseResult<Object> getDeleteVmByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
+                                              @RequestParam(name = "size",defaultValue = "20") Integer size)
+            throws UnauthorizedException{
+        HashMap<String, Object> vmByPage = vmInfoService.getDeleteVmByPage(page, size);
+        return ResponseResult.ok(vmByPage);
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 指定参数查找虚拟机
     * @DateTime: 2023/8/24 15:53

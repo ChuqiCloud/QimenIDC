@@ -18,7 +18,8 @@ create table config
     vnc_time               int          default 120    null comment 'vnc失效时间，单位分钟',
     version                varchar(255)                null,
     build                  varchar(255)                null,
-    installed              int          default 1      not null comment '0=否;1=是'
+    installed              int          default 1      not null comment '0=否;1=是',
+    delete_days           int  default 3     null comment '回收站删除天数',
 );
 
 create table configuretemplate
@@ -333,7 +334,8 @@ create table vmhost
     natnum                int          default 0                     not null comment 'nat端口转发数量',
     extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
     reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
-    out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb'
+    out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
+    delete_state           int      default 0   comment '删除状态 0正常 1回收站'
 );
 
 create table vncdata

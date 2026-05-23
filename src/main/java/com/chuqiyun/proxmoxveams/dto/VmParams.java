@@ -204,4 +204,5 @@ public class VmParams {
     private Long extraFlowLimit;
     private Integer resetFlowTime;
     private Integer outFlow;
+    private Integer deleteState;
 }

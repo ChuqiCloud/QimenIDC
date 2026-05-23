@@ -27,6 +27,8 @@ public interface ConfigService extends IService<Config> {
 
     Boolean getInstalled();
 
+    Integer getDeleteDays();
+
     Boolean setInstalled(Boolean installed);
 
     Boolean setBuild(String build);

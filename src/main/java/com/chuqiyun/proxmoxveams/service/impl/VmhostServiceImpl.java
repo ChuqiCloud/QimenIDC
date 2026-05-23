@@ -23,6 +23,7 @@ import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -49,6 +50,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private OsService osService;
     @Resource
     private ConfigService configService;
+    @Autowired
+    private VmhostService vmhostService;
 
     /**
     * @Author: mryunqi
@@ -67,8 +70,20 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     */
     @Override
     public Page<Vmhost> selectPage(Integer page, Integer limit) {
+        QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage);
+        return this.page(vmhostPage, queryWrap.eq("delete_state",0));
+    }
+    /**
+     * @Author: mryunqi
+     * @Description: 分页查询回收站虚拟机实例信息
+     * @DateTime: 2026/5/23 23:04
+     */
+    @Override
+    public Page<Vmhost> selectPageByDelete(Integer page, Integer limit) {
+        QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage, queryWrap.eq("delete_state",1));
     }
     /**
     * @Author: mryunqi
@@ -80,9 +95,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPage(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper){
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,queryWrapper);
+        return this.page(vmhostPage,queryWrapper.eq("delete_state",0));
     }
-
     /**
     * @Author: mryunqi
     * @Description: 分页查询虚拟机实例信息，按照创建时间降序排列
@@ -93,7 +107,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit) {
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,new QueryWrapper<Vmhost>().orderByDesc("create_time"));
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().orderByDesc("create_time").eq("delete_state",0));
     }
 
     /**
@@ -106,7 +120,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPageByCreateTime(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper) {
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,queryWrapper.orderByDesc("create_time"));
+        return this.page(vmhostPage,queryWrapper.orderByDesc("create_time").eq("delete_state",0));
     }
 
     /**
@@ -119,7 +133,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPageByIp(Integer page, Integer limit, String ip) {
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("ip_config",ip));
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("ip_config",ip).eq("delete_state",0));
     }
 
     /**
@@ -132,7 +146,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> getVmhostByName(Integer page, Integer limit, String hostname) {
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("hostname",hostname));
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().like("hostname",hostname).eq("delete_state",0));
     }
 
     /**
@@ -142,7 +156,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Vmhost getVmhostByNameOne(String hostname) {
-        return this.getOne(new QueryWrapper<Vmhost>().eq("hostname",hostname));
+        return this.getOne(new QueryWrapper<Vmhost>().eq("hostname",hostname).eq("delete_state",0));
     }
 
     /**
@@ -155,7 +169,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPageByNodeId(Integer page, Integer limit, String nodeId) {
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("nodeid",nodeId));
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("nodeid",nodeId).eq("delete_state",0));
     }
 
     /**
@@ -168,7 +182,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Page<Vmhost> selectPageByStatus(Integer page,Integer size,Integer status){
         Page<Vmhost> vmhostPage = new Page<>(page, size);
-        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("status",status));
+        return this.page(vmhostPage,new QueryWrapper<Vmhost>().eq("status",status).eq("delete_state",0));
     }
 
     /**
@@ -1008,6 +1022,65 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 添加任务流程
         this.addVmHostTask(vmhost.getId(), task.getId());
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_DELETE_VM_FAILED, null);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机到回收站
+     * @DateTime: 2025/5/23 23:12
+     * @Params: Long vmHostId 虚拟机id
+     * @Return UnifiedResultDto<Object> 统一返回结果
+     */
+    @Override
+    public UnifiedResultDto<Object> deleteVmToRecycle(Long vmHostId){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmHostId);
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+
+        // 判断虚拟机是否为开机状态
+        if (vmhost.getStatus() == 0){
+            this.power(vmhost.getId(), "shutdown",null);
+        }
+
+        //更新虚拟机状态 和 到期时间
+        vmhost.setDeleteState(1);
+        Integer deleteDays = configService.getDeleteDays();
+        vmhost.setExpirationTime(System.currentTimeMillis() + deleteDays * 24 * 60 * 60 * 1000L);
+        this.updateById(vmhost);
+
+        UnifiedLogger.log(UnifiedLogger.LogType.TASK_DELETE_VM,"成功将虚拟机进入回收站，虚拟机id为：" + vmHostId);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 从回收站恢复虚拟机
+     * @DateTime: 2025/5/23 23:56
+     * @Params: Long vmHostId 虚拟机id
+     * @Return UnifiedResultDto<Object> 统一返回结果
+     */
+    @Override
+    public UnifiedResultDto<Object> unDeleteVm(Long vmHostId){
+        // 获取虚拟机信息
+        Vmhost vmhost = this.getById(vmHostId);
+        // 判空
+        if (vmhost == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        // 判断虚拟机是否为关机状态
+        if (vmhost.getStatus() == 1){
+            this.power(vmhost.getId(), "start",null);
+        }
+
+        //更新虚拟机状态
+        vmhost.setDeleteState(0);
+        // 时间设定为99年后到期
+        vmhost.setExpirationTime(System.currentTimeMillis()+315360000000L);
+        this.updateById(vmhost);
+
+        UnifiedLogger.log(UnifiedLogger.LogType.TASK_DELETE_VM,"成功将虚拟机从回收站中恢复，虚拟机id为：" + vmHostId);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
     }
 
     /**

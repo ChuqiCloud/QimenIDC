@@ -79,7 +79,7 @@ public class VmStatus {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/delete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
     public Object delete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
-        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVmToRecycle(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

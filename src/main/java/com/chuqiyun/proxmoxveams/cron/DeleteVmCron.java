@@ -5,6 +5,8 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
@@ -25,7 +27,7 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
 
-import static com.chuqiyun.proxmoxveams.constant.TaskType.DELETE_VM;
+import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
 /**
  * @author mryunqi
@@ -146,6 +148,84 @@ public class DeleteVmCron {
             System.out.println("DeleteVm 异常"+ e);
             task.setStatus(2);
             taskService.updateById(task);
+        }
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 15分钟运行一次 删除回收站虚拟机
+     * @DateTime: 2026/5/23 23:25
+     */
+    @Async
+    @Scheduled(fixedDelay = 15 * 60 * 1000)
+    public void deleteRecycleVm() {
+        int i = 1; // 页数
+        while (true){
+            QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
+            // 筛选状态回收站等于1
+            queryWrap.eq("delete_state", 1);
+            // 筛选expirationTime小于等于当前时间
+            queryWrap.le("expiration_time", System.currentTimeMillis());
+            // 分页获取10行节点实例
+            Page<Vmhost> page = vmhostService.selectPage(i,10,queryWrap);
+            List<Vmhost> vmList = page.getRecords();
+            // 如果为空则跳出循环
+            if (vmList.size() == 0){
+                break;
+            }
+            for (Vmhost vmhost : vmList){
+                // 判断是否正在运行
+                if (vmhost.getStatus() == 0){
+                    // 如果正在运行则创建关机任务
+                    Task vmStopTask = new Task();
+                    vmStopTask.setNodeid(vmhost.getNodeid());
+                    vmStopTask.setVmid(vmhost.getVmid());
+                    vmStopTask.setHostid(vmhost.getId());
+                    vmStopTask.setType(STOP_VM_FORCE);
+                    vmStopTask.setStatus(0);
+                    vmStopTask.setCreateDate(System.currentTimeMillis());
+                    taskService.save(vmStopTask);
+                    // 等待该任务执行完成
+                    int count = 0;
+                    while (true){
+                        // 如果超过60秒还没有完成，则跳出循环
+                        if (count >= 600) {
+                            UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
+                            if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                                System.out.println(resultDto.getResultCode().getMessage());
+                            } else  {
+                                System.out.println("[DeleteVmCron]创建删除回收站的虚拟机ID：" + vmhost.getId() + "成功！");
+                            }
+                            break;
+                        }
+                        // 休眠1秒
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        Task task = taskService.getById(vmStopTask.getId());
+                        if (task == null || task.getStatus() == 0 || task.getStatus() == 3) {
+                            UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
+                            if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                                System.out.println(resultDto.getResultCode().getMessage());
+                            } else  {
+                                System.out.println("[DeleteVmCron]创建删除回收站的虚拟机ID：" + vmhost.getId() + "成功！");
+                            }
+                            break;
+                        }
+                        count++;
+                    }
+                }
+                // 如果不是正在运行则直接删除
+                else {
+                    UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
+                    if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+                        System.out.println(resultDto.getResultCode().getMessage());
+                    } else  {
+                        System.out.println("[DeleteVmCron]创建删除回收站的虚拟机ID：" + vmhost.getId() + "成功！");
+                    }
+                }
+            }
         }
     }
 }

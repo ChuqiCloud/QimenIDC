@@ -52,6 +52,8 @@ public interface VmhostService extends IService<Vmhost> {
     UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk);
 
     UnifiedResultDto<Object> deleteVm(Long vmHostId);
+    UnifiedResultDto<Object> deleteVmToRecycle(Long vmHostId);
+    UnifiedResultDto<Object> unDeleteVm(Long hostId);
 
     UnifiedResultDto<Object> updateVm(VmParams vmParams);
 
@@ -78,5 +80,8 @@ public interface VmhostService extends IService<Vmhost> {
     Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth);
+
+    Page<Vmhost> selectPageByDelete(Integer page, Integer size);
+
 }
 
