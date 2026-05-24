@@ -23,7 +23,6 @@ import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -50,8 +49,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private OsService osService;
     @Resource
     private ConfigService configService;
-    @Autowired
-    private VmhostService vmhostService;
 
     /**
     * @Author: mryunqi
@@ -75,17 +72,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return this.page(vmhostPage, queryWrap.eq("delete_state",0));
     }
     /**
-     * @Author: mryunqi
-     * @Description: 分页查询回收站虚拟机实例信息
-     * @DateTime: 2026/5/23 23:04
-     */
-    @Override
-    public Page<Vmhost> selectPageByDelete(Integer page, Integer limit) {
-        QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
-        Page<Vmhost> vmhostPage = new Page<>(page, limit);
-        return this.page(vmhostPage, queryWrap.eq("delete_state",1));
-    }
-    /**
     * @Author: mryunqi
     * @Description: 附加条件分页查询虚拟机实例信息
     * @DateTime: 2023/7/19 17:53
@@ -96,6 +82,27 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Page<Vmhost> selectPage(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper){
         Page<Vmhost> vmhostPage = new Page<>(page, limit);
         return this.page(vmhostPage,queryWrapper.eq("delete_state",0));
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 分页查询回收站虚拟机实例信息
+     * @DateTime: 2026/5/23 23:04
+     */
+    @Override
+    public Page<Vmhost> selectPageByDelete(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper) {
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage, queryWrapper.eq("delete_state",1));
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 分页查询回收站虚拟机实例信息 带参
+     * @DateTime: 2026/5/23 23:04
+     */
+    @Override
+    public Page<Vmhost> selectPageByDelete(Integer page, Integer limit) {
+        QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
+        Page<Vmhost> vmhostPage = new Page<>(page, limit);
+        return this.page(vmhostPage, queryWrap.eq("delete_state",1));
     }
     /**
     * @Author: mryunqi
@@ -1038,7 +1045,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
-
+        if (vmhost.getDeleteState() == 1)
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
             this.power(vmhost.getId(), "shutdown",null);
@@ -1068,6 +1076,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        if (vmhost.getDeleteState() == 0)
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         // 判断虚拟机是否为关机状态
         if (vmhost.getStatus() == 1){
             this.power(vmhost.getId(), "start",null);

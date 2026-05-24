@@ -81,6 +81,8 @@ public interface VmhostService extends IService<Vmhost> {
     Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth);
 
+    Page<Vmhost> selectPageByDelete(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper);
+
     Page<Vmhost> selectPageByDelete(Integer page, Integer size);
 
 }
