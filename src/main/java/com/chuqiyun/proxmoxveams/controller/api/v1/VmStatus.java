@@ -87,6 +87,20 @@ public class VmStatus {
     }
     /**
      * @Author: 星禾
+     * @Description: 强制删除虚拟机接口 不进回收站
+     * @DateTime: 2026/5/24 14:35
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/forceDelete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object forceDelete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+    /**
+     * @Author: 星禾
      * @Description: 重置虚拟机流量接口
      * @DateTime: 2025/11/21 23:07
      */

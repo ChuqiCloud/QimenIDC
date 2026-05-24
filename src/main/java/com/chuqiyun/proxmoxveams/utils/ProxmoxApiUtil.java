@@ -419,4 +419,50 @@ public class ProxmoxApiUtil {
         params.put(type,values);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
     }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机快照
+     * @DateTime: 2026/5/24 17:52
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String timeframe 时间范围 String cf 数据源
+     * @Return JSONObject 虚拟机rrd数据
+     */
+    public JSONObject getVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",new HashMap<>());
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 创建指定虚拟机快照
+     * @DateTime: 2026/5/24 20:20
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String snapName 快照名称 Boolean vmstate是否保存运行内存状态
+     * @Return none
+     */
+    public void addVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid, String snapName , Boolean vmstate,
+    String description) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        // snapname快照名称 vmstate是否保存运行内存状态，建议false description描述
+        params.put("snapname", snapName);
+        params.put("vmstate", vmstate);
+        params.put("description", description);
+        postNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",params);
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 删除指定虚拟机快照
+     * @DateTime: 2026/5/24 20:21
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String snapName 快照名称
+     * @Return none
+     */
+    public void deleteVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid, String snapName) throws UnauthorizedException {
+        deleteNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot/" + snapName, new HashMap<>());
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 回滚指定虚拟机的指定快照
+     * @DateTime: 2026/5/24 20:22
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String snapName 快照名称
+     * @Return none
+     */
+    public void rollbackVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid, String snapName) throws UnauthorizedException {
+        postNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot/" + snapName + "/rollback", new HashMap<>());
+    }
 }

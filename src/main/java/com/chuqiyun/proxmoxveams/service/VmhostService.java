@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.HashMap;
 
@@ -85,5 +86,9 @@ public interface VmhostService extends IService<Vmhost> {
 
     Page<Vmhost> selectPageByDelete(Integer page, Integer size);
 
+    JSONObject getVmSnapShot(Vmhost vmhost);
+    boolean addVmSnapShot(Vmhost vmhost, String snapName , Boolean vmstate, String description);
+    boolean deleteVmSnapShot(Vmhost vmhost, String snapName);
+    boolean rollbackVmSnapShot(Vmhost vmhost, String snapName);
 }
 

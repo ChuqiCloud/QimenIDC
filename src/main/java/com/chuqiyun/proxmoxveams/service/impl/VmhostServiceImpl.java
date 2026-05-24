@@ -798,7 +798,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             QueryWrapper<Vmhost> vmhostQueryWrapper = new QueryWrapper<>();
             vmhostQueryWrapper.eq("nodeid",nodeId);
             vmhostQueryWrapper.eq("vmid",vmId);
-            Vmhost vmhost = this.getOne(vmhostQueryWrapper);
+            Vmhost vmhost = this.getOne(vmhostQueryWrapper.eq("delete_state",0));
             // 判空
             if (vmhost == null){
                 continue;
@@ -1527,6 +1527,50 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandwidth);
+        return true;
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取虚拟机快照列表
+     * @DateTime: 2026/5/24 18:20
+     * @Params: vmhost bandwidth
+     */
+    @Override
+    public JSONObject getVmSnapShot(Vmhost vmhost){
+        Master node = masterService.getById(vmhost.getNodeid());
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        return proxmoxApiUtil.getVmSnapShot(node,cookieMap,vmhost.getVmid());
+    }
+
+    @Override
+    public boolean addVmSnapShot(Vmhost vmhost, String snapName, Boolean vmstate, String description) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.addVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName,vmstate,description);
+        return true;
+    }
+
+    @Override
+    public boolean deleteVmSnapShot(Vmhost vmhost, String snapName) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.deleteVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName);
+        return true;
+    }
+
+    @Override
+    public boolean rollbackVmSnapShot(Vmhost vmhost, String snapName) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        // 获取cookie
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.rollbackVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName);
         return true;
     }
 }
