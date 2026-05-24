@@ -423,8 +423,8 @@ public class ProxmoxApiUtil {
      * @Author: 星禾
      * @Description: 获取指定虚拟机快照
      * @DateTime: 2026/5/24 17:52
-     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String timeframe 时间范围 String cf 数据源
-     * @Return JSONObject 虚拟机rrd数据
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
+     * @Return JSONObject
      */
     public JSONObject getVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",new HashMap<>());
@@ -464,5 +464,15 @@ public class ProxmoxApiUtil {
      */
     public void rollbackVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid, String snapName) throws UnauthorizedException {
         postNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot/" + snapName + "/rollback", new HashMap<>());
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机备份
+     * @DateTime: 2026/5/24 17:52
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
+     * @Return none
+     */
+    public JSONObject getVmBackup(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",new HashMap<>());
     }
 }

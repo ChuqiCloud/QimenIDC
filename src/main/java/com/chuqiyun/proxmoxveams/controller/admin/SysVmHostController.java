@@ -183,9 +183,9 @@ public class SysVmHostController {
      */
     @AdminApiCheck
     @GetMapping("/getVmSnapShot/{vmid}")
-    public JSONObject getVmSnapShot(@PathVariable Integer vmid) {
+    public ResponseResult<Object> getVmSnapShot(@PathVariable Integer vmid) {
         Vmhost vmhost = vmhostService.getById(vmid);
-        return vmhostService.getVmSnapShot(vmhost);
+        return ResponseResult.ok(vmhostService.getVmSnapShot(vmhost));
     }
     /**
      * @Author: 星禾
