@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * @author mryunqi
@@ -44,7 +45,7 @@ public class ControllerCron {
         }
 
         QueryWrapper<Master> queryWrap = new QueryWrapper<>();
-        queryWrap.eq("status",0);
+        queryWrap.ne("status",2);
         // 获取所有
         List<Master> nodeList = masterService.list(queryWrap);
         for (Master node : nodeList){
@@ -69,6 +70,9 @@ public class ControllerCron {
             }
             node.setControllerStatus(0);
             masterService.updateById(node);
+            if (Objects.equals(node.getStatus(), 1)) {
+                masterService.updateNodeCookie(node.getId());
+            }
         }
     }
 

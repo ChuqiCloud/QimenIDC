@@ -218,7 +218,7 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
         int i = 1;
         while (true){
             QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("status",0);
+            queryWrapper.ne("status",2);
             // 分页获取100行节点实例
             Page<Master> page = this.getMasterList(i,100,queryWrapper);
             List<Master> nodes = page.getRecords();
@@ -263,6 +263,7 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
             HashMap<String, String> authentications = pveApi.loginAndGetCookie(user);
             node.setTicket(authentications.get("ticket"));
             node.setCsrfToken(authentications.get("csrfToken"));
+            node.setStatus(0);
             this.updateById(node);
         }catch (Exception e){
             e.printStackTrace();
