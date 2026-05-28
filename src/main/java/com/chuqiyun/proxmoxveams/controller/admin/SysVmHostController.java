@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -93,6 +94,20 @@ public class SysVmHostController {
     @RequestMapping(value = "/unDelete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
     public Object unDelete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.unDeleteVm(hostId);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 强制删除虚拟机接口 不进回收站
+     * @DateTime: 2026/5/26 9:55
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/forceDelete/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object forceDelete(@PathVariable("hostId") Long hostId) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(hostId);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }

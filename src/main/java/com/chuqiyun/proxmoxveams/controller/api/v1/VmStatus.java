@@ -170,4 +170,78 @@ public class VmStatus {
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: pve虚拟机获取快照列表
+     * @DateTime: 2026/5/24 18:11
+     */
+    @PublicSysApiCheck
+    @GetMapping("/pve/getVmSnapShot/{hostId}")
+    public ResponseResult<Object> getVmSnapShot(@PathVariable Integer hostId) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        return ResponseResult.ok(vmhostService.getVmSnapShot(vmhost));
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: pve虚拟机创建快照
+     * @DateTime: 2026/5/24 20:31
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/addVmSnapShot/{hostId}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object addVmSnapShot(@PathVariable("hostId") Integer hostId,
+                                @RequestParam("snapname") String snapname,@RequestParam("vmstate") Boolean vmstate,
+                                @RequestParam("description") String description) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Boolean result = vmhostService.addVmSnapShot(vmhost,snapname,vmstate,description);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机快照
+     * @DateTime: 2026/5/24 20:41
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/deleteVmSnapShot/{hostId}/{snapname}",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object deleteVmSnapShot(@PathVariable("hostId") Long hostId,@PathVariable("snapname") String snapname) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Boolean result = vmhostService.deleteVmSnapShot(vmhost,snapname);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: pve虚拟机回滚快照
+     * @DateTime: 2026/5/24 20:39
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/rollbackVmSnapShot/{hostId}/{snapname}",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object rollbackVmSnapShot(@PathVariable("hostId") Integer hostId,@PathVariable("snapname") String snapname) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Boolean result = vmhostService.rollbackVmSnapShot(vmhost,snapname);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok("操作成功");
+    }
 }
