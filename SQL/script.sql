@@ -335,7 +335,29 @@ create table vmhost
     extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
     reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
     out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
-    delete_state           int      default 0   comment '删除状态 0正常 1回收站'
+    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除'
+);
+
+create table vm_resource_rank
+(
+    id             int auto_increment
+        primary key,
+    rank_type      varchar(20)  not null comment 'cpu or memory',
+    rank_no        int          not null comment 'rank number',
+    host_id        int          null,
+    vmid           int          null,
+    hostname       varchar(255) null,
+    node_id        int          null,
+    node_name      varchar(255) null,
+    cpu            double       default 0 not null,
+    cpu_percent    double       default 0 not null,
+    memory         bigint       default 0 not null,
+    memory_mb      double       default 0 not null,
+    max_memory     bigint       default 0 not null,
+    max_memory_mb  double       default 0 not null,
+    memory_percent double       default 0 not null,
+    collect_time   bigint       not null,
+    index vm_resource_rank_type_no_index (rank_type, rank_no)
 );
 
 create table vncdata

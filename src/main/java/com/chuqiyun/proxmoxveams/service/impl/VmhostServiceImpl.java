@@ -352,24 +352,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "stop": {
-                // 判断虚拟机是否被暂停
-                if (vmStatus == 4){
-                    result.put("status", false);
-                    result.put("msg", "虚拟机已暂停，无法关机");
-                    return result;
-                }
-                // 判断虚拟机是否到期
-                if (vmStatus == 5){
-                    result.put("status", false);
-                    result.put("msg", "虚拟机已到期，无法关机");
-                    return result;
-                }
-                // 判断虚拟机是否流量超限
-                if (vmStatus == 15){
-                    result.put("status", false);
-                    result.put("msg", "虚拟机流量超限，无法关机");
-                    return result;
-                }
                 if (vmStatus == 1 || vmStatus == 2) {
                     result.put("status", true);
                     // 直接返回true
@@ -469,48 +451,27 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "shutdown":{
-                // 判断虚拟机状态是否为暂停
-                if (vmStatus == 4) {
-                    // 调用节点接口关机
-                    result.put("status", false);
-                    result.put("msg", "虚拟机已暂停，无法关机");
-                    return result;
-                }
-                // 判断虚拟机是否到期
-                if (vmStatus == 5){
-                    result.put("status", false);
-                    result.put("msg", "虚拟机已到期，无法关机");
-                    return result;
-                }
-                // 判断虚拟机是否流量超限
-                if (vmStatus == 15){
-                    result.put("status", false);
-                    result.put("msg", "虚拟机流量超限，无法关机");
-                    return result;
+                // 设置虚拟机状态为9，表示强制关机中
+                vmhost.setStatus(9);
+                // 更新虚拟机状态
+                this.updateById(vmhost);
+                Task vmShutdownTask = new Task();
+                vmShutdownTask.setNodeid(nodeId);
+                vmShutdownTask.setVmid(vmId);
+                vmShutdownTask.setHostid(hostId);
+                vmShutdownTask.setType(STOP_VM_FORCE);
+                vmShutdownTask.setStatus(0);
+                vmShutdownTask.setCreateDate(time);
+                if (taskService.save(vmShutdownTask)) {
+                    log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                    result.put("status", true);
+                    // 添加任务流程
+                    this.addVmHostTask(hostId, vmShutdownTask.getId());
                 }
                 else {
-                    // 设置虚拟机状态为9，表示强制关机中
-                    vmhost.setStatus(9);
-                    // 更新虚拟机状态
-                    this.updateById(vmhost);
-                    Task vmShutdownTask = new Task();
-                    vmShutdownTask.setNodeid(nodeId);
-                    vmShutdownTask.setVmid(vmId);
-                    vmShutdownTask.setHostid(hostId);
-                    vmShutdownTask.setType(STOP_VM_FORCE);
-                    vmShutdownTask.setStatus(0);
-                    vmShutdownTask.setCreateDate(time);
-                    if (taskService.save(vmShutdownTask)) {
-                        log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
-                        result.put("status", true);
-                        // 添加任务流程
-                        this.addVmHostTask(hostId, vmShutdownTask.getId());
-                    }
-                    else {
-                        log.info("[Task-ShutdownVm] 强制关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
-                        result.put("status", false);
-                        result.put("msg", "强制关机任务创建失败");
-                    }
+                    log.info("[Task-ShutdownVm] 强制关机任务创建失败: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
+                    result.put("status", false);
+                    result.put("msg", "强制关机任务创建失败");
                 }
                 return result;
             }
@@ -1050,6 +1011,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 判断虚拟机是否为开机状态
         if (vmhost.getStatus() == 0){
             this.power(vmhost.getId(), "shutdown",null);
+
         }
 
         //更新虚拟机状态 和 到期时间

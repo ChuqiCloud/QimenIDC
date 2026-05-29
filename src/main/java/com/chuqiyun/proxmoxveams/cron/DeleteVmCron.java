@@ -117,8 +117,10 @@ public class DeleteVmCron {
 
             }
             else {
-                // 直接删除数据库中的虚拟机信息
-                vmhostService.removeById(task.getHostid());
+                // 标记为已删除，保留记录供统计使用
+                vmhost.setDeleteState(2);
+                vmhost.setExpirationTime(System.currentTimeMillis());
+                vmhostService.updateById(vmhost);
                 // 修改任务状态为2
                 task.setStatus(2);
                 taskService.updateById(task);
@@ -139,8 +141,10 @@ public class DeleteVmCron {
                     ippoolService.updateById(ippool);
                 }
             }
-            // 删除数据库中的虚拟机信息
-            vmhostService.removeById(task.getHostid());
+            // 标记为已删除，保留记录供统计使用
+            vmhost.setDeleteState(2);
+            vmhost.setExpirationTime(System.currentTimeMillis());
+            vmhostService.updateById(vmhost);
             // 修改任务状态为2
             task.setStatus(2);
             taskService.updateById(task);

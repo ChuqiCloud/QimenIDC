@@ -18,7 +18,8 @@ create table config
     vnc_time               int          default 120    null comment 'vnc失效时间，单位分钟',
     version                varchar(255)                null,
     build                  varchar(255)                null,
-    installed              int          default 1      not null comment '0=否;1=是'
+    installed              int          default 1      not null comment '0=否;1=是',
+    delete_days           int  default 3     null comment '回收站删除天数',
 );
 
 create table configuretemplate
@@ -90,7 +91,6 @@ create table ippool
     mac         varchar(255)  null,
     dns1        varchar(15)   null,
     dns2        varchar(15)   null,
-    mac_map     varchar(255)  null,
     status      int default 0 not null
 );
 
@@ -108,7 +108,17 @@ create table ipstatus
     disable   int          null comment '禁用',
     nodeId    int          null
 );
-
+create table ipforward
+(
+    id          int auto_increment
+        primary key,
+    node_id     int           not null,
+    vm_id       int           null,
+    port          varchar(15)   not null,
+    vm_ip varchar(15)   not null,
+    vm_port     varchar(15)   not null,
+    status      int default 0 not null
+);
 create table master
 (
     id                int auto_increment
@@ -129,7 +139,11 @@ create table master
     ssh_username      varchar(255)               null,
     ssh_password      varchar(255)               null,
     controller_status int                        null,
-    controller_port   int          default 7600  null comment '被控端口'
+    controller_port   int          default 7600  null comment '被控端口',
+    naton             int          default 0     not null comment '0关闭 1开启',
+    natbridge             varchar(50)  null,
+    natippool            int          default 0     not null comment 'nat ip池id',
+    nataddr             varchar(50)  null comment 'nat展示地址'
 );
 
 create table modelgroup
@@ -141,6 +155,17 @@ create table modelgroup
     args         text         null,
     info         text         null,
     create_date  varchar(13)  null
+);
+
+create table natcontroller
+(
+    id         int auto_increment
+        primary key,
+    name       varchar(255)  null,
+    host       varchar(255)  null,
+    port       int           null,
+    port_range varchar(255)  null,
+    status     int default 0 not null
 );
 
 create table os
@@ -171,6 +196,39 @@ create table smbios
     model       json        null,
     info        text        null,
     create_date varchar(13) null
+);
+
+create table subnet
+(
+    id        int auto_increment
+        primary key,
+    nodeid    int                           null,
+    subnet    varchar(255)                  null,
+    type      varchar(255) default 'subnet' not null,
+    vnet      varchar(255)                  not null,
+    gateway   varchar(255)                  null,
+    mask      int                           null,
+    dns       varchar(255)                  null,
+    snat      int          default 0        not null,
+    available int                           null,
+    used      int                           null,
+    disable   int                           null,
+    state     varchar(255) default 'new'    not null
+);
+
+create table subnetpool
+(
+    id        int auto_increment
+        primary key,
+    node_id   int           null,
+    vm_id     int           null,
+    subnat_id int           null,
+    ip        varchar(255)  null,
+    mask      int           null,
+    gateway   varchar(15)   null,
+    mac       varchar(255)  null,
+    dns       varchar(15)   null,
+    status    int default 0 not null
 );
 
 create table sysapi
@@ -271,7 +329,35 @@ create table vmhost
     pause_info            text                                       null comment '暂停原因',
     create_time           mediumtext                                 not null comment '创建时间',
     expiration_time       mediumtext                                 not null comment '到期时间',
-    ip_list               text                                       null
+    ip_list               text                                       null,
+    ifnat                 int          default 0                     not null comment '是否nat 0否 1是',
+    natnum                int          default 0                     not null comment 'nat端口转发数量',
+    extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
+    reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
+    out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
+    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除'
+);
+
+create table vm_resource_rank
+(
+    id             int auto_increment
+        primary key,
+    rank_type      varchar(20)  not null comment 'cpu or memory',
+    rank_no        int          not null comment 'rank number',
+    host_id        int          null,
+    vmid           int          null,
+    hostname       varchar(255) null,
+    node_id        int          null,
+    node_name      varchar(255) null,
+    cpu            double       default 0 not null,
+    cpu_percent    double       default 0 not null,
+    memory         bigint       default 0 not null,
+    memory_mb      double       default 0 not null,
+    max_memory     bigint       default 0 not null,
+    max_memory_mb  double       default 0 not null,
+    memory_percent double       default 0 not null,
+    collect_time   bigint       not null,
+    index vm_resource_rank_type_no_index (rank_type, rank_no)
 );
 
 create table vncdata
@@ -311,6 +397,32 @@ create table vncnode
     proxy       int default 0    not null comment '0=false;1=true',
     status      int default 0    not null comment '0=true；1=false',
     create_date bigint           null comment '创建日期'
+);
+
+create table vnets
+(
+    id    int auto_increment
+        primary key,
+    vnet  varchar(255)                null,
+    zone  varchar(255)                null,
+    alias varchar(255)                null,
+    tag   int                         null,
+    type  varchar(255) default 'vnet' not null,
+    state varchar(255) default 'new'  not null
+);
+
+create table zones
+(
+    id         int auto_increment
+        primary key,
+    node_id    int                        null,
+    type       varchar(255)               null,
+    zone       varchar(255)               null,
+    nodes      varchar(255)               null,
+    ipam       varchar(255)               null,
+    dns        varchar(255)               null,
+    reversedns varchar(255)               null,
+    state      varchar(255) default 'new' not null
 );
 
 
