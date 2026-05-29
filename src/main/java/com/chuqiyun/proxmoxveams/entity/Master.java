@@ -39,6 +39,7 @@ public class Master extends Model<Master> {
     private String ticket;
     private String nodeName;
     private String autoStorage;
+    private String backupStorage;
     private Integer sshPort;
     private String sshUsername;
     private String sshPassword;

@@ -3,6 +3,7 @@ create table area
     id     int auto_increment
         primary key,
     name   varchar(255)  not null,
+    geo    varchar(255)  null comment '地理信息',
     parent int           null comment '父级',
     realm  int default 0 not null
 );
@@ -135,6 +136,7 @@ create table master
     ticket            text                       null,
     node_name         varchar(255) default 'pve' not null,
     auto_storage      varchar(255)               null,
+    backup_storage    varchar(255)               null,
     ssh_port          int                        null,
     ssh_username      varchar(255)               null,
     ssh_password      varchar(255)               null,

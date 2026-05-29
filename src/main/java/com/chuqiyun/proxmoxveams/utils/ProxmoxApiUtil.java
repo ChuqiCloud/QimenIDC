@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.utils;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.entity.Master;
@@ -16,6 +17,9 @@ import org.springframework.web.client.RestTemplate;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -234,6 +238,28 @@ public class ProxmoxApiUtil {
     * @DateTime: 2023/6/20 15:22
     * @Return
     */
+    public JSONObject deleteNodeApiByUri(Master node, HashMap<String, String> cookie, String encodedUrl) throws UnauthorizedException {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("Cookie", cookie.get("cookie"));
+        headers.add("CSRFPreventionToken", cookie.get("CSRFPreventionToken"));
+
+        HttpEntity<?> entity = new HttpEntity<>(headers);
+
+        TrustSslUtil.initDefaultSsl();
+
+        RestTemplate restTemplate = new RestTemplate();
+        ResponseEntity<String> response = restTemplate.exchange(URI.create(getNodeUrl(node) + encodedUrl), HttpMethod.DELETE, entity, String.class);
+
+        if (response.getStatusCode().is2xxSuccessful()) {
+            JSONObject body = JSONObject.parseObject(response.getBody());
+            assert body != null;
+            return body;
+        } else {
+            throw new UnauthorizedException("请求失败");
+        }
+    }
+
     public HashMap<String, String> loginAndGetCookie(HashMap<String,String> user) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
         RestTemplate restTemplate = new RestTemplate(RestTemplateConfig.generateHttpRequestFactory());
         // 构建请求主体
@@ -310,6 +336,18 @@ public class ProxmoxApiUtil {
     */
     public JSONObject getVmStatus(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/status/current",new HashMap<>());
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 强制关闭指定虚拟机
+     * @DateTime: 2026/5/29 23:03
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
+     * @Return JSONObject
+     */
+    public JSONObject forceStopVm(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/status/stop", params);
     }
 
     /**
@@ -473,6 +511,141 @@ public class ProxmoxApiUtil {
      * @Return none
      */
     public JSONObject getVmBackup(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
-        return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",new HashMap<>());
+        return getVmBackup(node, cookie, vmid, null);
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 获取指定虚拟机备份列表
+     * @DateTime: 2026/5/29 23:03
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String storage 备份存储
+     * @Return JSONObject
+     */
+    public JSONObject getVmBackup(Master node, HashMap<String,String> cookie, Integer vmid, String storage) throws UnauthorizedException {
+        if (hasText(storage)) {
+            return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/storage/" + encodePath(storage) + "/content?content=backup&vmid=" + vmid, new HashMap<>());
+        }
+
+        JSONObject storageJson = getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/storage", new HashMap<>());
+        JSONArray backupList = new JSONArray();
+        if (storageJson == null) {
+            JSONObject result = new JSONObject();
+            result.put("data", backupList);
+            return result;
+        }
+
+        JSONArray storageList = storageJson.getJSONArray("data");
+        if (storageList != null) {
+            for (int i = 0; i < storageList.size(); i++) {
+                JSONObject storageItem = storageList.getJSONObject(i);
+                if (storageItem == null || !hasBackupContent(storageItem)) {
+                    continue;
+                }
+
+                String storageName = storageItem.getString("storage");
+                JSONObject backups = getVmBackup(node, cookie, vmid, storageName);
+                if (backups == null || backups.getJSONArray("data") == null) {
+                    continue;
+                }
+                JSONArray data = backups.getJSONArray("data");
+                for (int j = 0; j < data.size(); j++) {
+                    JSONObject backup = data.getJSONObject(j);
+                    if (backup != null) {
+                        backup.put("storage", storageName);
+                        backupList.add(backup);
+                    }
+                }
+            }
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("data", backupList);
+        return result;
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 创建指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String storage 备份存储 String mode 备份模式 String compress 压缩方式 String notes 备注
+     * @Return JSONObject
+     */
+    public JSONObject addVmBackup(Master node, HashMap<String,String> cookie, Integer vmid, String storage, String mode,
+                                  String compress, String notes) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("vmid", vmid);
+        params.put("storage", storage);
+        params.put("mode", hasText(mode) ? mode : "snapshot");
+        params.put("compress", hasText(compress) ? compress : "zstd");
+        if (hasText(notes)) {
+            params.put("notes-template", notes);
+        }
+        return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/vzdump", params);
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 删除指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 String volid 备份卷标
+     * @Return JSONObject
+     */
+    public JSONObject deleteVmBackup(Master node, HashMap<String,String> cookie, String volid) throws UnauthorizedException {
+        String storage = getStorageFromVolid(volid);
+        return deleteNodeApiByUri(node, cookie, "/nodes/" + encodePath(node.getNodeName()) + "/storage/" + encodePath(storage) + "/content/" + encodePath(volid));
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 还原指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String volid 备份卷标 Boolean force 是否覆盖 Boolean start 是否启动
+     * @Return JSONObject
+     */
+    public JSONObject rollbackVmBackup(Master node, HashMap<String,String> cookie, Integer vmid, String volid,
+                                       Boolean force, Boolean start) throws UnauthorizedException {
+        validateBackupVolid(volid);
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("vmid", vmid);
+        params.put("archive", volid);
+        if (force != null) {
+            params.put("force", force ? 1 : 0);
+        }
+        if (start != null) {
+            params.put("start", start ? 1 : 0);
+        }
+        return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu", params);
+    }
+
+    private boolean hasBackupContent(JSONObject storageItem) {
+        String content = storageItem.getString("content");
+        if (!hasText(storageItem.getString("storage")) || content == null) {
+            return false;
+        }
+        for (String item : content.split(",")) {
+            if ("backup".equals(item.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String getStorageFromVolid(String volid) {
+        validateBackupVolid(volid);
+        return volid.substring(0, volid.indexOf(':'));
+    }
+
+    private void validateBackupVolid(String volid) {
+        if (!hasText(volid) || !volid.contains(":") || !volid.contains("/")) {
+            throw new IllegalArgumentException("备份卷标无效");
+        }
+    }
+
+    private String encodePath(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

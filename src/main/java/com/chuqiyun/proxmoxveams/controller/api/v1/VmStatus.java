@@ -244,4 +244,83 @@ public class VmStatus {
         }
         return ResponseResult.ok("操作成功");
     }
+    /**
+     * @Author: 鏄熺
+     * @Description: 获取指定虚拟机备份列表
+     * @DateTime: 2026/5/29 23:03
+     */
+    @PublicSysApiCheck
+    @GetMapping("/pve/getVmBackup/{hostId}")
+    public ResponseResult<Object> getVmBackup(@PathVariable Integer hostId) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        return ResponseResult.ok(vmhostService.getVmBackup(vmhost));
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 创建指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/addVmBackup/{hostId}", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object addVmBackup(@PathVariable("hostId") Integer hostId,
+                              @RequestParam(value = "mode", required = false) String mode,
+                              @RequestParam(value = "compress", required = false) String compress,
+                              @RequestParam(value = "notes", required = false) String notes) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        JSONObject result = vmhostService.addVmBackup(vmhost, mode, compress, notes);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok(result);
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 删除指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/deleteVmBackup/{hostId}", method = {RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
+    public Object deleteVmBackup(@PathVariable("hostId") Integer hostId,
+                                 @RequestParam("volid") String volid) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        JSONObject result = vmhostService.deleteVmBackup(vmhost, volid);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok(result);
+    }
+
+    /**
+     * @Author: 鏄熺
+     * @Description: 还原指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/rollbackVmBackup/{hostId}", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object rollbackVmBackup(@PathVariable("hostId") Integer hostId,
+                                   @RequestParam("volid") String volid,
+                                   @RequestParam(value = "force", required = false) Boolean force,
+                                   @RequestParam(value = "start", required = false) Boolean start) throws UnauthorizedException {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        JSONObject result = vmhostService.rollbackVmBackup(vmhost, volid, force, start);
+        if (result == null) {
+            return ResponseResult.fail("操作失败");
+        }
+        return ResponseResult.ok(result);
+    }
 }
+

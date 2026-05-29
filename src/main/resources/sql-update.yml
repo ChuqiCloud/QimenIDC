@@ -173,3 +173,7 @@ build: # 内部构建版本信息
                  primary key (id),
              index vm_resource_rank_type_no_index (rank_type, rank_no)
          );"
+      - "alter table master
+                   add backup_storage varchar(255) null comment '备份存储' after auto_storage;"
+      - "alter table area
+                   add geo varchar(255) null comment '地理信息' after name;"

@@ -37,6 +37,7 @@ public class SysGroupController {
     @PostMapping("/addArea")
     public ResponseResult<String> addArea(@RequestBody JSONObject params) throws UnauthorizedException {
         String name = params.getString("name");
+        String geo = params.getString("geo");
         // 判断name是否存在
         if (areaService.isExistName(name)){
             return ResponseResult.fail("该地区已存在");
@@ -58,6 +59,7 @@ public class SysGroupController {
         }
         Area area = new Area();
         area.setName(name);
+        area.setGeo(geo);
         area.setRealm(realm);
         area.setParent(parent);
 

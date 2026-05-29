@@ -41,6 +41,9 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
+    private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
+    private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -1506,6 +1509,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return proxmoxApiUtil.getVmSnapShot(node,cookieMap,vmhost.getVmid());
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 创建指定虚拟机快照
+     * @DateTime: 2026/5/29 23:13
+     */
     @Override
     public boolean addVmSnapShot(Vmhost vmhost, String snapName, Boolean vmstate, String description) {
         Master node = masterService.getById(vmhost.getNodeid());
@@ -1516,6 +1524,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return true;
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 删除指定虚拟机快照
+     * @DateTime: 2026/5/29 23:13
+     */
     @Override
     public boolean deleteVmSnapShot(Vmhost vmhost, String snapName) {
         Master node = masterService.getById(vmhost.getNodeid());
@@ -1526,6 +1539,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return true;
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 回滚指定虚拟机快照
+     * @DateTime: 2026/5/29 23:13
+     */
     @Override
     public boolean rollbackVmSnapShot(Vmhost vmhost, String snapName) {
         Master node = masterService.getById(vmhost.getNodeid());
@@ -1534,6 +1552,141 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         proxmoxApiUtil.rollbackVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName);
         return true;
+    }
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机备份列表
+     * @DateTime: 2026/5/29 23:03
+     */
+    @Override
+    public JSONObject getVmBackup(Vmhost vmhost) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (StringUtils.isBlank(node.getBackupStorage())) {
+            throw new IllegalArgumentException("节点备份存储未配置");
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        return proxmoxApiUtil.getVmBackup(node, cookieMap, vmhost.getVmid(), node.getBackupStorage());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 创建指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @Override
+    public JSONObject addVmBackup(Vmhost vmhost, String mode, String compress, String notes) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (StringUtils.isBlank(node.getBackupStorage())) {
+            throw new IllegalArgumentException("节点备份存储未配置");
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        return proxmoxApiUtil.addVmBackup(node, cookieMap, vmhost.getVmid(), node.getBackupStorage(), mode, compress, notes);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @Override
+    public JSONObject deleteVmBackup(Vmhost vmhost, String volid) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        return proxmoxApiUtil.deleteVmBackup(node, cookieMap, volid);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 还原指定虚拟机备份
+     * @DateTime: 2026/5/29 23:03
+     */
+    @Override
+    public JSONObject rollbackVmBackup(Vmhost vmhost, String volid, Boolean force, Boolean start) {
+        Master node = masterService.getById(vmhost.getNodeid());
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        forceStopVmBeforeRollbackBackup(vmhost, node, cookieMap, proxmoxApiUtil);
+        return proxmoxApiUtil.rollbackVmBackup(node, cookieMap, vmhost.getVmid(), volid, force == null ? true : force, start);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 还原备份前强制关闭虚拟机
+     * @DateTime: 2026/5/29 23:13
+     */
+    private void forceStopVmBeforeRollbackBackup(Vmhost vmhost, Master node, HashMap<String, String> cookieMap,
+                                                 ProxmoxApiUtil proxmoxApiUtil) {
+        String status = getVmPowerStatus(node, cookieMap, proxmoxApiUtil, vmhost.getVmid());
+        if ("stopped".equals(status)) {
+            return;
+        }
+
+        log.info("[VmBackupRestore] 还原备份前强制关机: NodeID:{} VM-ID:{} currentStatus:{}",
+                node.getId(), vmhost.getVmid(), status);
+        proxmoxApiUtil.forceStopVm(node, cookieMap, vmhost.getVmid());
+        vmhost.setStatus(9);
+        this.updateById(vmhost);
+        waitVmStoppedBeforeRollbackBackup(vmhost, node, cookieMap, proxmoxApiUtil);
+        vmhost.setStatus(1);
+        this.updateById(vmhost);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 等待虚拟机关机完成后继续还原备份
+     * @DateTime: 2026/5/29 23:13
+     */
+    private void waitVmStoppedBeforeRollbackBackup(Vmhost vmhost, Master node, HashMap<String, String> cookieMap,
+                                                   ProxmoxApiUtil proxmoxApiUtil) {
+        long endTime = System.currentTimeMillis() + BACKUP_RESTORE_SHUTDOWN_TIMEOUT;
+        while (System.currentTimeMillis() <= endTime) {
+            String status = getVmPowerStatus(node, cookieMap, proxmoxApiUtil, vmhost.getVmid());
+            if ("stopped".equals(status)) {
+                return;
+            }
+            sleepBeforeNextVmStatusCheck();
+        }
+        throw new IllegalStateException("还原备份前强制关机超时");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取虚拟机实时电源状态
+     * @DateTime: 2026/5/29 23:13
+     */
+    private String getVmPowerStatus(Master node, HashMap<String, String> cookieMap, ProxmoxApiUtil proxmoxApiUtil,
+                                    Integer vmid) {
+        JSONObject current = proxmoxApiUtil.getVmStatus(node, cookieMap, vmid);
+        if (current == null) {
+            throw new IllegalStateException("还原备份前获取虚拟机状态失败");
+        }
+
+        JSONObject data = current.getJSONObject("data");
+        if (data == null) {
+            data = current;
+        }
+        String status = data.getString("status");
+        if (StringUtils.isBlank(status)) {
+            throw new IllegalStateException("还原备份前虚拟机状态为空");
+        }
+        return status;
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 等待下一次虚拟机状态检查
+     * @DateTime: 2026/5/29 23:13
+     */
+    private void sleepBeforeNextVmStatusCheck() {
+        try {
+            Thread.sleep(BACKUP_RESTORE_SHUTDOWN_WAIT);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("等待虚拟机关机时被中断，备份还原已取消", e);
+        }
     }
 }
 

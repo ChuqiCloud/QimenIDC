@@ -23,6 +23,7 @@ public class Area extends Model<Area> {
     private Integer id;
     
     private String name;
+    private String geo;
     private Integer parent;
     
     private Integer realm;
