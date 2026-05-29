@@ -98,6 +98,8 @@ public enum UnifiedResultCode {
     ERROR_VM_IS_INSTALLOS(1042, "Virtual machine is creating or reinstall"),
     //主机名已存在
     ERROR_HOSTNAME_IS_EXIST(1043, "Virtual hostname is exist"),
+    // 虚拟机存在快照，无法重装系统
+    ERROR_VM_HAS_SNAPSHOT(1044, "请删除快照后再重装系统"),
 
     /*pve错误码范围：2xxx*/
 

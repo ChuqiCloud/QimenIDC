@@ -824,12 +824,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk){
         // 获取虚拟机信息
-        Master node = masterService.getById(this.getVmhostNodeId(Math.toIntExact(vmHostId)));
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        Master node = masterService.getById(vmhost.getNodeid());
 
         // 判断虚拟机是否为禁用状态
         if (vmhost.getStatus() == 4){
@@ -842,6 +842,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 判断虚拟机是否为创建/重装中
         if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
+        // 判断虚拟机是否存在快照
+        if (hasVmSnapshot(node, vmhost)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_HAS_SNAPSHOT, null);
         }
 
         Os os = osService.isExistOs(osName);
@@ -945,6 +949,39 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 添加任务流程
         this.addVmHostTask(vmhost.getId(), task.getId());
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_SYSTEM_FAILED, null);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 判断虚拟机是否存在快照
+     * @DateTime: 2026/5/29 23:32
+     */
+    private boolean hasVmSnapshot(Master node, Vmhost vmhost) {
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONObject snapshotJson = proxmoxApiUtil.getVmSnapShot(node, cookieMap, vmhost.getVmid());
+        if (snapshotJson == null) {
+            return false;
+        }
+
+        JSONArray snapshots = snapshotJson.getJSONArray("data");
+        if (snapshots == null || snapshots.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < snapshots.size(); i++) {
+            JSONObject snapshot = snapshots.getJSONObject(i);
+            if (snapshot == null) {
+                continue;
+            }
+            String snapName = snapshot.getString("name");
+            if (StringUtils.isBlank(snapName)) {
+                snapName = snapshot.getString("snapname");
+            }
+            if (StringUtils.isNotBlank(snapName) && !"current".equals(snapName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
