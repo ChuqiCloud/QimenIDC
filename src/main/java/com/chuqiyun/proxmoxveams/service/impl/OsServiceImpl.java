@@ -393,5 +393,25 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         return 0;
     }
 
+    /**
+    * @Author: 星禾
+    * @Description: 判断指定节点上是否已存在该镜像文件
+    * @Params: String fileName 镜像文件名，String path 镜像目录，Integer nodeId 节点id
+    * @Return boolean 是否存在
+    */
+    @Override
+    public boolean isOsExistOnNode(String fileName, String path, Integer nodeId){
+        Master node = masterService.getById(nodeId);
+        if (node == null){
+            return false;
+        }
+        try {
+            JSONArray files = ClientApiUtil.getPathFileList(node.getHost(), node.getControllerPort(), configService.getToken(), path);
+            return files != null && files.contains(fileName);
+        } catch (Exception e){
+            return false;
+        }
+    }
+
 }
 

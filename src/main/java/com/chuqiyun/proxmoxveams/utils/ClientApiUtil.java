@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.utils;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
@@ -152,6 +153,24 @@ public class ClientApiUtil {
         paramMap.put("file",osName);
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 获取节点指定目录下的文件列表
+    * @Params: ip 被控端ip, port 端口, token 令牌, path 目录
+    * @Return JSONArray 文件名列表，失败返回null
+    */
+    public static JSONArray getPathFileList(String ip, Integer port, String token, String path){
+        String url = "http://"+ip+":"+port+"/pathFile";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("path", path);
+        JSONObject result = getControllerApi(url, paramMap, token);
+        if (result == null || result.getInteger("code") != 200){
+            return null;
+        }
+        JSONObject data = result.getJSONObject("data");
+        return data == null ? null : data.getJSONArray("files");
     }
 
     /**
