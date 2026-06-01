@@ -467,6 +467,14 @@ public class ProxmoxApiUtil {
     public JSONObject getVmSnapShot(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         return getNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/snapshot",new HashMap<>());
     }
+
+    public JSONObject getNodeTasks(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/tasks?source=active", new HashMap<>());
+    }
+
+    public JSONObject getVmActiveTasks(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/tasks?source=active&vmid=" + vmid, new HashMap<>());
+    }
     /**
      * @Author: 星禾
      * @Description: 创建指定虚拟机快照

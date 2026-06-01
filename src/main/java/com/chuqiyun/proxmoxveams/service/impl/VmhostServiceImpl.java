@@ -43,6 +43,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
     private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
+    private static final String PENDING_STATUS = "creating";
 
     @Resource
     private MasterService masterService;
@@ -1543,7 +1544,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        return proxmoxApiUtil.getVmSnapShot(node,cookieMap,vmhost.getVmid());
+        JSONObject snapshotJson = proxmoxApiUtil.getVmSnapShot(node,cookieMap,vmhost.getVmid());
+        appendPendingSnapshotTasks(snapshotJson, proxmoxApiUtil.getVmActiveTasks(node, cookieMap, vmhost.getVmid()), vmhost);
+        return snapshotJson;
     }
 
     /**
@@ -1557,6 +1560,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        if (hasPendingSnapshotOrBackupTask(proxmoxApiUtil.getVmActiveTasks(node, cookieMap, vmhost.getVmid()), vmhost.getVmid())) {
+            throw new IllegalStateException("该虚拟机存在创建中的快照或备份，无法重复创建");
+        }
         proxmoxApiUtil.addVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName,vmstate,description);
         return true;
     }
@@ -1603,7 +1609,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        return proxmoxApiUtil.getVmBackup(node, cookieMap, vmhost.getVmid(), node.getBackupStorage());
+        JSONObject backupJson = proxmoxApiUtil.getVmBackup(node, cookieMap, vmhost.getVmid(), node.getBackupStorage());
+        appendPendingBackupTasks(backupJson, proxmoxApiUtil.getVmActiveTasks(node, cookieMap, vmhost.getVmid()), vmhost, node.getBackupStorage());
+        return backupJson;
     }
 
     /**
@@ -1619,7 +1627,111 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        if (hasPendingSnapshotOrBackupTask(proxmoxApiUtil.getVmActiveTasks(node, cookieMap, vmhost.getVmid()), vmhost.getVmid())) {
+            throw new IllegalStateException("该虚拟机存在创建中的快照或备份，无法重复创建");
+        }
         return proxmoxApiUtil.addVmBackup(node, cookieMap, vmhost.getVmid(), node.getBackupStorage(), mode, compress, notes);
+    }
+
+    private void appendPendingSnapshotTasks(JSONObject snapshotJson, JSONObject tasksJson, Vmhost vmhost) {
+        JSONArray snapshots = ensureDataArray(snapshotJson);
+        for (JSONObject task : getPendingVmTasks(tasksJson, vmhost.getVmid())) {
+            if (!"qmsnapshot".equals(task.getString("type"))) {
+                continue;
+            }
+            JSONObject snapshot = new JSONObject();
+            snapshot.put("name", task.getString("id"));
+            snapshot.put("snapname", task.getString("id"));
+            snapshot.put("description", "快照创建中");
+            snapshot.put("status", PENDING_STATUS);
+            snapshot.put("running", true);
+            snapshot.put("upid", task.getString("upid"));
+            snapshot.put("starttime", task.getLong("starttime"));
+            snapshot.put("source", "task");
+            snapshots.add(snapshot);
+        }
+    }
+
+    private void appendPendingBackupTasks(JSONObject backupJson, JSONObject tasksJson, Vmhost vmhost, String storage) {
+        JSONArray backups = ensureDataArray(backupJson);
+        for (JSONObject task : getPendingVmTasks(tasksJson, vmhost.getVmid())) {
+            if (!"vzdump".equals(task.getString("type"))) {
+                continue;
+            }
+            JSONObject backup = new JSONObject();
+            backup.put("volid", task.getString("id"));
+            backup.put("filename", task.getString("id"));
+            backup.put("notes", "备份创建中");
+            backup.put("storage", storage);
+            backup.put("vmid", vmhost.getVmid());
+            backup.put("status", PENDING_STATUS);
+            backup.put("running", true);
+            backup.put("upid", task.getString("upid"));
+            backup.put("starttime", task.getLong("starttime"));
+            backup.put("source", "task");
+            backups.add(backup);
+        }
+    }
+
+    private boolean hasPendingSnapshotOrBackupTask(JSONObject tasksJson, Integer vmid) {
+        for (JSONObject task : getPendingVmTasks(tasksJson, vmid)) {
+            String type = task.getString("type");
+            if ("qmsnapshot".equals(type) || "vzdump".equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<JSONObject> getPendingVmTasks(JSONObject tasksJson, Integer vmid) {
+        JSONArray tasks = tasksJson == null ? null : tasksJson.getJSONArray("data");
+        if (tasks == null || tasks.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<JSONObject> pendingTasks = new ArrayList<>();
+        for (int i = 0; i < tasks.size(); i++) {
+            JSONObject task = tasks.getJSONObject(i);
+            if (task == null || !isPendingTask(task) || !isSameVmTask(task, vmid)) {
+                continue;
+            }
+            pendingTasks.add(task);
+        }
+        return pendingTasks;
+    }
+
+    private boolean isPendingTask(JSONObject task) {
+        String status = task.getString("status");
+        return StringUtils.isBlank(status) || "running".equalsIgnoreCase(status);
+    }
+
+    private boolean isSameVmTask(JSONObject task, Integer vmid) {
+        if (vmid == null) {
+            return false;
+        }
+        Integer taskVmid = task.getInteger("vmid");
+        if (vmid.equals(taskVmid)) {
+            return true;
+        }
+        String taskId = task.getString("id");
+        if (String.valueOf(vmid).equals(taskId)) {
+            return true;
+        }
+        String vmidText = String.valueOf(vmid);
+        String upid = task.getString("upid");
+        return (taskId != null && taskId.contains(vmidText)) || (upid != null && upid.contains(":qemu:" + vmidText + ":"));
+    }
+
+    private JSONArray ensureDataArray(JSONObject json) {
+        if (json == null) {
+            throw new IllegalStateException("获取列表失败");
+        }
+        JSONArray data = json.getJSONArray("data");
+        if (data == null) {
+            data = new JSONArray();
+            json.put("data", data);
+        }
+        return data;
     }
 
     /**
