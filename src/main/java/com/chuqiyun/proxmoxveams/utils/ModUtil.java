@@ -224,18 +224,4 @@ public class ModUtil {
         versionStr = versionStr.substring(0,versionStr.length()-3)+"."+versionStr.substring(versionStr.length()-3);
         return versionStr;
     }
-
-    /**
-    * @Author: 星禾
-    * @Description: 生成不与现有key冲突的递增Map键
-    * @Params: Map<String,Object> map
-    * @Return String 可用的新key
-    */
-    public static String nextMapKey(Map<String,Object> map){
-        int idx = map.size();
-        while (map.containsKey(String.valueOf(idx))){
-            idx++;
-        }
-        return String.valueOf(idx);
-    }
 }

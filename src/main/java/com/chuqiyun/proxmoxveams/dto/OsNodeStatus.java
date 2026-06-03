@@ -25,8 +25,4 @@ public class OsNodeStatus {
      * 0=未下载;1=下载中;2=已下载;3=下载失败
      */
     private Integer status;
-    /**
-     * 最后进度推进时间，用于判定下载是否卡死
-     */
-    private Long updateTime;
 }

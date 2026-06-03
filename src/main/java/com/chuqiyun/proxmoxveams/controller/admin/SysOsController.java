@@ -210,7 +210,7 @@ public class SysOsController {
                 oldNodeStatus.put("0", osNodeStatus);
             } else {
                 // 获取最后一个key
-                String lastKey = ModUtil.nextMapKey(oldNodeStatus);
+                String lastKey = String.valueOf(oldNodeStatus.size());
                 // 添加到Map中
                 oldNodeStatus.put(lastKey, osNodeStatus);
             }
@@ -235,7 +235,7 @@ public class SysOsController {
                     oldNodeStatus.put("0", osNodeStatus);
                 } else {
                     // 获取最后一个key
-                    String lastKey = ModUtil.nextMapKey(oldNodeStatus);
+                    String lastKey = String.valueOf(oldNodeStatus.size());
                     // 添加到Map中
                     oldNodeStatus.put(lastKey, osNodeStatus);
                 }
