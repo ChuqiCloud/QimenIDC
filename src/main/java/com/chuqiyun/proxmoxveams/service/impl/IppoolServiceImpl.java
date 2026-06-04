@@ -98,6 +98,23 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
     public Page<Ippool> getIppoolListByPoolId(Integer ippoolId, Integer page, Integer limit) {
         return this.lambdaQuery().eq(Ippool::getPoolId,ippoolId).page(new Page<>(page,limit));
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定节点空闲IP分页列表
+     * @DateTime: 2026/6/4 20:14
+     */
+    @Override
+    public Page<Ippool> getFreeIppoolListByNodeId(Integer nodeId, Integer page, Integer limit, Integer poolId) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("status", 0);
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        }
+        queryWrapper.orderByAsc("id");
+        return this.page(new Page<>(page, limit), queryWrapper);
+    }
     /**
     * @Author: mryunqi
     * @Description: 批量更新ip池
@@ -151,6 +168,24 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
     @Override
     public Ippool getOneOkIpByPoolId(Integer ippoolId) {
         return this.lambdaQuery().eq(Ippool::getPoolId,ippoolId).eq(Ippool::getStatus,0).last("limit 1").one();
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定节点的一个空闲IP
+     * @DateTime: 2026/6/4 20:14
+     */
+    @Override
+    public Ippool getOneFreeIpByNodeId(Integer nodeId, Integer poolId) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("status", 0);
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return this.getOne(queryWrapper);
     }
 
     /**

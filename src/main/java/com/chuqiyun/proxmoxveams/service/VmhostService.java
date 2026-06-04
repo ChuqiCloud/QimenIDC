@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmIpParams;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -57,6 +58,8 @@ public interface VmhostService extends IService<Vmhost> {
     UnifiedResultDto<Object> unDeleteVm(Long hostId);
 
     UnifiedResultDto<Object> updateVm(VmParams vmParams);
+
+    UnifiedResultDto<Object> updateVmIp(VmIpParams vmIpParams);
 
     UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword);
 

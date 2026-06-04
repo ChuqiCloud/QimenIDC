@@ -172,6 +172,35 @@ public class SysIpPoolController {
     }
 
     /**
+     * @Author: 星禾
+     * @Description: 获取指定节点空闲IP列表
+     * @DateTime: 2026/6/4 20:14
+    */
+    @AdminApiCheck
+    @GetMapping({"/selectFreeIpListByNodeId", "/selectFreeIpByNodeId"})
+    public ResponseResult<Page<Ippool>> selectFreeIpListByNodeId(@RequestParam(name = "nodeId") Integer nodeId,
+                                                                 @RequestParam(name = "page", defaultValue = "1") Integer page,
+                                                                 @RequestParam(name = "size", defaultValue = "20") Integer size,
+                                                                 @RequestParam(name = "poolId", required = false) Integer poolId) throws UnauthorizedException {
+        if (nodeId == null) {
+            return ResponseResult.fail("节点ID不能为空！");
+        }
+        if (masterService.getById(nodeId) == null) {
+            return ResponseResult.fail("节点不存在！");
+        }
+        if (poolId != null) {
+            Ipstatus ipstatus = ipstatusService.getById(poolId);
+            if (ipstatus == null) {
+                return ResponseResult.fail("IP池不存在！");
+            }
+            if (!nodeId.equals(ipstatus.getNodeid())) {
+                return ResponseResult.fail("IP池不属于该节点！");
+            }
+        }
+        return ResponseResult.ok(ippoolService.getFreeIppoolListByNodeId(nodeId, page, size, poolId));
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 修改IP池
     * @DateTime: 2023/7/4 16:39

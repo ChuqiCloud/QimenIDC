@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.service.impl;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
@@ -11,6 +12,9 @@ import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmIpParams;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
+import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
@@ -24,6 +28,7 @@ import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -53,6 +58,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private OsService osService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private IppoolService ippoolService;
+    @Resource
+    private IpstatusService ipstatusService;
 
     /**
     * @Author: mryunqi
@@ -1178,6 +1187,181 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         this.updateById(vmhost);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 修改虚拟机IP并重生成cloud-init镜像
+     * @DateTime: 2026/6/4 20:14
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UnifiedResultDto<Object> updateVmIp(VmIpParams vmIpParams) {
+        if (vmIpParams == null || vmIpParams.getHostId() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        if (vmhost == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+
+        int networkIndex = vmIpParams.getNetworkIndex() == null ? 1 : vmIpParams.getNetworkIndex();
+        if (networkIndex < 1) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        String ipConfigKey = String.valueOf(networkIndex);
+        String oldIp = getIpFromCloudInitConfig(ipConfig.get(ipConfigKey));
+        Ippool oldIppool = oldIp == null ? null : ippoolService.getIppoolByIp(oldIp);
+        Ippool newIppool = getNewIppool(vmIpParams, vmhost, oldIppool);
+        if (newIppool == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        }
+        if (!Objects.equals(newIppool.getNodeId(), vmhost.getNodeid())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        if (oldIp != null && oldIp.equals(newIppool.getIp())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Ipstatus ipstatus = ipstatusService.getById(newIppool.getPoolId());
+        if (ipstatus == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
+        }
+        Integer mask = getIpMask(ipstatus, newIppool);
+        String gateway = StringUtils.defaultIfBlank(newIppool.getGateway(), ipstatus.getGateway());
+        if (mask == null || StringUtils.isBlank(gateway)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+
+        String newIpConfig = "ip=" + newIppool.getIp() + "/" + mask + ",gw=" + gateway;
+        if (!bindNewIp(newIppool, vmhost)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        }
+        releaseOldIp(oldIppool, newIppool);
+
+        ipConfig.put(ipConfigKey, newIpConfig);
+        vmhost.setIpConfig(ipConfig);
+        vmhost.setIpList(replaceVmhostIpList(vmhost, ipConfig, oldIp, newIppool.getIp()));
+        vmhost.setIpData(VmUtil.splitIpAddress(ipConfig));
+        if (!this.updateById(vmhost)) {
+            throw new IllegalStateException("更新虚拟机IP失败: hostId=" + vmhost.getId());
+        }
+
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig" + (networkIndex - 1), newIpConfig);
+        String nameserver = StringUtils.defaultIfBlank(newIppool.getDns1(), ipstatus.getDns1());
+        if (StringUtils.isNotBlank(nameserver)) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", nameserver);
+        }
+        proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，请重启机器");
+    }
+
+    private Ippool getNewIppool(VmIpParams vmIpParams, Vmhost vmhost, Ippool oldIppool) {
+        String newIp = StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp());
+        if (StringUtils.isNotBlank(newIp)) {
+            Ippool ippool = ippoolService.getIppoolByIp(newIp);
+            if (ippool == null || ippool.getStatus() == null || ippool.getStatus() != 0) {
+                return null;
+            }
+            return ippool;
+        }
+        Integer poolId = vmIpParams.getPoolId();
+        if (poolId == null && oldIppool != null) {
+            poolId = oldIppool.getPoolId();
+        }
+        return ippoolService.getOneFreeIpByNodeId(vmhost.getNodeid(), poolId);
+    }
+
+    private boolean bindNewIp(Ippool newIppool, Vmhost vmhost) {
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", newIppool.getId());
+        updateWrapper.eq("status", 0);
+        updateWrapper.set("status", 1);
+        updateWrapper.set("vm_id", vmhost.getVmid());
+        return ippoolService.update(updateWrapper);
+    }
+
+    private void releaseOldIp(Ippool oldIppool, Ippool newIppool) {
+        if (oldIppool == null || Objects.equals(oldIppool.getId(), newIppool.getId())) {
+            return;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", oldIppool.getId());
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        if (!ippoolService.update(updateWrapper)) {
+            throw new IllegalStateException("释放旧IP失败: ip=" + oldIppool.getIp());
+        }
+    }
+
+    private String getIpFromCloudInitConfig(String ipConfig) {
+        if (StringUtils.isBlank(ipConfig)) {
+            return null;
+        }
+        String[] configItems = ipConfig.split(",");
+        for (String configItem : configItems) {
+            String item = configItem.trim();
+            if (!item.startsWith("ip=")) {
+                continue;
+            }
+            String ipWithMask = item.substring(3);
+            if ("dhcp".equalsIgnoreCase(ipWithMask)) {
+                return null;
+            }
+            int maskIndex = ipWithMask.indexOf('/');
+            return maskIndex > 0 ? ipWithMask.substring(0, maskIndex) : ipWithMask;
+        }
+        return null;
+    }
+
+    private Integer getIpMask(Ipstatus ipstatus, Ippool ippool) {
+        if (ipstatus.getMask() != null) {
+            return ipstatus.getMask();
+        }
+        return subnetMaskToPrefix(ippool.getSubnetMask());
+    }
+
+    private Integer subnetMaskToPrefix(String subnetMask) {
+        if (StringUtils.isBlank(subnetMask)) {
+            return null;
+        }
+        String[] items = subnetMask.split("\\.");
+        if (items.length != 4) {
+            return null;
+        }
+        int prefix = 0;
+        try {
+            for (String item : items) {
+                int value = Integer.parseInt(item);
+                prefix += Integer.bitCount(value);
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return prefix;
+    }
+
+    private List<String> replaceVmhostIpList(Vmhost vmhost, HashMap<String, String> ipConfig, String oldIp, String newIp) {
+        List<String> ipList = vmhost.getIpList() == null ? new ArrayList<>() : new ArrayList<>(vmhost.getIpList());
+        if (oldIp != null) {
+            ipList.removeIf(oldIp::equals);
+        }
+        if (!ipList.contains(newIp)) {
+            ipList.add(newIp);
+        }
+        if (ipList.isEmpty()) {
+            ipList = VmUtil.splitIpAddress(ipConfig).stream().map(ipDto -> ipDto.getIp()).collect(Collectors.toList());
+        }
+        return ipList;
     }
 
     /**

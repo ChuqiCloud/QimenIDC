@@ -29,6 +29,8 @@ public interface IppoolService extends IService<Ippool> {
 
     Page<Ippool> getIppoolListByPoolId(Integer ippoolId, Integer page, Integer limit);
 
+    Page<Ippool> getFreeIppoolListByNodeId(Integer nodeId, Integer page, Integer limit, Integer poolId);
+
     boolean updateIppoolList(List<Ippool> ippoolList);
 
     List<Integer> getAllIdList();
@@ -38,6 +40,8 @@ public interface IppoolService extends IService<Ippool> {
     Long getIpCountByPoolId(Integer ippoolId);
 
     Ippool getOneOkIpByPoolId(Integer ippoolId);
+
+    Ippool getOneFreeIpByNodeId(Integer nodeId, Integer poolId);
 
     Ippool getIppoolByIp(String ip);
 

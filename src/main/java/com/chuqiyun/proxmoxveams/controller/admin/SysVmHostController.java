@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmIpParams;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -190,6 +191,51 @@ public class SysVmHostController {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 修改虚拟机IP
+     * @DateTime: 2026/6/4 20:14
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/updateVmIp",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object updateVmIp(@RequestBody(required = false) VmIpParams vmIpParams,
+                             @RequestParam(name = "hostId", required = false) Integer hostId,
+                             @RequestParam(name = "hostid", required = false) Integer hostid,
+                             @RequestParam(name = "ip", required = false) String ip,
+                             @RequestParam(name = "newIp", required = false) String newIp,
+                             @RequestParam(name = "poolId", required = false) Integer poolId,
+                             @RequestParam(name = "networkIndex", required = false) Integer networkIndex) throws UnauthorizedException {
+        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, poolId, networkIndex);
+        UnifiedResultDto<Object> resultDto = vmhostService.updateVmIp(params);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
+    private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, Integer poolId, Integer networkIndex) {
+        VmIpParams params = vmIpParams == null ? new VmIpParams() : vmIpParams;
+        if (params.getHostId() == null) {
+            params.setHostId(hostId);
+        }
+        if (params.getHostId() == null) {
+            params.setHostId(hostid);
+        }
+        if (params.getIp() == null) {
+            params.setIp(ip);
+        }
+        if (params.getNewIp() == null) {
+            params.setNewIp(newIp);
+        }
+        if (params.getPoolId() == null) {
+            params.setPoolId(poolId);
+        }
+        if (params.getNetworkIndex() == null) {
+            params.setNetworkIndex(networkIndex);
+        }
+        return params;
     }
     /**
      * @Author: 星禾
