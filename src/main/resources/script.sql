@@ -76,7 +76,8 @@ create table flowdata
     rrd         json             null,
     used_flow   double default 0 not null comment '已用流量',
     status      int    default 0 not null comment '0=未同步;1=已同步',
-    create_date varchar(20)      null
+    create_date varchar(20)      null,
+    index idx_flowdata_host_status_create_date (hostid, status, create_date)
 );
 
 create table ippool
@@ -337,7 +338,9 @@ create table vmhost
     extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
     reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
     out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
-    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除'
+    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除',
+    index idx_vmhost_status_nodeid (status, nodeid),
+    index idx_vmhost_reset_flow_time (reset_flow_time)
 );
 
 create table vm_resource_rank

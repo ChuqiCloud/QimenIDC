@@ -177,3 +177,10 @@ build: # 内部构建版本信息
                    add backup_storage varchar(255) null comment '备份存储' after auto_storage;"
       - "alter table area
                    add geo varchar(255) null comment '地理信息' after name;"
+    2:
+      - "alter table flowdata
+                   add index idx_flowdata_host_status_create_date (hostid, status, create_date);"
+      - "alter table vmhost
+                   add index idx_vmhost_status_nodeid (status, nodeid);"
+      - "alter table vmhost
+                   add index idx_vmhost_reset_flow_time (reset_flow_time);"

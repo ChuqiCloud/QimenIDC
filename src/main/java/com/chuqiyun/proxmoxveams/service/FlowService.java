@@ -10,4 +10,6 @@ public interface FlowService {
     Boolean insertFlowdata(Integer hostId);
 
     Boolean syncVmFlowdata(Integer hostId, Vmhost vmhost);
+
+    Boolean syncVmFlowdata(Integer hostId, Vmhost vmhost, boolean checkNodeOnline);
 }
