@@ -152,7 +152,7 @@ wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash
 
 如果您有任何问题、建议或反馈，可以加入QQ群：
 
-<img src="/screenshot/qq.jpg" alt="qq" style="max-height:320px; width:auto;">
+![qq 社群](https://img.xwyue.com/i/2026/06/05/6a22efc90af95.png)
 
 ## 许可证
 
