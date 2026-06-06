@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.IppoolDao;
@@ -8,7 +9,10 @@ import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -198,6 +202,56 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
     @Override
     public Ippool getIppoolByIp(String ip) {
         return this.lambdaQuery().eq(Ippool::getIp, ip).one();
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 释放指定节点下虚拟机绑定的全部IP
+     * @DateTime: 2026/6/6 12:27
+     */
+    @Override
+    public int releaseIppoolByNodeIdAndVmId(Integer nodeId, Integer vmId, List<String> ipList) {
+        Set<String> releaseIpSet = new LinkedHashSet<>();
+        if (ipList != null) {
+            for (String ip : ipList) {
+                if (ip != null && !ip.trim().isEmpty()) {
+                    releaseIpSet.add(ip.trim());
+                }
+            }
+        }
+        if (nodeId == null || (vmId == null && releaseIpSet.isEmpty())) {
+            return 0;
+        }
+
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        if (vmId != null && !releaseIpSet.isEmpty()) {
+            queryWrapper.and(wrapper -> wrapper.eq("vm_id", vmId).or().in("ip", releaseIpSet));
+        } else if (vmId != null) {
+            queryWrapper.eq("vm_id", vmId);
+        } else {
+            queryWrapper.in("ip", releaseIpSet);
+        }
+        List<Ippool> ippoolList = this.list(queryWrapper);
+        if (ippoolList == null || ippoolList.isEmpty()) {
+            return 0;
+        }
+
+        List<Integer> ids = new ArrayList<>();
+        for (Ippool ippool : ippoolList) {
+            if (ippool.getId() != null && !ids.contains(ippool.getId())) {
+                ids.add(ippool.getId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return 0;
+        }
+
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.in("id", ids);
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        return this.update(updateWrapper) ? ids.size() : 0;
     }
 
     /**

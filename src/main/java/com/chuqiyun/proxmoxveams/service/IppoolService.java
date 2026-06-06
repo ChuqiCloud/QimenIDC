@@ -45,6 +45,8 @@ public interface IppoolService extends IService<Ippool> {
 
     Ippool getIppoolByIp(String ip);
 
+    int releaseIppoolByNodeIdAndVmId(Integer nodeId, Integer vmId, List<String> ipList);
+
     boolean deleteIppoolByCondition(QueryWrapper<Ippool> ippool);
 }
 

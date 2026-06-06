@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
-import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -117,6 +116,7 @@ public class DeleteVmCron {
 
             }
             else {
+                ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
                 // 标记为已删除，保留记录供统计使用
                 vmhost.setDeleteState(2);
                 vmhost.setExpirationTime(System.currentTimeMillis());
@@ -132,15 +132,7 @@ public class DeleteVmCron {
 
             proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
 
-            List<String> ipList = vmhost.getIpList();
-            for (String ip : ipList) {
-                Ippool ippool = ippoolService.getIppoolByIp(ip);
-                if (ippool != null) {
-                    ippool.setStatus(0);
-                    ippool.setVmId(0);
-                    ippoolService.updateById(ippool);
-                }
-            }
+            ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
             // 标记为已删除，保留记录供统计使用
             vmhost.setDeleteState(2);
             vmhost.setExpirationTime(System.currentTimeMillis());
