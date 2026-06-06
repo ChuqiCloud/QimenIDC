@@ -1,22 +1,29 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
+import com.chuqiyun.proxmoxveams.service.SystemLogService;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
 import com.chuqiyun.proxmoxveams.utils.JWTUtil;
-import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
-import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -28,44 +35,106 @@ import java.util.Objects;
 public class SysAccountController {
     @Value("${config.secret}")
     private String secret;
+
     @Resource
     private SysuserService sysuserService;
+
+    @Resource
+    private SystemLogService systemLogService;
+
     /**
      * 管理员登录接口
+     *
      * @param param JSONObject
      * @return ResponseResult<String>
      */
     @PostMapping("/loginDo")
     public ResponseResult<String> loginDo(@RequestBody JSONObject param,
+                                          HttpServletRequest request,
                                           HttpServletResponse response)
             throws UnauthorizedException {
-        // 判断username是否同时为空
-        if (StringUtils.isBlank(param.getString("username"))){
+        String username = param.getString("username");
+        String password = param.getString("password");
+        if (StringUtils.isBlank(username)) {
+            writeLoginLog(request, username, false, "username is blank",
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getCode(),
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getMessage());
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
         }
-        // 判断password是否为空
-        if (StringUtils.isBlank(param.getString("password"))){
+        if (StringUtils.isBlank(password)) {
+            writeLoginLog(request, username, false, "password is blank",
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getCode(),
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getMessage());
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
         }
-        Sysuser sysuser = sysuserService.getSysuserByUsername(param.getString("username"));
-
-
-        if (Objects.isNull(sysuser)){
-            //判断用户是否存在
+        Sysuser sysuser = sysuserService.getSysuserByUsername(username);
+        if (Objects.isNull(sysuser)) {
+            writeLoginLog(request, username, false, "account not found",
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getCode(),
+                    ResponseResult.RespCode.LOGIN_NO_ACCOUNT.getMessage());
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
-        }else if (!sysuser.getPassword().equals(EncryptUtil.md5(param.getString("password")))){
-            //判断用户密码是否正确
+        }
+        if (!sysuser.getPassword().equals(EncryptUtil.md5(password))) {
+            writeLoginLog(request, username, false, "password incorrect",
+                    ResponseResult.RespCode.LOGIN_FAIL.getCode(),
+                    ResponseResult.RespCode.LOGIN_FAIL.getMessage());
             return ResponseResult.fail(ResponseResult.RespCode.LOGIN_FAIL);
         }
         Long nowDate = System.currentTimeMillis();
         sysuser.setLogindate(nowDate);
         sysuser.updateById();
-        String jwtToken = JWTUtil.sign(sysuser.getUuid(),secret);
-        /*Cookie cookie = new Cookie("token", jwtToken);
-        cookie.setMaxAge(7200);
-        response.addCookie(cookie);*/
+        String jwtToken = JWTUtil.sign(sysuser.getUuid(), secret);
         response.addHeader("Authorization", jwtToken);
+        writeLoginLog(request, sysuser.getUsername(), true, "login success",
+                ResponseResult.RespCode.OK.getCode(),
+                ResponseResult.RespCode.OK.getMessage());
         return ResponseResult.ok(jwtToken);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 记录管理员登录日志
+     * @DateTime: 2026/6/7 11:25
+     */
+    private void writeLoginLog(HttpServletRequest request,
+                               String username,
+                               boolean success,
+                               String reason,
+                               Integer businessCode,
+                               String businessMessage) {
+        Map<String, Object> loginLog = new LinkedHashMap<>();
+        loginLog.put("event", "login");
+        loginLog.put("requestId", StringUtils.defaultIfBlank(MDC.get("requestId"), "-"));
+        loginLog.put("username", StringUtils.defaultIfBlank(username, "-"));
+        loginLog.put("clientIp", getClientIp(request));
+        loginLog.put("success", success);
+        loginLog.put("reason", reason);
+        loginLog.put("businessCode", businessCode);
+        loginLog.put("businessMessage", businessMessage);
+        String content = JSON.toJSONString(loginLog);
+        if (success) {
+            UnifiedLogger.log(UnifiedLogger.LogType.LOGIN, "{}", content);
+        } else {
+            UnifiedLogger.warn(UnifiedLogger.LogType.LOGIN, "{}", content);
+        }
+        saveLoginLogToDatabase(request, username, success, reason, businessCode, businessMessage, content);
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String[] headerNames = {
+                "X-Forwarded-For",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_CLIENT_IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
+        for (String headerName : headerNames) {
+            String ip = request.getHeader(headerName);
+            if (StringUtils.isNotBlank(ip) && !"unknown".equalsIgnoreCase(ip)) {
+                return StringUtils.substringBefore(ip, ",").trim();
+            }
+        }
+        return request.getRemoteAddr();
     }
 
     /**
@@ -80,8 +149,7 @@ public class SysAccountController {
     public ResponseResult<String> registerDo(@RequestBody JSONObject param)
             throws UnauthorizedException {
         Sysuser sysuser = sysuserService.getSysuserByUsername(param.getString("username"));
-        if (!Objects.isNull(sysuser)){
-            //判断用户是否存在
+        if (!Objects.isNull(sysuser)) {
             return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
         }
         Sysuser sysUser = new Sysuser();
@@ -92,9 +160,9 @@ public class SysAccountController {
         sysUser.setName(param.getString("name"));
         sysUser.setUuid(UUIDUtil.getUUIDByThreadString());
         if (sysuserService.save(sysUser)) {
-            return ResponseResult.ok("添加管理账号成功！");
+            return ResponseResult.ok("添加管理员账户成功！");
         } else {
-            return ResponseResult.fail("添加管理账号失败！");
+            return ResponseResult.fail("添加管理员账户失败！");
         }
     }
 
@@ -106,10 +174,10 @@ public class SysAccountController {
     */
     @AdminApiCheck
     @GetMapping("/getSysuser")
-    public ResponseResult<Page<Sysuser>> getSysuser(@RequestParam(name = "page",defaultValue = "1") Integer page,
-                                           @RequestParam(name = "size",defaultValue = "20") Integer size)
+    public ResponseResult<Page<Sysuser>> getSysuser(@RequestParam(name = "page", defaultValue = "1") Integer page,
+                                                    @RequestParam(name = "size", defaultValue = "20") Integer size)
             throws UnauthorizedException {
-        return ResponseResult.ok(sysuserService.selectUserPage(page,size));
+        return ResponseResult.ok(sysuserService.selectUserPage(page, size));
     }
 
     /**
@@ -136,12 +204,10 @@ public class SysAccountController {
     public ResponseResult<String> updateSysuser(@RequestBody JSONObject param)
             throws UnauthorizedException {
         Sysuser sysuser = sysuserService.getById(param.getLong("id"));
-        if (Objects.isNull(sysuser)){
-            //判断用户是否存在
+        if (Objects.isNull(sysuser)) {
             return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
         }
-        // 判断密码是否为空
-        if (StringUtils.isNotBlank(param.getString("password"))){
+        if (StringUtils.isNotBlank(param.getString("password"))) {
             sysuser.setPassword(EncryptUtil.md5(param.getString("password")));
         }
         sysuser.setUsername(param.getString("username"));
@@ -149,9 +215,9 @@ public class SysAccountController {
         sysuser.setPhone(param.getString("phone"));
         sysuser.setName(param.getString("name"));
         if (sysuserService.updateById(sysuser)) {
-            return ResponseResult.ok("修改管理账号成功！");
+            return ResponseResult.ok("修改管理员账户成功！");
         } else {
-            return ResponseResult.fail("修改管理账号失败！");
+            return ResponseResult.fail("修改管理员账户失败！");
         }
     }
 
@@ -161,13 +227,38 @@ public class SysAccountController {
     * @DateTime: 2024/2/17 17:11
     */
     @AdminApiCheck
-    @RequestMapping(value = "/deleteSysUserById/{id}",method = {RequestMethod.POST,RequestMethod.DELETE})
+    @RequestMapping(value = "/deleteSysUserById/{id}", method = {RequestMethod.POST, RequestMethod.DELETE})
     public ResponseResult<String> deleteSysUserById(@PathVariable Long id)
             throws UnauthorizedException {
         if (sysuserService.removeById(id)) {
-            return ResponseResult.ok("删除管理账号成功！");
+            return ResponseResult.ok("删除管理员账户成功！");
         } else {
-            return ResponseResult.fail("删除管理账号失败！");
+            return ResponseResult.fail("删除管理员账户失败！");
         }
+    }
+
+    private void saveLoginLogToDatabase(HttpServletRequest request,
+                                        String username,
+                                        boolean success,
+                                        String reason,
+                                        Integer businessCode,
+                                        String businessMessage,
+                                        String content) {
+        SystemLog systemLog = new SystemLog();
+        systemLog.setRequestId(StringUtils.defaultIfBlank(MDC.get("requestId"), "-"));
+        systemLog.setLogType("LOGIN");
+        systemLog.setLevel(success ? "INFO" : "WARN");
+        systemLog.setMethod(request.getMethod());
+        systemLog.setUri(request.getRequestURI());
+        systemLog.setClientIp(getClientIp(request));
+        systemLog.setOperator("admin:" + StringUtils.defaultIfBlank(username, "-"));
+        systemLog.setAuthType("ANONYMOUS");
+        systemLog.setHttpStatus(200);
+        systemLog.setBusinessCode(businessCode);
+        systemLog.setBusinessMessage(businessMessage);
+        systemLog.setException(success ? "" : reason);
+        systemLog.setContent(content);
+        systemLog.setCreateTime(System.currentTimeMillis());
+        systemLogService.saveSystemLogAsync(systemLog);
     }
 }

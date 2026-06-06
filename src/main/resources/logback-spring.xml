@@ -10,7 +10,7 @@
     <conversionRule conversionWord="wex" converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter" />
     <conversionRule conversionWord="wEx" converterClass="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter" />
     <!-- 彩色日志格式 -->
-    <property name="CONSOLE_LOG_PATTERN" value="${CONSOLE_LOG_PATTERN:-%clr(%d{yyyy-MM-dd HH:mm:ss}){faint} %clr([ %t:%r ]){magenta} %clr(-){faint} %clr(${LOG_LEVEL_PATTERN:-[ %p ]}) %clr(%m%n){cyan}}"/>
+    <property name="CONSOLE_LOG_PATTERN" value="${CONSOLE_LOG_PATTERN:-%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr([requestId:%X{requestId:-}]){yellow} %clr([%5p]) %clr(%logger{36}){green} %clr(-){faint} %clr(%m%n){cyan}%wEx}"/>
     <!--ch.qos.logback.core.ConsoleAppender 是 logback 类的完整路径 ${CONSOLE_LOG_PATTERN}-->
     <appender name="consoleLog" class="ch.qos.logback.core.ConsoleAppender">
         <layout class="ch.qos.logback.classic.PatternLayout">
@@ -32,7 +32,7 @@
         </filter>
         <encoder>
             <pattern>
-                %d{yyyy-MM-dd HH:mm:ss} [ %t:%r ] - [ %p ] %m%n%wEx
+                %d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [requestId:%X{requestId:-}] [%5p] %logger{36} - %m%n%wEx
             </pattern>
             <charset>utf-8</charset>
         </encoder>
@@ -54,7 +54,7 @@
         </filter>
         <encoder>
             <pattern>
-                %d{yyyy-MM-dd HH:mm:ss} [ %t:%r ] - [ %p ] %m%n%wEx
+                %d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [requestId:%X{requestId:-}] [%5p] %logger{36} - %m%n%wEx
             </pattern>
         </encoder>
         <!-- 滚动策略 -->

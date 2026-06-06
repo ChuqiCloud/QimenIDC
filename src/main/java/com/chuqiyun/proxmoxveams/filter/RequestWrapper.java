@@ -1,13 +1,10 @@
 package com.chuqiyun.proxmoxveams.filter;
 
-import org.apache.tomcat.util.http.fileupload.IOUtils;
-
 import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import java.io.*;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -25,7 +22,7 @@ public class RequestWrapper extends HttpServletRequestWrapper {
 
     @Override
     public BufferedReader getReader() throws IOException {
-        return new BufferedReader(new InputStreamReader(getInputStream()));
+        return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
     }
 
     @Override
@@ -88,5 +85,9 @@ public class RequestWrapper extends HttpServletRequestWrapper {
             }
         }
         return sb.toString();
+    }
+
+    public String getBody() {
+        return new String(body, StandardCharsets.UTF_8);
     }
 }

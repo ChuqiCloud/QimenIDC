@@ -430,4 +430,34 @@ create table zones
     state      varchar(255) default 'new' not null
 );
 
+create table system_log
+(
+    id               int auto_increment
+        primary key,
+    request_id       varchar(64)  null,
+    log_type         varchar(32)  null,
+    level            varchar(16)  null,
+    method           varchar(16)  null,
+    uri              varchar(255) null,
+    path_pattern     varchar(255) null,
+    handler          varchar(255) null,
+    client_ip        varchar(64)  null,
+    operator         varchar(255) null,
+    auth_type        varchar(32)  null,
+    query_string     text         null,
+    request_body     text         null,
+    http_status      int          null,
+    business_code    int          null,
+    business_message varchar(255) null,
+    response_body    text         null,
+    duration_ms      bigint       null,
+    exception        text         null,
+    content          text         null,
+    create_time      bigint       null,
+    index idx_system_log_create_time (create_time),
+    index idx_system_log_type_create_time (log_type, create_time),
+    index idx_system_log_request_id (request_id),
+    index idx_system_log_level (level)
+);
+
 

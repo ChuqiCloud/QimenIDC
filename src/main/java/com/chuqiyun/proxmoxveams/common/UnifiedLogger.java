@@ -17,6 +17,7 @@ public class UnifiedLogger {
          * API日志
          */
         API("[API]"),
+        LOGIN("[Login]"),
         /**
          * 任务日志
          */
