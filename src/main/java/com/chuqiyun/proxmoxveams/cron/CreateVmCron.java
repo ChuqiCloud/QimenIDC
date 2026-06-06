@@ -126,7 +126,7 @@ public class CreateVmCron {
             List<String> ipList = vmParams.getIpList();
             for (String ip : ipList){
                 // 根据ip查询ip实体类
-                Ippool ippool = ippoolService.getIppoolByIp(ip);
+                Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
                 if (ippool != null){
                     ippool.setVmId(vmIdInit);
                     ippool.setStatus(1);
@@ -432,5 +432,21 @@ public class CreateVmCron {
 
         }
 
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 根据节点和IP精确查询IP池记录
+     * @DateTime: 2026/6/6 12:40
+     */
+    private Ippool getIppoolByIpAndNodeId(String ip, Integer nodeId) {
+        if (ip == null || ip.trim().isEmpty() || nodeId == null) {
+            return null;
+        }
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("ip", ip.trim());
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
     }
 }

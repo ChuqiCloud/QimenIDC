@@ -3,6 +3,8 @@ package com.chuqiyun.proxmoxveams.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * @Author: 星禾
  * @Description: 虚拟机IP修改参数
@@ -24,7 +26,15 @@ public class VmIpParams {
      */
     private String newIp;
     /**
-     * 指定IP池ID；为空时优先沿用原IP所在IP池
+     * 批量新增IP地址列表；为空时根据count自动从IP池分配
+     */
+    private List<String> ips;
+    /**
+     * 新增IP数量；未传ips时生效，默认新增1个
+     */
+    private Integer count;
+    /**
+     * 指定IP池ID；新增指定ips时用于限定IP池
      */
     private Integer poolId;
     /**

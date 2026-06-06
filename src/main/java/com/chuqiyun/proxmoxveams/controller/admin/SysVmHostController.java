@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * @author mryunqi
@@ -215,7 +216,58 @@ public class SysVmHostController {
         return ResponseResult.ok(resultDto.getData());
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 给虚拟机新增一个或多个IP
+     * @DateTime: 2026/6/6 12:40
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/addVmIp",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object addVmIp(@RequestBody(required = false) VmIpParams vmIpParams,
+                          @RequestParam(name = "hostId", required = false) Integer hostId,
+                          @RequestParam(name = "hostid", required = false) Integer hostid,
+                          @RequestParam(name = "ip", required = false) String ip,
+                          @RequestParam(name = "newIp", required = false) String newIp,
+                          @RequestParam(name = "ips", required = false) List<String> ips,
+                          @RequestParam(name = "count", required = false) Integer count,
+                          @RequestParam(name = "poolId", required = false) Integer poolId,
+                          @RequestParam(name = "networkIndex", required = false) Integer networkIndex) throws UnauthorizedException {
+        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, count, poolId, networkIndex);
+        UnifiedResultDto<Object> resultDto = vmhostService.addVmIp(params);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机单网卡中的一个或多个IP
+     * @DateTime: 2026/6/6 12:40
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/deleteVmIp",method = {RequestMethod.POST,RequestMethod.PUT,RequestMethod.DELETE})
+    public Object deleteVmIp(@RequestBody(required = false) VmIpParams vmIpParams,
+                             @RequestParam(name = "hostId", required = false) Integer hostId,
+                             @RequestParam(name = "hostid", required = false) Integer hostid,
+                             @RequestParam(name = "ip", required = false) String ip,
+                             @RequestParam(name = "newIp", required = false) String newIp,
+                             @RequestParam(name = "ips", required = false) List<String> ips,
+                             @RequestParam(name = "poolId", required = false) Integer poolId,
+                             @RequestParam(name = "networkIndex", required = false) Integer networkIndex) throws UnauthorizedException {
+        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, null, poolId, networkIndex);
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVmIp(params);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
     private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, Integer poolId, Integer networkIndex) {
+        return buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, null, null, poolId, networkIndex);
+    }
+
+    private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, List<String> ips, Integer count, Integer poolId, Integer networkIndex) {
         VmIpParams params = vmIpParams == null ? new VmIpParams() : vmIpParams;
         if (params.getHostId() == null) {
             params.setHostId(hostId);
@@ -228,6 +280,12 @@ public class SysVmHostController {
         }
         if (params.getNewIp() == null) {
             params.setNewIp(newIp);
+        }
+        if (params.getIps() == null) {
+            params.setIps(ips);
+        }
+        if (params.getCount() == null) {
+            params.setCount(count);
         }
         if (params.getPoolId() == null) {
             params.setPoolId(poolId);

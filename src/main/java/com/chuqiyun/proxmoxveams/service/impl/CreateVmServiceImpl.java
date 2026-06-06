@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
@@ -15,9 +16,13 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
@@ -295,61 +300,36 @@ public class CreateVmServiceImpl implements CreateVmService {
             ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId, null,node.getNatippool());
         }
 
-        List<String> ipList = new ArrayList<>();
-        if (vmParams.getIpConfig() == null || vmParams.getIpConfig().size() <= 1){
-            HashMap<String,String> ipConfig = new HashMap<>();
-            if (ipPool == null) {
-                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        HashMap<String, String> ipConfigMap = vmParams.getIpConfig() == null ? new HashMap<>() : vmParams.getIpConfig();
+        if (ipPool == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        }
+        int ipCount = getIpConfigCount(ipConfigMap);
+        Set<String> selectedIpSet = new LinkedHashSet<>(CloudInitNetworkUtil.getIpList(ipConfigMap));
+        for (int i = 1; i <= ipCount; i++) {
+            String ipConfig = ipConfigMap.get(String.valueOf(i));
+            if (ipConfig != null) {
+                continue;
             }
             if (ipPool.getAvailable() == 0) {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
             }
-            // 获取可用IP
-            Ippool ipEntity = ippoolService.getOneOkIpByPoolId(ipPool.getId());
+            Ippool ipEntity = getOneOkIpByPoolId(ipPool.getId(), selectedIpSet);
             if (ipEntity == null) {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
             }
-            ipConfig.put("1","ip="+ipEntity.getIp()+"/"+ipPool.getMask()+",gw="+ipEntity.getGateway());
-            vmParams.setIpConfig(ipConfig);
-            // 判断hostname是否为空
-            if (vmParams.getHostname() == null) {
-                vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
-            }else {
-                // 判断是否为中文
-                if (ModUtil.isChinese(vmParams.getHostname())) {
-                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_NOT_CHINESE, null);
-                }
-            }
-            ipList.add(ipEntity.getIp());
+            ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + ipPool.getMask() + ",gw=" + ipEntity.getGateway());
+            selectedIpSet.add(ipEntity.getIp());
         }
-        else {
-            int count = vmParams.getIpConfig().size();
-            HashMap<String, String> ipConfigMap = vmParams.getIpConfig();
-            for (int i = 1; i <= count; i++) {
-                String ipConfig = ipConfigMap.get(String.valueOf(i));
-                if (ipConfig == null) {
-                    if (ipPool == null) {
-                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-                    }
-                    if (ipPool.getAvailable() == 0) {
-                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-                    }
-                    // 获取可用IP
-                    Ippool ipEntity = ippoolService.getOneOkIpByPoolId(ipPool.getId());
-                    if (ipEntity == null) {
-                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-                    }
-                    // 修改vmParams
-                    ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + ipPool.getMask() + ",gw=" + ipEntity.getGateway());
-                    // 判断hostname是否为空
-                    if (vmParams.getHostname() == null) {
-                        vmParams.setHostname(ModUtil.ipReplace(ipEntity.getIp()));
-                    }
-                    ipList.add(ipEntity.getIp());
-                }
-            }
-            // 设置ip地址
-            vmParams.setIpConfig(ipConfigMap);
+        vmParams.setIpConfig(ipConfigMap);
+        List<String> ipList = CloudInitNetworkUtil.getIpList(ipConfigMap);
+        if (ipList.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        }
+        if (vmParams.getHostname() == null) {
+            vmParams.setHostname(ModUtil.ipReplace(ipList.get(0)));
+        } else if (ModUtil.isChinese(vmParams.getHostname())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_NOT_CHINESE, null);
         }
         vmParams.setIpList(ipList);
         // 设置dns
@@ -499,9 +479,9 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 设置kvm
         param.put("kvm", vmParams.getKvm());
 
-        int ipCount = vmParams.getIpConfig().size();
-        for (int i = 0; i < ipCount; i++) {
-            param.put("ipconfig"+i, vmParams.getIpConfig().get(String.valueOf(i+1)));
+        String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig());
+        if (primaryIpConfig != null) {
+            param.put("ipconfig0", primaryIpConfig);
         }
         //param.put("ipconfig0", "ip=23.94.247.39/28,gw=23.94.247.33");
         // 设置DNS
@@ -541,16 +521,19 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 设置网络
         double bandWidthValue = vmParams.getBandwidth() / 8.0;
-        String bandWidth = String.format("%.2f", bandWidthValue);
-        if (vmParams.getBridge() == null) {
-            if(vmParams.getIfnat() == 1 && node.getNatbridge() != null) //nat网口
-            {
-                param.put("net0", "virtio,bridge="+node.getNatbridge()+",rate="+bandWidth);
-            } else {
-                param.put("net0", "virtio,bridge=vmbr0,rate="+bandWidth);
+        String bandWidth = String.format(Locale.US, "%.2f", bandWidthValue);
+        boolean multiIp = CloudInitNetworkUtil.getIpAddressCount(vmParams.getIpConfig()) > 1;
+        String macAddress = multiIp ? CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId) : null;
+        param.put("net0", buildNet0Config(node, vmParams, bandWidth, macAddress));
+        if (multiIp) {
+            try {
+                CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmId, vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
+            } catch (Exception e) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "写入单网卡多IP cloud-init 配置失败: vmid=" + vmId);
+                e.printStackTrace();
+                return 0;
             }
-        }else {
-            param.put("net0", "virtio,bridge="+vmParams.getBridge()+",rate="+bandWidth);
+            param.put("cicustom", "network=" + CloudInitNetworkUtil.getNetworkSnippetVolume(vmId));
         }
 
         // 获取cookie
@@ -561,5 +544,58 @@ public class CreateVmServiceImpl implements CreateVmService {
         }else {
             return 0;
         }
+    }
+
+    private int getIpConfigCount(HashMap<String, String> ipConfigMap) {
+        if (ipConfigMap == null || ipConfigMap.isEmpty()) {
+            return 1;
+        }
+        int count = ipConfigMap.size();
+        for (String key : ipConfigMap.keySet()) {
+            try {
+                count = Math.max(count, Integer.parseInt(key));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return count;
+    }
+
+    private Ippool getOneOkIpByPoolId(Integer poolId, Set<String> excludeIpSet) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("pool_id", poolId);
+        queryWrapper.eq("status", 0);
+        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+            queryWrapper.notIn("ip", excludeIpSet);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
+    }
+
+    private String buildNet0Config(Master node, VmParams vmParams, String bandWidth, String macAddress) {
+        String bridge = vmParams.getBridge();
+        if (bridge == null) {
+            if (vmParams.getIfnat() == 1 && node.getNatbridge() != null) {
+                bridge = node.getNatbridge();
+            } else {
+                bridge = "vmbr0";
+            }
+        }
+        String netModel = macAddress == null ? "virtio" : "virtio=" + macAddress;
+        return netModel + ",bridge=" + bridge + ",rate=" + bandWidth;
+    }
+
+    private List<String> getNameservers(VmParams vmParams) {
+        if (vmParams.getDns1() == null || vmParams.getDns1().trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> nameservers = new ArrayList<>();
+        String[] items = vmParams.getDns1().split("[,\\s]+");
+        for (String item : items) {
+            if (item != null && !item.trim().isEmpty()) {
+                nameservers.add(item.trim());
+            }
+        }
+        return CloudInitNetworkUtil.distinctNameservers(nameservers);
     }
 }

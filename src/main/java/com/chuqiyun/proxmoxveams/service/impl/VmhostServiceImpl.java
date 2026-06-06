@@ -22,6 +22,7 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
@@ -48,6 +49,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
     private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
+    private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
+    private static final long IP_CHANGE_RESTART_WAIT = 2000L;
     private static final String PENDING_STATUS = "creating";
 
     @Resource
@@ -1219,7 +1222,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         String ipConfigKey = String.valueOf(networkIndex);
         String oldIp = getIpFromCloudInitConfig(ipConfig.get(ipConfigKey));
-        Ippool oldIppool = oldIp == null ? null : ippoolService.getIppoolByIp(oldIp);
+        Ippool oldIppool = oldIp == null ? null : getIppoolByIpAndNodeId(oldIp, vmhost.getNodeid());
         Ippool newIppool = getNewIppool(vmIpParams, vmhost, oldIppool);
         if (newIppool == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
@@ -1228,6 +1231,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
         if (oldIp != null && oldIp.equals(newIppool.getIp())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        if (isVmhostIpUsed(vmhost, ipConfig, oldIp, newIppool.getIp())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
         Ipstatus ipstatus = ipstatusService.getById(newIppool.getPoolId());
@@ -1254,22 +1260,135 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             throw new IllegalStateException("更新虚拟机IP失败: hostId=" + vmhost.getId());
         }
 
-        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig" + (networkIndex - 1), newIpConfig);
-        String nameserver = StringUtils.defaultIfBlank(newIppool.getDns1(), ipstatus.getDns1());
-        if (StringUtils.isNotBlank(nameserver)) {
-            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", nameserver);
+        syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, Collections.singletonList(newIppool)));
+        restartVmAfterIpChange(vmhost, node);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，虚拟机已强制停止并开机");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 给虚拟机新增单网卡多IP并重生成cloud-init镜像
+     * @DateTime: 2026/6/6 12:40
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UnifiedResultDto<Object> addVmIp(VmIpParams vmIpParams) {
+        if (vmIpParams == null || vmIpParams.getHostId() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
-        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，请重启机器");
+        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        if (vmhost == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        int count = getAddIpCount(vmIpParams);
+        if (count < 1) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        Set<String> usedIpSet = getVmhostIpSet(vmhost, ipConfig);
+        List<Ippool> addIppoolList = getAddIppoolList(vmIpParams, vmhost, usedIpSet, count);
+        if (addIppoolList == null || addIppoolList.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+        }
+
+        int networkIndex = vmIpParams.getNetworkIndex() == null ? getNextIpConfigIndex(ipConfig) : vmIpParams.getNetworkIndex();
+        if (networkIndex < 1) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        List<Ippool> boundIppoolList = new ArrayList<>();
+        for (Ippool ippool : addIppoolList) {
+            Ipstatus ipstatus = ipstatusService.getById(ippool.getPoolId());
+            if (ipstatus == null) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
+            }
+            String ipConfigValue = buildIpConfigValue(ippool, ipstatus);
+            if (ipConfigValue == null) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+            }
+            while (ipConfig.containsKey(String.valueOf(networkIndex))) {
+                networkIndex++;
+            }
+            if (!bindOrReuseIp(ippool, vmhost)) {
+                throw new IllegalStateException("绑定新增IP失败: ip=" + ippool.getIp());
+            }
+            ipConfig.put(String.valueOf(networkIndex), ipConfigValue);
+            boundIppoolList.add(ippool);
+            networkIndex++;
+        }
+
+        vmhost.setIpConfig(ipConfig);
+        vmhost.setIpList(buildVmhostIpList(vmhost, ipConfig));
+        vmhost.setIpData(VmUtil.splitIpAddress(ipConfig));
+        if (!this.updateById(vmhost)) {
+            throw new IllegalStateException("新增虚拟机IP失败: hostId=" + vmhost.getId());
+        }
+
+        syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, boundIppoolList));
+        restartVmAfterIpChange(vmhost, node);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "新增IP成功，虚拟机已强制停止并开机");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机单网卡多IP并重生成cloud-init镜像
+     * @DateTime: 2026/6/6 12:40
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UnifiedResultDto<Object> deleteVmIp(VmIpParams vmIpParams) {
+        if (vmIpParams == null || vmIpParams.getHostId() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        if (vmhost == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        Set<String> deleteIpSet = getDeleteIpSet(vmIpParams, ipConfig);
+        if (deleteIpSet.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+
+        HashMap<String, String> newIpConfig = removeIpConfigItems(ipConfig, deleteIpSet);
+        if (newIpConfig.size() == ipConfig.size() || newIpConfig.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Set<String> removedIpSet = getRemovedIpSet(ipConfig, newIpConfig);
+        releaseDeletedIps(removedIpSet, vmhost);
+
+        vmhost.setIpConfig(newIpConfig);
+        vmhost.setIpList(buildVmhostIpListAfterDelete(vmhost, newIpConfig, removedIpSet));
+        vmhost.setIpData(VmUtil.splitIpAddress(newIpConfig));
+        if (!this.updateById(vmhost)) {
+            throw new IllegalStateException("删除虚拟机IP失败: hostId=" + vmhost.getId());
+        }
+
+        syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), newIpConfig, null));
+        restartVmAfterIpChange(vmhost, node);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "删除IP成功，虚拟机已强制停止并开机");
     }
 
     private Ippool getNewIppool(VmIpParams vmIpParams, Vmhost vmhost, Ippool oldIppool) {
         String newIp = StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp());
         if (StringUtils.isNotBlank(newIp)) {
-            Ippool ippool = ippoolService.getIppoolByIp(newIp);
-            if (ippool == null || ippool.getStatus() == null || ippool.getStatus() != 0) {
+            Ippool ippool = getIppoolByIpAndNodeId(newIp, vmhost.getNodeid());
+            if (ippool == null || !Objects.equals(ippool.getStatus(), 0)) {
                 return null;
             }
             return ippool;
@@ -1279,6 +1398,162 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             poolId = oldIppool.getPoolId();
         }
         return ippoolService.getOneFreeIpByNodeId(vmhost.getNodeid(), poolId);
+    }
+
+    private List<Ippool> getAddIppoolList(VmIpParams vmIpParams, Vmhost vmhost, Set<String> usedIpSet, int count) {
+        List<String> requestIpList = getRequestIpList(vmIpParams);
+        if (!requestIpList.isEmpty()) {
+            List<Ippool> ippoolList = new ArrayList<>();
+            for (String ip : requestIpList) {
+                if (usedIpSet.contains(ip)) {
+                    return null;
+                }
+                Ippool ippool = getIppoolByIpAndNodeIdAndPoolId(ip, vmhost.getNodeid(), vmIpParams.getPoolId());
+                if (ippool == null || !isAddIpAvailable(ippool, vmhost)) {
+                    return null;
+                }
+                ippoolList.add(ippool);
+            }
+            return ippoolList;
+        }
+
+        List<Ippool> ippoolList = new ArrayList<>();
+        Set<Integer> selectedIdSet = new LinkedHashSet<>();
+        for (int i = 0; i < count; i++) {
+            Ippool ippool = getOneFreeIppoolByNodeId(vmhost.getNodeid(), null, selectedIdSet, usedIpSet);
+            if (ippool == null) {
+                return null;
+            }
+            ippoolList.add(ippool);
+            selectedIdSet.add(ippool.getId());
+            usedIpSet.add(ippool.getIp());
+        }
+        return ippoolList;
+    }
+
+    private Set<String> getDeleteIpSet(VmIpParams vmIpParams, HashMap<String, String> ipConfig) {
+        Set<String> deleteIpSet = new LinkedHashSet<>(getRequestIpList(vmIpParams));
+        if (!deleteIpSet.isEmpty()) {
+            return deleteIpSet;
+        }
+        Integer networkIndex = vmIpParams.getNetworkIndex();
+        if (networkIndex == null || networkIndex < 1) {
+            return deleteIpSet;
+        }
+        String ip = getIpFromCloudInitConfig(ipConfig.get(String.valueOf(networkIndex)));
+        if (StringUtils.isNotBlank(ip)) {
+            deleteIpSet.add(ip);
+        }
+        return deleteIpSet;
+    }
+
+    private HashMap<String, String> removeIpConfigItems(HashMap<String, String> ipConfig, Set<String> deleteIpSet) {
+        HashMap<String, String> newIpConfig = new HashMap<>();
+        List<Map.Entry<String, String>> entries = new ArrayList<>(ipConfig.entrySet());
+        entries.sort(Comparator.comparingInt(entry -> getIpConfigIndex(entry.getKey())));
+        int index = 1;
+        for (Map.Entry<String, String> entry : entries) {
+            String ip = getIpFromCloudInitConfig(entry.getValue());
+            if (StringUtils.isNotBlank(ip) && deleteIpSet.contains(ip)) {
+                continue;
+            }
+            newIpConfig.put(String.valueOf(index), entry.getValue());
+            index++;
+        }
+        return newIpConfig;
+    }
+
+    private Set<String> getRemovedIpSet(HashMap<String, String> oldIpConfig, HashMap<String, String> newIpConfig) {
+        Set<String> removedIpSet = new LinkedHashSet<>(CloudInitNetworkUtil.getIpList(oldIpConfig));
+        removedIpSet.removeAll(CloudInitNetworkUtil.getIpList(newIpConfig));
+        return removedIpSet;
+    }
+
+    private int getIpConfigIndex(String key) {
+        try {
+            return Integer.parseInt(key);
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    private void releaseDeletedIps(Set<String> deleteIpSet, Vmhost vmhost) {
+        for (String ip : deleteIpSet) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmhost.getNodeid());
+            if (ippool == null) {
+                continue;
+            }
+            if (Objects.equals(ippool.getStatus(), 1) && !Objects.equals(ippool.getVmId(), vmhost.getVmid())) {
+                throw new IllegalStateException("IP已绑定到其他虚拟机，无法释放: ip=" + ip);
+            }
+            releaseIppool(ippool);
+        }
+    }
+
+    private int getAddIpCount(VmIpParams vmIpParams) {
+        List<String> requestIpList = getRequestIpList(vmIpParams);
+        if (!requestIpList.isEmpty()) {
+            return requestIpList.size();
+        }
+        return vmIpParams.getCount() == null ? 1 : vmIpParams.getCount();
+    }
+
+    private List<String> getRequestIpList(VmIpParams vmIpParams) {
+        Set<String> ipSet = new LinkedHashSet<>();
+        if (vmIpParams.getIps() != null) {
+            for (String ipItem : vmIpParams.getIps()) {
+                addRequestIp(ipSet, ipItem);
+            }
+        }
+        addRequestIp(ipSet, StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp()));
+        return new ArrayList<>(ipSet);
+    }
+
+    private void addRequestIp(Set<String> ipSet, String ipItem) {
+        if (StringUtils.isBlank(ipItem)) {
+            return;
+        }
+        String[] ipItems = ipItem.split(",");
+        for (String ip : ipItems) {
+            if (StringUtils.isNotBlank(ip)) {
+                ipSet.add(ip.trim());
+            }
+        }
+    }
+
+    private Ippool getOneFreeIppoolByNodeId(Integer nodeId, Integer poolId, Set<Integer> excludeIdSet, Set<String> excludeIpSet) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("status", 0);
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        }
+        if (excludeIdSet != null && !excludeIdSet.isEmpty()) {
+            queryWrapper.notIn("id", excludeIdSet);
+        }
+        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+            queryWrapper.notIn("ip", excludeIpSet);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
+    }
+
+    private boolean isAddIpAvailable(Ippool ippool, Vmhost vmhost) {
+        if (!Objects.equals(ippool.getNodeId(), vmhost.getNodeid())) {
+            return false;
+        }
+        if (Objects.equals(ippool.getStatus(), 0)) {
+            return true;
+        }
+        return Objects.equals(ippool.getStatus(), 1) && Objects.equals(ippool.getVmId(), vmhost.getVmid());
+    }
+
+    private boolean bindOrReuseIp(Ippool ippool, Vmhost vmhost) {
+        if (Objects.equals(ippool.getStatus(), 1) && Objects.equals(ippool.getVmId(), vmhost.getVmid())) {
+            return true;
+        }
+        return bindNewIp(ippool, vmhost);
     }
 
     private boolean bindNewIp(Ippool newIppool, Vmhost vmhost) {
@@ -1303,24 +1578,36 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
     }
 
-    private String getIpFromCloudInitConfig(String ipConfig) {
-        if (StringUtils.isBlank(ipConfig)) {
+    private void releaseIppool(Ippool ippool) {
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", ippool.getId());
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        if (!ippoolService.update(updateWrapper)) {
+            throw new IllegalStateException("释放IP失败: ip=" + ippool.getIp());
+        }
+    }
+
+    private Ippool getIppoolByIpAndNodeId(String ip, Integer nodeId) {
+        return getIppoolByIpAndNodeIdAndPoolId(ip, nodeId, null);
+    }
+
+    private Ippool getIppoolByIpAndNodeIdAndPoolId(String ip, Integer nodeId, Integer poolId) {
+        if (StringUtils.isBlank(ip) || nodeId == null) {
             return null;
         }
-        String[] configItems = ipConfig.split(",");
-        for (String configItem : configItems) {
-            String item = configItem.trim();
-            if (!item.startsWith("ip=")) {
-                continue;
-            }
-            String ipWithMask = item.substring(3);
-            if ("dhcp".equalsIgnoreCase(ipWithMask)) {
-                return null;
-            }
-            int maskIndex = ipWithMask.indexOf('/');
-            return maskIndex > 0 ? ipWithMask.substring(0, maskIndex) : ipWithMask;
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("ip", ip.trim());
+        queryWrapper.eq("node_id", nodeId);
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
         }
-        return null;
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
+    }
+
+    private String getIpFromCloudInitConfig(String ipConfig) {
+        return CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig);
     }
 
     private Integer getIpMask(Ipstatus ipstatus, Ippool ippool) {
@@ -1350,18 +1637,217 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return prefix;
     }
 
+    private String buildIpConfigValue(Ippool ippool, Ipstatus ipstatus) {
+        Integer mask = getIpMask(ipstatus, ippool);
+        String gateway = StringUtils.defaultIfBlank(ippool.getGateway(), ipstatus.getGateway());
+        if (mask == null || StringUtils.isBlank(gateway)) {
+            return null;
+        }
+        return "ip=" + ippool.getIp() + "/" + mask + ",gw=" + gateway;
+    }
+
+    private boolean isVmhostIpUsed(Vmhost vmhost, HashMap<String, String> ipConfig, String oldIp, String newIp) {
+        if (StringUtils.isBlank(newIp)) {
+            return false;
+        }
+        Set<String> ipSet = getVmhostIpSet(vmhost, ipConfig);
+        if (StringUtils.isNotBlank(oldIp)) {
+            ipSet.remove(oldIp);
+        }
+        return ipSet.contains(newIp);
+    }
+
+    private Set<String> getVmhostIpSet(Vmhost vmhost, HashMap<String, String> ipConfig) {
+        Set<String> ipSet = new LinkedHashSet<>();
+        if (vmhost.getIpList() != null) {
+            for (String ip : vmhost.getIpList()) {
+                if (StringUtils.isNotBlank(ip)) {
+                    ipSet.add(ip.trim());
+                }
+            }
+        }
+        ipSet.addAll(CloudInitNetworkUtil.getIpList(ipConfig));
+        return ipSet;
+    }
+
+    private int getNextIpConfigIndex(HashMap<String, String> ipConfig) {
+        int nextIndex = 1;
+        for (String key : ipConfig.keySet()) {
+            try {
+                nextIndex = Math.max(nextIndex, Integer.parseInt(key) + 1);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return nextIndex;
+    }
+
+    private List<String> buildVmhostIpList(Vmhost vmhost, HashMap<String, String> ipConfig) {
+        Set<String> ipSet = getVmhostIpSet(vmhost, ipConfig);
+        return new ArrayList<>(ipSet);
+    }
+
+    private List<String> buildVmhostIpListAfterDelete(Vmhost vmhost, HashMap<String, String> ipConfig, Set<String> deleteIpSet) {
+        Set<String> ipSet = getVmhostIpSet(vmhost, ipConfig);
+        ipSet.removeAll(deleteIpSet);
+        return new ArrayList<>(ipSet);
+    }
+
     private List<String> replaceVmhostIpList(Vmhost vmhost, HashMap<String, String> ipConfig, String oldIp, String newIp) {
-        List<String> ipList = vmhost.getIpList() == null ? new ArrayList<>() : new ArrayList<>(vmhost.getIpList());
-        if (oldIp != null) {
-            ipList.removeIf(oldIp::equals);
+        Set<String> ipSet = getVmhostIpSet(vmhost, ipConfig);
+        if (StringUtils.isNotBlank(oldIp)) {
+            ipSet.remove(oldIp);
         }
-        if (!ipList.contains(newIp)) {
-            ipList.add(newIp);
+        if (StringUtils.isNotBlank(newIp)) {
+            ipSet.add(newIp);
         }
-        if (ipList.isEmpty()) {
-            ipList = VmUtil.splitIpAddress(ipConfig).stream().map(ipDto -> ipDto.getIp()).collect(Collectors.toList());
+        return new ArrayList<>(ipSet);
+    }
+
+    private List<String> getNameserversByIpConfig(Integer nodeId, HashMap<String, String> ipConfig, List<Ippool> fallbackIppoolList) {
+        Set<String> nameserverSet = new LinkedHashSet<>();
+        if (fallbackIppoolList != null) {
+            for (Ippool ippool : fallbackIppoolList) {
+                addIppoolNameservers(nameserverSet, ippool);
+            }
         }
-        return ipList;
+        for (String ip : CloudInitNetworkUtil.getIpList(ipConfig)) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, nodeId);
+            addIppoolNameservers(nameserverSet, ippool);
+        }
+        return CloudInitNetworkUtil.distinctNameservers(new ArrayList<>(nameserverSet));
+    }
+
+    private void addIppoolNameservers(Set<String> nameserverSet, Ippool ippool) {
+        if (ippool == null) {
+            return;
+        }
+        addNameserver(nameserverSet, ippool.getDns1());
+        addNameserver(nameserverSet, ippool.getDns2());
+        Ipstatus ipstatus = ipstatusService.getById(ippool.getPoolId());
+        if (ipstatus != null) {
+            addNameserver(nameserverSet, ipstatus.getDns1());
+            addNameserver(nameserverSet, ipstatus.getDns2());
+        }
+    }
+
+    private void addNameserver(Set<String> nameserverSet, String nameserver) {
+        if (StringUtils.isNotBlank(nameserver)) {
+            nameserverSet.add(nameserver.trim());
+        }
+    }
+
+    private void syncSingleNicCloudInitNetwork(Vmhost vmhost, Master node, List<String> nameservers) {
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(ipConfig);
+        if (StringUtils.isBlank(primaryIpConfig)) {
+            throw new IllegalStateException("虚拟机IP配置为空: hostId=" + vmhost.getId());
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
+        try {
+            CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmhost.getVmid(), ipConfig, nameservers, macAddress);
+        } catch (Exception e) {
+            throw new IllegalStateException("写入cloud-init单网卡多IP配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
+        if (nameservers != null && !nameservers.isEmpty()) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", String.join(" ", nameservers));
+        }
+        proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: IP变更后强制停止虚拟机并重新开机
+     * @DateTime: 2026/6/6 12:40
+     */
+    private void restartVmAfterIpChange(Vmhost vmhost, Master node) {
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        String status = getPveVmStatus(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
+        if (!"stopped".equals(status)) {
+            vmhost.setStatus(9);
+            this.updateById(vmhost);
+            proxmoxApiUtil.forceStopVm(node, cookieMap, vmhost.getVmid());
+            waitPveVmStopped(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
+            vmhost.setStatus(1);
+            this.updateById(vmhost);
+        }
+        vmhost.setStatus(7);
+        this.updateById(vmhost);
+        proxmoxApiUtil.postNodeApi(node, cookieMap, "/nodes/" + node.getNodeName() + "/qemu/" + vmhost.getVmid() + "/status/start", new HashMap<>());
+        vmhost.setStatus(0);
+        this.updateById(vmhost);
+    }
+
+    private void waitPveVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid) {
+        long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime <= IP_CHANGE_RESTART_TIMEOUT) {
+            String status = getPveVmStatus(proxmoxApiUtil, node, cookieMap, vmid);
+            if ("stopped".equals(status)) {
+                return;
+            }
+            try {
+                Thread.sleep(IP_CHANGE_RESTART_WAIT);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待虚拟机停止被中断: vmid=" + vmid, e);
+            }
+        }
+        throw new IllegalStateException("等待虚拟机强制停止超时: vmid=" + vmid);
+    }
+
+    private String getPveVmStatus(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid) {
+        JSONObject result = proxmoxApiUtil.getVmStatus(node, cookieMap, vmid);
+        if (result == null || result.getJSONObject("data") == null) {
+            throw new IllegalStateException("获取虚拟机状态失败: vmid=" + vmid);
+        }
+        String status = result.getJSONObject("data").getString("status");
+        if (StringUtils.isBlank(status)) {
+            throw new IllegalStateException("虚拟机状态为空: vmid=" + vmid);
+        }
+        return status;
+    }
+
+    private JSONObject getPveVmConfig(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Vmhost vmhost) {
+        JSONObject result = proxmoxApiUtil.getNodeApi(node, cookieMap, "/nodes/" + node.getNodeName() + "/qemu/" + vmhost.getVmid() + "/config", new HashMap<>());
+        if (result == null) {
+            return null;
+        }
+        return result.getJSONObject("data");
+    }
+
+    private String mergeCicustomNetwork(JSONObject pveVmConfig, Integer vmid) {
+        String networkVolume = CloudInitNetworkUtil.getNetworkSnippetVolume(vmid);
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("cicustom"))) {
+            return "network=" + networkVolume;
+        }
+        String cicustom = pveVmConfig.getString("cicustom");
+        List<String> items = new ArrayList<>();
+        boolean hasNetwork = false;
+        for (String item : cicustom.split(",")) {
+            String value = item.trim();
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+            if (value.startsWith("network=")) {
+                items.add("network=" + networkVolume);
+                hasNetwork = true;
+            } else {
+                items.add(value);
+            }
+        }
+        if (!hasNetwork) {
+            items.add("network=" + networkVolume);
+        }
+        return String.join(",", items);
     }
 
     /**
