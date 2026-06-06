@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.VmHostDto;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -23,6 +25,8 @@ import java.util.List;
  */
 @Service("vmInfoService")
 public class VmInfoServiceImpl implements VmInfoService {
+    private static final String[] VM_RRD_TIMEFRAMES = {"hour", "day", "week", "month"};
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -177,12 +181,7 @@ public class VmInfoServiceImpl implements VmInfoService {
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        // 获取虚拟机信息
-        try{
-            vmHostDto.setRrddata(proxmoxApiUtil.getVmRrd(node, cookieMap, vmhost.getVmid(),"day","AVERAGE"));
-        }catch (Exception e){
-            vmHostDto.setRrddata(null);
-        }
+        vmHostDto.setRrddata(getVmInfoRrdDataAllTime(hostId, "AVERAGE"));
         try {
             vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmhost.getVmid()));
         }catch(Exception e){
@@ -221,6 +220,63 @@ public class VmInfoServiceImpl implements VmInfoService {
         }catch (Exception e){
             return null;
         }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取虚拟机小时、天、周、月历史负载
+     * @DateTime: 2026/6/6 21:47
+     */
+    @Override
+    public JSONObject getVmInfoRrdDataAllTime(Integer hostId, String cf) {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return null;
+        }
+        Integer nodeId = vmhost.getNodeid();
+        Master node = masterService.getById(nodeId);
+        if (node == null) {
+            return null;
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(nodeId);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONArray mergedDataArray = new JSONArray();
+        for (String timeframe : VM_RRD_TIMEFRAMES) {
+            JSONArray timeframeDataArray = getVmRrdDataArray(proxmoxApiUtil, node, cookieMap, vmhost.getVmid(), timeframe, cf);
+            mergedDataArray.addAll(timeframeDataArray);
+        }
+        List<JSONObject> sortedDataList = new ArrayList<>();
+        for (int i = 0; i < mergedDataArray.size(); i++) {
+            JSONObject dataObject = mergedDataArray.getJSONObject(i);
+            if (dataObject != null) {
+                sortedDataList.add(dataObject);
+            }
+        }
+        sortedDataList.sort(Comparator.comparingLong(this::getRrdTimeValue));
+        JSONObject result = new JSONObject();
+        result.put("data", new JSONArray(sortedDataList));
+        return result;
+    }
+
+    private JSONArray getVmRrdDataArray(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid, String timeframe, String cf) {
+        try {
+            JSONObject rrdData = proxmoxApiUtil.getVmRrd(node, cookieMap, vmid, timeframe, cf);
+            if (rrdData == null) {
+                return new JSONArray();
+            }
+            JSONArray dataArray = rrdData.getJSONArray("data");
+            return dataArray == null ? new JSONArray() : dataArray;
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    private long getRrdTimeValue(JSONObject dataObject) {
+        if (dataObject == null) {
+            return Long.MAX_VALUE;
+        }
+        Long timeValue = dataObject.getLong("time");
+        return timeValue == null ? Long.MAX_VALUE : timeValue;
     }
 
     private void buildVmHostDto(Page<Vmhost> vmhostPage,HashMap<String, Object> pageMap){

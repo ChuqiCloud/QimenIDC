@@ -22,5 +22,7 @@ public interface VmInfoService {
 
     JSONObject getVmInfoRrdData(Integer vmId, String timeframe, String cf);
 
+    JSONObject getVmInfoRrdDataAllTime(Integer vmId, String cf);
+
     HashMap<String, Object> getDeleteVmByPage(Integer page, Integer size);
 }
