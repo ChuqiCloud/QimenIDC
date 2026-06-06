@@ -263,6 +263,35 @@ public class SysVmHostController {
         return ResponseResult.ok(resultDto.getData());
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 同步节点下手动绑定但未写入vmhost的IP数据
+     * @DateTime: 2026/6/6 20:55
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/syncVmManualIp",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object syncVmManualIp(@RequestBody(required = false) VmIpParams vmIpParams,
+                                 @RequestParam(name = "nodeId", required = false) Integer nodeId,
+                                 @RequestParam(name = "nodeid", required = false) Integer nodeid) throws UnauthorizedException {
+        VmIpParams params = buildSyncVmIpParams(vmIpParams, nodeId, nodeid);
+        UnifiedResultDto<Object> resultDto = vmhostService.syncVmManualIp(params);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
+    private VmIpParams buildSyncVmIpParams(VmIpParams vmIpParams, Integer nodeId, Integer nodeid) {
+        VmIpParams params = vmIpParams == null ? new VmIpParams() : vmIpParams;
+        if (params.getNodeId() == null) {
+            params.setNodeId(nodeId);
+        }
+        if (params.getNodeId() == null) {
+            params.setNodeId(nodeid);
+        }
+        return params;
+    }
+
     private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, Integer poolId, Integer networkIndex) {
         return buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, null, null, poolId, networkIndex);
     }

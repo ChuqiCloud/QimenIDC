@@ -149,5 +149,9 @@ public class TaskType {
      * 新导入系统磁盘挂载配置
      */
     public static Integer IMPORT_SYSTEM_DISK_NEW = 36;
+    /**
+     * IP变更后异步强制重启虚拟机
+     */
+    public static Integer IP_CHANGE_RESTART_VM = 37;
 
 }

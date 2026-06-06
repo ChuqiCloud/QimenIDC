@@ -34,6 +34,9 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class VmStatusCron {
+    private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
+    private static final long IP_CHANGE_RESTART_WAIT = 2000L;
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -261,6 +264,71 @@ public class VmStatusCron {
             task.setStatus(2);
             taskService.updateById(task);
             log.info("[Task-StopVmNow] 停止任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
+        }
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: IP变更后异步强制停止并重新开机
+    * @DateTime: 2026/6/6 22:10
+    */
+    @Async
+    @Scheduled(fixedDelay = 2000)
+    public void ipChangeRestartVm(){
+        QueryWrapper<Task> queryWrap = new QueryWrapper<>();
+        queryWrap.eq("type", IP_CHANGE_RESTART_VM);
+        queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
+        Task task = taskService.getOne(queryWrap);
+        if (task == null){
+            return;
+        }
+        task.setStatus(1);
+        taskService.updateById(task);
+        Master node = masterService.getById(task.getNodeid());
+        Vmhost vmhost = vmhostService.getById(task.getHostid());
+        if (node == null || vmhost == null){
+            task.setStatus(3);
+            task.setError("节点或虚拟机不存在");
+            taskService.updateById(task);
+            log.error("[Task-IpChangeRestart] 执行IP变更重启任务失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
+                    task.getId(), task.getNodeid(), task.getVmid(), task.getHostid());
+            return;
+        }
+        log.info("[Task-IpChangeRestart] 执行IP变更重启任务: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
+                task.getId(), node.getId(), task.getVmid(), task.getHostid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+        try {
+            String status = getVmStatus(proxmoxApiUtil, node, authentications, task.getVmid());
+            if (!"stopped".equals(status)) {
+                updateVmStatusOnly(vmhost, 9);
+                proxmoxApiUtil.forceStopVm(node, authentications, task.getVmid());
+                waitVmStopped(proxmoxApiUtil, node, authentications, task.getVmid());
+                updateVmStatusOnly(vmhost, 1);
+            }
+            updateVmStatusOnly(vmhost, 7);
+            proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", new HashMap<>());
+            updateVmStatusOnly(vmhost, 0);
+            task.setStatus(2);
+            task.setError(null);
+            taskService.updateById(task);
+            log.info("[Task-IpChangeRestart] IP变更重启任务完成: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
+                    task.getId(), node.getId(), task.getVmid(), task.getHostid());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            task.setStatus(3);
+            task.setError("等待虚拟机停止被中断");
+            taskService.updateById(task);
+            log.error("[Task-IpChangeRestart] IP变更重启任务被中断: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
+                    task.getId(), node.getId(), task.getVmid(), task.getHostid(), e);
+        } catch (Exception e) {
+            task.setStatus(3);
+            task.setError(e.getMessage());
+            taskService.updateById(task);
+            log.error("[Task-IpChangeRestart] IP变更重启任务失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
+                    task.getId(), node.getId(), task.getVmid(), task.getHostid(), e);
         }
     }
 
@@ -700,6 +768,42 @@ public class VmStatusCron {
             }
         }
 
+    }
+
+    private void updateVmStatusOnly(Vmhost vmhost, Integer status) {
+        if (vmhost == null || vmhost.getId() == null || status == null) {
+            throw new IllegalStateException("更新虚拟机状态参数无效");
+        }
+        Vmhost updateVmhost = new Vmhost();
+        updateVmhost.setId(vmhost.getId());
+        updateVmhost.setStatus(status);
+        if (!vmhostService.updateById(updateVmhost)) {
+            throw new IllegalStateException("更新虚拟机状态失败: hostId=" + vmhost.getId() + ", status=" + status);
+        }
+        vmhost.setStatus(status);
+    }
+
+    private void waitVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> authentications, Integer vmid) throws InterruptedException {
+        long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime <= IP_CHANGE_RESTART_TIMEOUT) {
+            if ("stopped".equals(getVmStatus(proxmoxApiUtil, node, authentications, vmid))) {
+                return;
+            }
+            Thread.sleep(IP_CHANGE_RESTART_WAIT);
+        }
+        throw new IllegalStateException("等待虚拟机强制停止超时: vmid=" + vmid);
+    }
+
+    private String getVmStatus(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> authentications, Integer vmid) {
+        JSONObject result = proxmoxApiUtil.getVmStatus(node, authentications, vmid);
+        if (result == null || result.getJSONObject("data") == null) {
+            throw new IllegalStateException("获取虚拟机状态失败: vmid=" + vmid);
+        }
+        String status = result.getJSONObject("data").getString("status");
+        if (status == null || status.trim().isEmpty()) {
+            throw new IllegalStateException("虚拟机状态为空: vmid=" + vmid);
+        }
+        return status;
     }
 
 }

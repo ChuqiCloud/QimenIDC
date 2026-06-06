@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
+import com.chuqiyun.proxmoxveams.dto.IpDto;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmIpParams;
@@ -822,8 +823,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 continue;
             }
             // 其他情况，直接更新数据库中的状态
+            if (!updateVmhostStatusOnly(vmhost.getId(), initStatus)) {
+                log.warn("[VmStatusSync] 更新虚拟机状态失败: NodeId={}, HostId={}, VmId={}, Status={}",
+                        nodeId, vmhost.getId(), vmhost.getVmid(), initStatus);
+                continue;
+            }
             vmhost.setStatus(initStatus);
-            this.updateById(vmhost);
         }
     }
 
@@ -1253,16 +1258,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         releaseOldIp(oldIppool, newIppool);
 
         ipConfig.put(ipConfigKey, newIpConfig);
-        vmhost.setIpConfig(ipConfig);
-        vmhost.setIpList(replaceVmhostIpList(vmhost, ipConfig, oldIp, newIppool.getIp()));
-        vmhost.setIpData(VmUtil.splitIpAddress(ipConfig));
-        if (!this.updateById(vmhost)) {
-            throw new IllegalStateException("更新虚拟机IP失败: hostId=" + vmhost.getId());
-        }
+        List<String> newIpList = replaceVmhostIpList(vmhost, ipConfig, oldIp, newIppool.getIp());
+        updateVmhostIpFields(vmhost, ipConfig, newIpList, "更新虚拟机IP失败");
+        log.info("[VmIpChange] 修改IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, IpList={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), newIpList);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, Collections.singletonList(newIppool)));
         restartVmAfterIpChange(vmhost, node);
-        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，虚拟机已强制停止并开机");
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，已创建异步强制重启任务，请稍后查看任务状态");
     }
 
     /**
@@ -1324,16 +1327,15 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             networkIndex++;
         }
 
-        vmhost.setIpConfig(ipConfig);
-        vmhost.setIpList(buildVmhostIpList(vmhost, ipConfig));
-        vmhost.setIpData(VmUtil.splitIpAddress(ipConfig));
-        if (!this.updateById(vmhost)) {
-            throw new IllegalStateException("新增虚拟机IP失败: hostId=" + vmhost.getId());
-        }
+        List<String> newIpList = buildVmhostIpList(vmhost, ipConfig);
+        updateVmhostIpFields(vmhost, ipConfig, newIpList, "新增虚拟机IP失败");
+        log.info("[VmIpChange] 新增IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, AddedIps={}, IpList={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(),
+                boundIppoolList.stream().map(Ippool::getIp).collect(Collectors.toList()), newIpList);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, boundIppoolList));
         restartVmAfterIpChange(vmhost, node);
-        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "新增IP成功，虚拟机已强制停止并开机");
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "新增IP成功，已创建异步强制重启任务，请稍后查看任务状态");
     }
 
     /**
@@ -1372,16 +1374,169 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Set<String> removedIpSet = getRemovedIpSet(ipConfig, newIpConfig);
         releaseDeletedIps(removedIpSet, vmhost);
 
-        vmhost.setIpConfig(newIpConfig);
-        vmhost.setIpList(buildVmhostIpListAfterDelete(vmhost, newIpConfig, removedIpSet));
-        vmhost.setIpData(VmUtil.splitIpAddress(newIpConfig));
-        if (!this.updateById(vmhost)) {
-            throw new IllegalStateException("删除虚拟机IP失败: hostId=" + vmhost.getId());
-        }
+        List<String> newIpList = buildVmhostIpListAfterDelete(vmhost, newIpConfig, removedIpSet);
+        updateVmhostIpFields(vmhost, newIpConfig, newIpList, "删除虚拟机IP失败");
+        log.info("[VmIpChange] 删除IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, RemovedIps={}, IpList={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), removedIpSet, newIpList);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), newIpConfig, null));
         restartVmAfterIpChange(vmhost, node);
-        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "删除IP成功，虚拟机已强制停止并开机");
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "删除IP成功，已创建异步强制重启任务，请稍后查看任务状态");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 同步节点下手动绑定但未写入vmhost的IP数据
+     * @DateTime: 2026/6/6 20:55
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UnifiedResultDto<Object> syncVmManualIp(VmIpParams vmIpParams) {
+        if (vmIpParams == null || vmIpParams.getNodeId() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Integer nodeId = vmIpParams.getNodeId();
+        List<Vmhost> vmhostList = getVmhostListByNodeId(nodeId);
+        log.info("[Sync-ManualVmIp] 开始同步节点手动绑定IP: NodeId={}, VmCount={}", nodeId, vmhostList.size());
+
+        List<LinkedHashMap<String, Object>> vmList = new ArrayList<>();
+        List<LinkedHashMap<String, Object>> failedVmList = new ArrayList<>();
+        int syncVmCount = 0;
+        int syncIpCount = 0;
+        for (Vmhost vmhost : vmhostList) {
+            log.info("[Sync-ManualVmIp] 开始同步虚拟机: NodeId={}, HostId={}, VmId={}", nodeId, vmhost.getId(), vmhost.getVmid());
+            try {
+                LinkedHashMap<String, Object> vmResult = syncManualIpForVmhost(vmhost);
+                vmList.add(vmResult);
+                Object syncCountValue = vmResult.get("syncCount");
+                int currentSyncCount = syncCountValue instanceof Number ? ((Number) syncCountValue).intValue() : 0;
+                if (currentSyncCount > 0) {
+                    syncVmCount++;
+                }
+                syncIpCount += currentSyncCount;
+                log.info("[Sync-ManualVmIp] 虚拟机同步完成: NodeId={}, HostId={}, VmId={}, SyncCount={}, AddedIps={}, IgnoredIps={}, Message={}",
+                        nodeId,
+                        vmhost.getId(),
+                        vmhost.getVmid(),
+                        currentSyncCount,
+                        vmResult.get("addedIps"),
+                        vmResult.get("ignoredIps"),
+                        vmResult.get("message"));
+            } catch (Exception e) {
+                log.error("[Sync-ManualVmIp] 同步虚拟机失败: NodeId={}, HostId={}, VmId={}", nodeId, vmhost.getId(), vmhost.getVmid(), e);
+                LinkedHashMap<String, Object> failedVmData = new LinkedHashMap<>();
+                failedVmData.put("hostId", vmhost.getId());
+                failedVmData.put("vmid", vmhost.getVmid());
+                failedVmData.put("message", e.getMessage());
+                failedVmList.add(failedVmData);
+            }
+        }
+
+        LinkedHashMap<String, Object> resultData = new LinkedHashMap<>();
+        resultData.put("nodeId", nodeId);
+        resultData.put("vmCount", vmhostList.size());
+        resultData.put("syncVmCount", syncVmCount);
+        resultData.put("syncIpCount", syncIpCount);
+        resultData.put("failedVmCount", failedVmList.size());
+        resultData.put("vmList", vmList);
+        resultData.put("failedVmList", failedVmList);
+        if (vmhostList.isEmpty()) {
+            resultData.put("message", "该节点下没有可同步的虚拟机");
+        } else if (failedVmList.isEmpty()) {
+            resultData.put("message", "节点手动绑定IP同步完成");
+        } else {
+            resultData.put("message", "节点手动绑定IP同步完成，部分虚拟机同步失败");
+        }
+        log.info("[Sync-ManualVmIp] 节点同步结束: NodeId={}, VmCount={}, SyncVmCount={}, SyncIpCount={}, FailedVmCount={}, Message={}",
+                nodeId,
+                vmhostList.size(),
+                syncVmCount,
+                syncIpCount,
+                failedVmList.size(),
+                resultData.get("message"));
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, resultData);
+    }
+
+    private LinkedHashMap<String, Object> syncManualIpForVmhost(Vmhost vmhost) {
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        Set<String> currentIpSet = getVmhostIpSet(vmhost, ipConfig);
+        List<Ippool> boundIppoolList = getBoundIppoolListByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid());
+        log.info("[Sync-ManualVmIp] 检测虚拟机已绑定IP池记录: NodeId={}, HostId={}, VmId={}, BoundIpCount={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), boundIppoolList.size());
+
+        List<String> addedIpList = new ArrayList<>();
+        List<String> ignoredIpList = new ArrayList<>();
+        int networkIndex = getNextIpConfigIndex(ipConfig);
+        for (Ippool ippool : boundIppoolList) {
+            String currentIp = StringUtils.trimToNull(ippool.getIp());
+            if (currentIp == null) {
+                log.info("[Sync-ManualVmIp] 跳过空IP记录: NodeId={}, HostId={}, VmId={}, IppoolId={}",
+                        vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), ippool.getId());
+                continue;
+            }
+            if (currentIpSet.contains(currentIp)) {
+                ignoredIpList.add(currentIp);
+                log.info("[Sync-ManualVmIp] 忽略已存在IP: NodeId={}, HostId={}, VmId={}, Ip={}",
+                        vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), currentIp);
+                continue;
+            }
+            Ipstatus ipstatus = ipstatusService.getById(ippool.getPoolId());
+            if (ipstatus == null) {
+                throw new IllegalStateException("同步手动绑定IP失败，IP池不存在: poolId=" + ippool.getPoolId());
+            }
+            String ipConfigValue = buildIpConfigValue(ippool, ipstatus);
+            if (StringUtils.isBlank(ipConfigValue)) {
+                throw new IllegalStateException("同步手动绑定IP失败，IP配置无效: ip=" + currentIp);
+            }
+            while (ipConfig.containsKey(String.valueOf(networkIndex))) {
+                networkIndex++;
+            }
+            ipConfig.put(String.valueOf(networkIndex), ipConfigValue);
+            currentIpSet.add(currentIp);
+            addedIpList.add(currentIp);
+            log.info("[Sync-ManualVmIp] 写入缺失IP到vmhost: NodeId={}, HostId={}, VmId={}, Ip={}, NetworkIndex={}",
+                    vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), currentIp, networkIndex);
+            networkIndex++;
+        }
+
+        LinkedHashMap<String, Object> resultData = new LinkedHashMap<>();
+        resultData.put("hostId", vmhost.getId());
+        resultData.put("nodeId", vmhost.getNodeid());
+        resultData.put("vmid", vmhost.getVmid());
+        resultData.put("addedIps", addedIpList);
+        resultData.put("ignoredIps", ignoredIpList);
+        resultData.put("syncCount", addedIpList.size());
+
+        if (boundIppoolList.isEmpty()) {
+            resultData.put("message", "未发现需要同步的手动绑定IP");
+            log.info("[Sync-ManualVmIp] 虚拟机无需同步: NodeId={}, HostId={}, VmId={}, Message={}",
+                    vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), resultData.get("message"));
+            return resultData;
+        }
+
+        List<String> newIpList = buildVmhostIpList(vmhost, ipConfig);
+        List<?> newIpData = VmUtil.splitIpAddress(ipConfig);
+        boolean needUpdate = !Objects.equals(vmhost.getIpConfig(), ipConfig)
+                || !Objects.equals(vmhost.getIpList(), newIpList)
+                || !Objects.equals(vmhost.getIpData(), newIpData);
+
+        if (needUpdate) {
+            updateVmhostIpFields(vmhost, ipConfig, newIpList, "同步手动绑定IP失败");
+            log.info("[Sync-ManualVmIp] vmhost IP数据更新成功: NodeId={}, HostId={}, VmId={}, NewIpList={}",
+                    vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), newIpList);
+        }
+
+        if (addedIpList.isEmpty()) {
+            resultData.put("message", "同步完成，vmhost中已存在这些IP");
+        } else {
+            resultData.put("message", "同步手动绑定IP成功");
+        }
+        log.info("[Sync-ManualVmIp] 虚拟机同步结果: NodeId={}, HostId={}, VmId={}, SyncCount={}, Message={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedIpList.size(), resultData.get("message"));
+        return resultData;
     }
 
     private Ippool getNewIppool(VmIpParams vmIpParams, Vmhost vmhost, Ippool oldIppool) {
@@ -1592,6 +1747,29 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return getIppoolByIpAndNodeIdAndPoolId(ip, nodeId, null);
     }
 
+    private List<Ippool> getBoundIppoolListByNodeIdAndVmId(Integer nodeId, Integer vmId) {
+        if (nodeId == null || vmId == null) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("vm_id", vmId);
+        queryWrapper.eq("status", 1);
+        queryWrapper.orderByAsc("id");
+        return ippoolService.list(queryWrapper);
+    }
+
+    private List<Vmhost> getVmhostListByNodeId(Integer nodeId) {
+        if (nodeId == null) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("nodeid", nodeId);
+        queryWrapper.eq("delete_state", 0);
+        queryWrapper.orderByAsc("id");
+        return this.list(queryWrapper);
+    }
+
     private Ippool getIppoolByIpAndNodeIdAndPoolId(String ip, Integer nodeId, Integer poolId) {
         if (StringUtils.isBlank(ip) || nodeId == null) {
             return null;
@@ -1608,6 +1786,35 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     private String getIpFromCloudInitConfig(String ipConfig) {
         return CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig);
+    }
+
+    private void updateVmhostIpFields(Vmhost vmhost, HashMap<String, String> ipConfig, List<String> ipList, String errorMessage) {
+        List<IpDto> ipData = VmUtil.splitIpAddress(ipConfig);
+        Vmhost updateVmhost = new Vmhost();
+        updateVmhost.setId(vmhost.getId());
+        updateVmhost.setIpConfig(ipConfig);
+        updateVmhost.setIpList(ipList);
+        updateVmhost.setIpData(ipData);
+        if (!this.updateById(updateVmhost)) {
+            throw new IllegalStateException(errorMessage + ": hostId=" + vmhost.getId());
+        }
+        vmhost.setIpConfig(ipConfig);
+        vmhost.setIpList(ipList);
+        vmhost.setIpData(ipData);
+    }
+
+    private boolean updateVmhostStatusOnly(Integer hostId, Integer status) {
+        Vmhost updateVmhost = new Vmhost();
+        updateVmhost.setId(hostId);
+        updateVmhost.setStatus(status);
+        return this.updateById(updateVmhost);
+    }
+
+    private void updateVmhostStatusOnly(Vmhost vmhost, Integer status) {
+        if (!updateVmhostStatusOnly(vmhost.getId(), status)) {
+            throw new IllegalStateException("更新虚拟机状态失败: hostId=" + vmhost.getId() + ", status=" + status);
+        }
+        vmhost.setStatus(status);
     }
 
     private Integer getIpMask(Ipstatus ipstatus, Ippool ippool) {
@@ -1765,26 +1972,48 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     /**
      * @Author: 星禾
-     * @Description: IP变更后强制停止虚拟机并重新开机
+     * @Description: IP变更后创建异步强制重启任务
      * @DateTime: 2026/6/6 12:40
      */
     private void restartVmAfterIpChange(Vmhost vmhost, Master node) {
-        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        String status = getPveVmStatus(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
-        if (!"stopped".equals(status)) {
-            vmhost.setStatus(9);
-            this.updateById(vmhost);
-            proxmoxApiUtil.forceStopVm(node, cookieMap, vmhost.getVmid());
-            waitPveVmStopped(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
-            vmhost.setStatus(1);
-            this.updateById(vmhost);
+        Task pendingTask = getPendingIpChangeRestartTask(vmhost.getId());
+        if (pendingTask != null) {
+            log.info("[Task-IpChangeRestart] 已存在待执行任务，跳过重复创建: NodeId={}, VmId={}, HostId={}, TaskId={}",
+                    node.getId(), vmhost.getVmid(), vmhost.getId(), pendingTask.getId());
+            return;
         }
-        vmhost.setStatus(7);
-        this.updateById(vmhost);
-        proxmoxApiUtil.postNodeApi(node, cookieMap, "/nodes/" + node.getNodeName() + "/qemu/" + vmhost.getVmid() + "/status/start", new HashMap<>());
-        vmhost.setStatus(0);
-        this.updateById(vmhost);
+        Task restartTask = new Task();
+        restartTask.setNodeid(node.getId());
+        restartTask.setVmid(vmhost.getVmid());
+        restartTask.setHostid(vmhost.getId());
+        restartTask.setType(IP_CHANGE_RESTART_VM);
+        restartTask.setStatus(0);
+        Map<Object, Object> params = new HashMap<>();
+        params.put("source", "vm_ip_change");
+        restartTask.setParams(params);
+        restartTask.setCreateDate(System.currentTimeMillis());
+        if (!taskService.insertTask(restartTask)) {
+            throw new IllegalStateException("创建IP变更异步重启任务失败: hostId=" + vmhost.getId());
+        }
+        if (!this.addVmHostTask(vmhost.getId(), restartTask.getId())) {
+            log.warn("[Task-IpChangeRestart] 追加虚拟机任务流程失败: NodeId={}, VmId={}, HostId={}, TaskId={}",
+                    node.getId(), vmhost.getVmid(), vmhost.getId(), restartTask.getId());
+        }
+        log.info("[Task-IpChangeRestart] IP变更异步重启任务创建成功: NodeId={}, VmId={}, HostId={}, TaskId={}",
+                node.getId(), vmhost.getVmid(), vmhost.getId(), restartTask.getId());
+    }
+
+    private Task getPendingIpChangeRestartTask(Integer hostId) {
+        if (hostId == null) {
+            return null;
+        }
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("hostid", hostId);
+        queryWrapper.eq("type", IP_CHANGE_RESTART_VM);
+        queryWrapper.in("status", Arrays.asList(0, 1));
+        queryWrapper.orderByAsc("create_date");
+        queryWrapper.last("LIMIT 1");
+        return taskService.getOne(queryWrapper);
     }
 
     private void waitPveVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid) {
@@ -2446,11 +2675,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         log.info("[VmBackupRestore] 还原备份前强制关机: NodeID:{} VM-ID:{} currentStatus:{}",
                 node.getId(), vmhost.getVmid(), status);
         proxmoxApiUtil.forceStopVm(node, cookieMap, vmhost.getVmid());
-        vmhost.setStatus(9);
-        this.updateById(vmhost);
+        updateVmhostStatusOnly(vmhost, 9);
         waitVmStoppedBeforeRollbackBackup(vmhost, node, cookieMap, proxmoxApiUtil);
-        vmhost.setStatus(1);
-        this.updateById(vmhost);
+        updateVmhostStatusOnly(vmhost, 1);
     }
 
     /**

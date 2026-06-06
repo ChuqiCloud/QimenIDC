@@ -18,6 +18,11 @@ public class VmIpParams {
     @JsonAlias("hostid")
     private Integer hostId;
     /**
+     * 节点ID，批量同步节点下虚拟机手动绑定IP时使用
+     */
+    @JsonAlias("nodeid")
+    private Integer nodeId;
+    /**
      * 新IP地址，和newIp二选一；为空时自动从空闲IP中分配
      */
     private String ip;
