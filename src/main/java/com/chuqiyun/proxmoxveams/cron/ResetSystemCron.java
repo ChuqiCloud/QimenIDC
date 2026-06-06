@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import org.springframework.scheduling.annotation.Async;
@@ -110,10 +111,9 @@ public class ResetSystemCron {
         if (resetDataDisk){
             Map<Object, Object> dataDiskDataMap = vmhost.getDataDisk();
             if (dataDiskDataMap != null){
-                // 变量键，键为数据盘的索引
-                for (Object key : dataDiskDataMap.keySet()){
+                for (String diskName : DataDiskUtil.getDataDiskNames(dataDiskDataMap)){
                     // 删除数据盘
-                    proxmoxApiUtil.deleteVmDisk(node,authentications,vmhost.getVmid(),"scsi"+key);
+                    proxmoxApiUtil.deleteVmDisk(node,authentications,vmhost.getVmid(),diskName);
                 }
             }
         }

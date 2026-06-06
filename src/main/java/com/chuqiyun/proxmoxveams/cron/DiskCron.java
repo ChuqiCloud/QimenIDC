@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
@@ -277,22 +278,31 @@ public class DiskCron {
         // 获取数据盘信息
         Map<Object,Object> dataDiskMap = task.getParams();
         // 判断是否为空
-        if (dataDiskMap == null){
+        if (dataDiskMap == null || dataDiskMap.isEmpty()){
+            task.setStatus(2);
+            taskService.updateById(task);
             return;
         }
         log.info("[Task-CreateDataDisk] 执行创建数据盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-        // 转换为JSONObject
-        JSONObject dataDiskJson = new JSONObject(dataDiskMap);
-        HashMap<String,Object> params = new HashMap<>();
+        HashMap<String,Object> params;
+        try {
+            params = DataDiskUtil.buildCreateDataDiskParams(vmhost.getStorage(), dataDiskMap);
+        } catch (Exception e) {
+            log.error("[Task-CreateDataDisk] 数据盘参数无效: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+            task.setStatus(3);
+            task.setError(e.getMessage());
+            taskService.updateById(task);
+            e.printStackTrace();
+            return;
+        }
+        if (params.isEmpty()) {
+            task.setStatus(2);
+            taskService.updateById(task);
+            log.info("[Task-CreateDataDisk] 无有效数据盘，跳过创建: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+            return;
+        }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-        int num = 1;
-        // 遍历dataDiskJson
-        for (String key : dataDiskJson.keySet()){
-            // 添加磁盘
-            params.put("scsi"+num,vmhost.getStorage()+":"+dataDiskJson.get(key));
-            num++;
-        }
         try {
             proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/config", params);
         } catch (Exception e) {

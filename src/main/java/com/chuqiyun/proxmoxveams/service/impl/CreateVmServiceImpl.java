@@ -33,6 +33,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
  */
 @Service("createVmService")
 public class CreateVmServiceImpl implements CreateVmService {
+    private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -219,10 +221,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getMemory() == null) {
             vmParams.setMemory(512);
         }
-        // 如果storage为空或为auto，则使用节点的最大剩余磁盘
-        if (vmParams.getStorage() == null || "auto".equals(vmParams.getStorage())) {
-            vmParams.setStorage(node.getAutoStorage());
-        }
+        // 如果storage为空或为auto，则使用节点自动选择的存储；节点未计算出存储时兜底local-lvm
+        vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), node));
 
         // 判断onBoot是否为空
         if (vmParams.getOnBoot() == null) {
@@ -446,6 +446,11 @@ public class CreateVmServiceImpl implements CreateVmService {
     public Integer createPveVm(VmParams vmParams, Integer vmid) {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = masterService.getById(vmParams.getNodeid());
+        if (node == null) {
+            UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败，节点不存在: NodeID={}", vmParams.getNodeid());
+            return 0;
+        }
+        vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), node));
         // 创建虚拟机可选参数
         HashMap<String, Object> param = new HashMap<>();
         int vmId = vmid;
@@ -507,13 +512,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 设置虚拟机密码
         param.put("cipassword",vmParams.getPassword());
         // 设置cloud-init
-        if (vmParams.getStorage() == null){
-            param.put("ide2", "local-lvm:cloudinit");
-        }else if ("auto".equals(vmParams.getStorage())) {
-            param.put("ide2", "local-lvm:cloudinit");
-        }else {
-            param.put("ide2", vmParams.getStorage()+":cloudinit");
-        }
+        param.put("ide2", vmParams.getStorage() + ":cloudinit");
         // 设置网络
         double bandWidthValue = vmParams.getBandwidth() / 8.0;
         String bandWidth = String.format(Locale.US, "%.2f", bandWidthValue);
@@ -539,6 +538,31 @@ public class CreateVmServiceImpl implements CreateVmService {
         }else {
             return 0;
         }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取创建虚拟机时可用的存储名称
+     * @DateTime: 2026/6/6 20:24
+     */
+    private String getCreateVmStorage(String storage, Master node) {
+        String normalizedStorage = normalizeStorageText(storage);
+        if (!isAutoStorage(normalizedStorage)) {
+            return normalizedStorage;
+        }
+        String autoStorage = node == null ? null : normalizeStorageText(node.getAutoStorage());
+        if (!isAutoStorage(autoStorage)) {
+            return autoStorage;
+        }
+        return DEFAULT_CREATE_VM_STORAGE;
+    }
+
+    private boolean isAutoStorage(String storage) {
+        return storage == null || storage.isEmpty() || "auto".equalsIgnoreCase(storage);
+    }
+
+    private String normalizeStorageText(String storage) {
+        return storage == null ? null : storage.trim();
     }
 
     private int getIpConfigCount(HashMap<String, String> ipConfigMap) {

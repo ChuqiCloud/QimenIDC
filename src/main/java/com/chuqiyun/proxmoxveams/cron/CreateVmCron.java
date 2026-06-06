@@ -36,6 +36,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class CreateVmCron {
+    private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
+
     @Resource
     private VmhostService vmhostService;
     @Resource
@@ -100,6 +102,12 @@ public class CreateVmCron {
             taskMap.put(String.valueOf(System.currentTimeMillis()), task.getId());
             //vmParams.setTask(params);
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
+            Master createNode = masterService.getById(vmParams.getNodeid());
+            if (createNode == null) {
+                finishCreateVmFailed(task, null, vmParams, vmIdInit, "创建基础虚拟机失败，节点不存在");
+                return;
+            }
+            vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), createNode));
 
             // 将创建的虚拟机信息存入数据库
             Integer vmhostId = vmhostService.addVmhost(vmIdInit, vmParams);
@@ -134,18 +142,19 @@ public class CreateVmCron {
                 }
             }
 
-            int vmId = createVmService.createPveVm(vmParams,vmIdInit);
+            int vmId;
+            try {
+                vmId = createVmService.createPveVm(vmParams, vmIdInit);
+            } catch (Exception e) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机异常: NodeID:{} VM-ID:{}", vmParams.getNodeid(), vmIdInit);
+                finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建基础虚拟机失败: " + getExceptionMessage(e));
+                e.printStackTrace();
+                return;
+            }
             // 判断是否创建成功
             if (vmId == 0) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");
-                // 创建失败，修改任务状态为3
-                task.setStatus(3);
-                // 记录错误信息
-                vmhost = vmhostService.getById(vmhostId);
-                vmhost.setStatus(1);
-                vmhostService.updateById(vmhost);
-                task.setError("创建基础虚拟机失败");
-                taskService.updateById(task);
+                finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建基础虚拟机失败");
                 // 结束任务
                 return;
             }
@@ -448,5 +457,71 @@ public class CreateVmCron {
         queryWrapper.eq("node_id", nodeId);
         queryWrapper.last("limit 1");
         return ippoolService.getOne(queryWrapper);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 标记创建虚拟机失败并回滚本次占用的IP
+     * @DateTime: 2026/6/6 20:24
+     */
+    private void finishCreateVmFailed(Task task, Integer vmhostId, VmParams vmParams, Integer vmId, String error) {
+        task.setStatus(3);
+        task.setError(error);
+        taskService.updateById(task);
+
+        Vmhost vmhost = vmhostId == null ? null : vmhostService.getById(vmhostId);
+        if (vmhost != null) {
+            vmhost.setStatus(1);
+            vmhostService.updateById(vmhost);
+        }
+        releaseCreatedIps(vmParams, vmId);
+    }
+
+    private void releaseCreatedIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getIpList() == null || vmParams.getIpList().isEmpty()) {
+            return;
+        }
+        int releaseCount = 0;
+        for (String ip : vmParams.getIpList()) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+            if (ippool == null || !Objects.equals(ippool.getVmId(), vmId)) {
+                continue;
+            }
+            ippool.setStatus(0);
+            ippool.setVmId(0);
+            if (ippoolService.updateById(ippool)) {
+                releaseCount++;
+            }
+        }
+        if (releaseCount > 0) {
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败，已释放本次占用IP数量: NodeID:{} VM-ID:{} Count:{}", vmParams.getNodeid(), vmId, releaseCount);
+        }
+    }
+
+    private String getExceptionMessage(Exception e) {
+        if (e == null || e.getMessage() == null || e.getMessage().trim().isEmpty()) {
+            return "未知错误";
+        }
+        return e.getMessage();
+    }
+
+    private String getCreateVmStorage(String storage, Master node) {
+        String normalizedStorage = normalizeStorageText(storage);
+        if (!isAutoStorage(normalizedStorage)) {
+            return normalizedStorage;
+        }
+        String autoStorage = node == null ? null : normalizeStorageText(node.getAutoStorage());
+        if (!isAutoStorage(autoStorage)) {
+            return autoStorage;
+        }
+        return DEFAULT_CREATE_VM_STORAGE;
+    }
+
+    private boolean isAutoStorage(String storage) {
+        return storage == null || storage.isEmpty() || "auto".equalsIgnoreCase(storage);
+    }
+
+    private String normalizeStorageText(String storage) {
+        return storage == null ? null : storage.trim();
     }
 }
