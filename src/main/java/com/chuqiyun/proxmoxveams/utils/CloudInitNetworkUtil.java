@@ -68,7 +68,12 @@ public class CloudInitNetworkUtil {
 
     public static String getPrimaryIpConfig(Map<String, String> ipConfig) {
         List<Map.Entry<String, String>> entries = getSortedIpConfigEntries(ipConfig);
-        return entries.isEmpty() ? null : entries.get(0).getValue();
+        for (Map.Entry<String, String> entry : entries) {
+            if (parseIpConfig(entry.getValue()) != null) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     public static List<String> getIpList(Map<String, String> ipConfig) {

@@ -228,6 +228,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getOnBoot() == null) {
             vmParams.setOnBoot(0);
         }
+        // 判断ifNat是否为空
+        if (vmParams.getIfnat() == null) {
+            vmParams.setIfnat(0);
+        }
         // 设置网络
         if (vmParams.getBridge() == null) {
             if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat网口
@@ -291,35 +295,30 @@ public class CreateVmServiceImpl implements CreateVmService {
             // 生成随机密码
             vmParams.setPassword(VmUtil.generatePassword());
         }
-        // 获取可用ip最多的ip池
-        Ipstatus ipPool;
-        if (vmParams.getIfnat()==1)//nat机器，获取nat池
-        {
-            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId,node.getNatippool(),null);
-        } else {
-            ipPool = ipstatusService.getIpStatusMaxByNodeId(nodeId, null,node.getNatippool());
-        }
+        // 获取默认IP池，仅用于DNS默认值；实际分配以ippool实时空闲状态为准
+        Ipstatus ipPool = getDefaultCreateVmIpPool(nodeId, node, vmParams.getIfnat());
 
         HashMap<String, String> ipConfigMap = vmParams.getIpConfig() == null ? new HashMap<>() : vmParams.getIpConfig();
-        if (ipPool == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-        }
         int ipCount = getIpConfigCount(ipConfigMap);
         Set<String> selectedIpSet = new LinkedHashSet<>(CloudInitNetworkUtil.getIpList(ipConfigMap));
         for (int i = 1; i <= ipCount; i++) {
             String ipConfig = ipConfigMap.get(String.valueOf(i));
-            if (ipConfig != null) {
+            if (CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig) != null) {
                 continue;
             }
-            if (ipPool.getAvailable() == 0) {
-                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-            }
-            Ippool ipEntity = getOneOkIpByPoolId(ipPool.getId(), selectedIpSet);
+            Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet);
             if (ipEntity == null) {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
             }
-            ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + ipPool.getMask() + ",gw=" + ipEntity.getGateway());
+            Ipstatus currentIpPool = ipstatusService.getById(ipEntity.getPoolId());
+            if (currentIpPool == null) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
+            }
+            ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + currentIpPool.getMask() + ",gw=" + ipEntity.getGateway());
             selectedIpSet.add(ipEntity.getIp());
+            if (ipPool == null) {
+                ipPool = currentIpPool;
+            }
         }
         vmParams.setIpConfig(ipConfigMap);
         List<String> ipList = CloudInitNetworkUtil.getIpList(ipConfigMap);
@@ -333,12 +332,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         vmParams.setIpList(ipList);
         // 设置dns
-        if (vmParams.getDns1() == null) {
+        if (vmParams.getDns1() == null && ipPool != null) {
             vmParams.setDns1(ipPool.getDns1());
-        }
-        // 判断ifNat是否为空
-        if (vmParams.getIfnat() == null) {
-            vmParams.setIfnat(0);
         }
         // 判断natnum是否为空
         if (vmParams.getNatnum() == null) {
@@ -560,10 +555,22 @@ public class CreateVmServiceImpl implements CreateVmService {
         return count;
     }
 
-    private Ippool getOneOkIpByPoolId(Integer poolId, Set<String> excludeIpSet) {
+    private Ipstatus getDefaultCreateVmIpPool(Integer nodeId, Master node, Integer ifnat) {
+        if (Objects.equals(ifnat, 1)) {
+            return ipstatusService.getIpStatusMaxByNodeId(nodeId, node.getNatippool(), null);
+        }
+        return ipstatusService.getIpStatusMaxByNodeId(nodeId, null, node.getNatippool());
+    }
+
+    private Ippool getOneFreeIpForCreateVm(Integer nodeId, Integer ifnat, Integer natippool, Set<String> excludeIpSet) {
         QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("pool_id", poolId);
+        queryWrapper.eq("node_id", nodeId);
         queryWrapper.eq("status", 0);
+        if (Objects.equals(ifnat, 1) && natippool != null) {
+            queryWrapper.eq("pool_id", natippool);
+        } else if (!Objects.equals(ifnat, 1) && natippool != null) {
+            queryWrapper.ne("pool_id", natippool);
+        }
         if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
             queryWrapper.notIn("ip", excludeIpSet);
         }
