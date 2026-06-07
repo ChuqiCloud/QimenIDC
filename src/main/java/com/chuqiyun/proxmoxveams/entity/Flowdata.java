@@ -47,5 +47,4 @@ public class Flowdata extends Model<Flowdata> {
     public Serializable pkVal() {
         return this.id;
     }
-    }
-
+}

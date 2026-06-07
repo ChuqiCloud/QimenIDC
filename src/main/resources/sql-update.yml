@@ -215,3 +215,6 @@ build: # 内部构建版本信息
              index idx_system_log_request_id (request_id),
              index idx_system_log_level (level)
          );"
+    4:
+      - "alter table system_log
+                   modify business_message text null;"

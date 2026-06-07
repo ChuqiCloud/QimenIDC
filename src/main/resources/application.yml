@@ -1,10 +1,19 @@
 server:
   port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 config:
   frontend_DomainName: "http://localhost:3003"
   profiles: prod
   admin_path: admin
+  # 系统日志保留天数，留空默认 180 天
+  system_log_retention_days: 180
+  # 流量统计保留天数，留空默认 15 天
+  flow_data_retention_days: 15
   # token加密盐
   secret: 123456
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
@@ -68,7 +77,7 @@ info:
     description: "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system."
     version: "1.2.0"
     build:
-      version: "1.2.0_3"
+      version: "1.2.0_4"
 
 management:
   server: # 指定监听端口，不指定则与server端口一直

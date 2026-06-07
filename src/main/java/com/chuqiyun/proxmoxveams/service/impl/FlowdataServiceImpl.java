@@ -7,8 +7,9 @@ import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.dao.FlowdataDao;
 import com.chuqiyun.proxmoxveams.entity.Flowdata;
 import com.chuqiyun.proxmoxveams.service.FlowdataService;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * (Flowdata)表服务实现类
@@ -18,6 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service("flowdataService")
 public class FlowdataServiceImpl extends ServiceImpl<FlowdataDao, Flowdata> implements FlowdataService {
+    private static final int DEFAULT_RETENTION_DAYS = 15;
+    private static final int DELETE_BATCH_SIZE = 10000;
+
+    @Value("${config.flow_data_retention_days:}")
+    private String flowDataRetentionDays;
+
     /**
     * @Author: mryunqi
     * @Description: 插入流量临表数据
@@ -77,7 +84,7 @@ public class FlowdataServiceImpl extends ServiceImpl<FlowdataDao, Flowdata> impl
     @Override
     public Page<Flowdata> selectFlowdataByPageAndWrapper(Integer page, Integer size, QueryWrapper<Flowdata> queryWrapper) {
         Page<Flowdata> flowdataPage = new Page<>(page, size);
-        return this.page(flowdataPage,queryWrapper);
+        return this.page(flowdataPage, queryWrapper);
     }
 
     /**
@@ -90,47 +97,80 @@ public class FlowdataServiceImpl extends ServiceImpl<FlowdataDao, Flowdata> impl
     @Override
     public Flowdata selectFlowdataByHostid(Integer hostid) {
         QueryWrapper<Flowdata> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("hostid",hostid);
+        queryWrapper.eq("hostid", hostid);
         queryWrapper.orderByDesc("create_date");//按照create_date降序排序
         queryWrapper.last("limit 1");
         return this.getOne(queryWrapper);
     }
+
     /**
     * @Author: 星禾
-    * @Description: 分页清理超过一个月的流量数据
-    * @DateTime: 2023/12/3 20:37
-     * @Params: int batchSize 每批删除数量
+    * @Description: 按配置分页清理过期流量统计数据
+    * @DateTime: 2026/6/7 10:49
     * @Return int 总共删除的记录数
     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public int deleteExpiredFlowData() {
+        return deleteExpiredFlowData(resolveRetentionDays(flowDataRetentionDays, DEFAULT_RETENTION_DAYS));
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 按指定保留天数分页清理过期流量统计数据
+    * @DateTime: 2026/6/7 10:49
+    * @Params: Integer retentionDays 保留天数
+    * @Return int 总共删除的记录数
+    */
+    @Override
+    public int deleteExpiredFlowData(Integer retentionDays) {
         int totalDeleted = 0;
-        int batchSize = 10000;
+        int normalizedRetentionDays = normalizeRetentionDays(retentionDays, DEFAULT_RETENTION_DAYS);
+        long expireTime = System.currentTimeMillis() - normalizedRetentionDays * 24L * 60 * 60 * 1000;
         boolean hasMore = true;
-        //15天时间戳
-        long oneMonthAgo = System.currentTimeMillis() - 15L * 24 * 60 * 60 * 1000;
+
         while (hasMore) {
             QueryWrapper<Flowdata> queryWrapper = new QueryWrapper<>();
-            queryWrapper.lt("create_date", oneMonthAgo);
-            queryWrapper.last("LIMIT " + batchSize);
+            queryWrapper.lt("create_date", expireTime);
+            queryWrapper.last("LIMIT " + DELETE_BATCH_SIZE);
 
             int deleted = this.baseMapper.delete(queryWrapper);
             totalDeleted += deleted;
-            if (deleted < batchSize) {
+            if (deleted < DELETE_BATCH_SIZE) {
                 hasMore = false;
             }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+
+            if (deleted > 0) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
-        UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
-                "分页批量清理流量数据完成: 总共删除记录数: {} ",totalDeleted);
+
+        if (totalDeleted > 0) {
+            UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
+                    "流量统计数据清理完成，共删除: {}", totalDeleted);
+        }
         return totalDeleted;
     }
 
-}
+    private int resolveRetentionDays(String configValue, int defaultDays) {
+        if (StringUtils.isBlank(configValue)) {
+            return defaultDays;
+        }
+        try {
+            return normalizeRetentionDays(Integer.parseInt(StringUtils.trim(configValue)), defaultDays);
+        } catch (NumberFormatException ignored) {
+            return defaultDays;
+        }
+    }
 
+    private int normalizeRetentionDays(Integer retentionDays, int defaultDays) {
+        if (retentionDays == null || retentionDays <= 0) {
+            return defaultDays;
+        }
+        return retentionDays;
+    }
+}

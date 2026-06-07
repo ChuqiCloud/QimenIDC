@@ -26,5 +26,7 @@ public interface FlowdataService extends IService<Flowdata> {
     Flowdata selectFlowdataByHostid(Integer hostid);
 
     int deleteExpiredFlowData();
+
+    int deleteExpiredFlowData(Integer retentionDays);
 }
 

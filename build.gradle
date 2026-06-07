@@ -114,6 +114,10 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 // 统一所有项目的仓库配置
 allprojects {
     repositories {

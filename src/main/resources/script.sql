@@ -448,7 +448,7 @@ create table system_log
     request_body     text         null,
     http_status      int          null,
     business_code    int          null,
-    business_message varchar(255) null,
+    business_message text         null,
     response_body    text         null,
     duration_ms      bigint       null,
     exception        text         null,

@@ -19,4 +19,12 @@ public interface SystemLogService extends IService<SystemLog> {
                                   String keyword,
                                   String requestId,
                                   String date);
+
+    /**
+     * @Author: 星禾
+     * @Description: 清理过期系统日志
+     * @DateTime: 2026/6/7 10:49
+     * @Return int 总共删除的记录数
+     */
+    int deleteExpiredSystemLogs();
 }

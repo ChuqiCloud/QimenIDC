@@ -1,11 +1,9 @@
 package com.chuqiyun.proxmoxveams.controller.admin;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
-import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
@@ -22,8 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -42,12 +38,6 @@ public class SysAccountController {
     @Resource
     private SystemLogService systemLogService;
 
-    /**
-     * 管理员登录接口
-     *
-     * @param param JSONObject
-     * @return ResponseResult<String>
-     */
     @PostMapping("/loginDo")
     public ResponseResult<String> loginDo(@RequestBody JSONObject param,
                                           HttpServletRequest request,
@@ -91,33 +81,27 @@ public class SysAccountController {
         return ResponseResult.ok(jwtToken);
     }
 
-    /**
-     * @Author: 星禾
-     * @Description: 记录管理员登录日志
-     * @DateTime: 2026/6/7 11:25
-     */
     private void writeLoginLog(HttpServletRequest request,
                                String username,
                                boolean success,
                                String reason,
                                Integer businessCode,
                                String businessMessage) {
-        Map<String, Object> loginLog = new LinkedHashMap<>();
-        loginLog.put("event", "login");
-        loginLog.put("requestId", StringUtils.defaultIfBlank(MDC.get("requestId"), "-"));
-        loginLog.put("username", StringUtils.defaultIfBlank(username, "-"));
-        loginLog.put("clientIp", getClientIp(request));
-        loginLog.put("success", success);
-        loginLog.put("reason", reason);
-        loginLog.put("businessCode", businessCode);
-        loginLog.put("businessMessage", businessMessage);
-        String content = JSON.toJSONString(loginLog);
-        if (success) {
-            UnifiedLogger.log(UnifiedLogger.LogType.LOGIN, "{}", content);
-        } else {
-            UnifiedLogger.warn(UnifiedLogger.LogType.LOGIN, "{}", content);
-        }
+        String content = buildLoginAuditContent(username, success, reason);
         saveLoginLogToDatabase(request, username, success, reason, businessCode, businessMessage, content);
+    }
+
+    private String buildLoginAuditContent(String username, boolean success, String reason) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("LOGIN ")
+                .append(success ? "SUCCESS" : "FAIL")
+                .append(", username=")
+                .append(StringUtils.defaultIfBlank(username, "-"));
+        if (!success && StringUtils.isNotBlank(reason)) {
+            builder.append(", reason=")
+                    .append(StringUtils.abbreviate(reason, 200));
+        }
+        return builder.toString();
     }
 
     private String getClientIp(HttpServletRequest request) {
@@ -137,13 +121,6 @@ public class SysAccountController {
         return request.getRemoteAddr();
     }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 添加超管账号接口
-    * @DateTime: 2023/4/16 11:48
-    * @Params: param JSONObject
-    * @Return ResponseResult<String>
-    */
     @AdminApiCheck
     @PostMapping("/registerDo")
     public ResponseResult<String> registerDo(@RequestBody JSONObject param)
@@ -160,18 +137,12 @@ public class SysAccountController {
         sysUser.setName(param.getString("name"));
         sysUser.setUuid(UUIDUtil.getUUIDByThreadString());
         if (sysuserService.save(sysUser)) {
-            return ResponseResult.ok("添加管理员账户成功！");
+            return ResponseResult.ok("娣诲姞绠＄悊鍛樿处鎴锋垚鍔燂紒");
         } else {
-            return ResponseResult.fail("添加管理员账户失败！");
+            return ResponseResult.fail("娣诲姞绠＄悊鍛樿处鎴峰け璐ワ紒");
         }
     }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 查询超管账号接口
-    * @DateTime: 2023/8/5 9:28
-    * @Params: page 页码 size 每页数量
-    */
     @AdminApiCheck
     @GetMapping("/getSysuser")
     public ResponseResult<Page<Sysuser>> getSysuser(@RequestParam(name = "page", defaultValue = "1") Integer page,
@@ -180,11 +151,6 @@ public class SysAccountController {
         return ResponseResult.ok(sysuserService.selectUserPage(page, size));
     }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 根据UUID查询账号
-    * @DateTime: 2024/2/17 16:07
-    */
     @AdminApiCheck
     @GetMapping("/getSysuserByUuid")
     public ResponseResult<Sysuser> getSysuserByUuid(@RequestParam(name = "uuid") String uuid)
@@ -192,13 +158,6 @@ public class SysAccountController {
         return ResponseResult.ok(sysuserService.getSysuserByUuid(uuid));
     }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 修改超管账号接口
-    * @DateTime: 2023/8/5 10:33
-    * @Params: param JSONObject
-    * @Return  ResponseResult<String>
-    */
     @AdminApiCheck
     @PostMapping("/updateSysuser")
     public ResponseResult<String> updateSysuser(@RequestBody JSONObject param)
@@ -215,25 +174,20 @@ public class SysAccountController {
         sysuser.setPhone(param.getString("phone"));
         sysuser.setName(param.getString("name"));
         if (sysuserService.updateById(sysuser)) {
-            return ResponseResult.ok("修改管理员账户成功！");
+            return ResponseResult.ok("淇敼绠＄悊鍛樿处鎴锋垚鍔燂紒");
         } else {
-            return ResponseResult.fail("修改管理员账户失败！");
+            return ResponseResult.fail("淇敼绠＄悊鍛樿处鎴峰け璐ワ紒");
         }
     }
 
-    /**
-    * @Author: mryunqi
-    * @Description: 删除超管账号接口
-    * @DateTime: 2024/2/17 17:11
-    */
     @AdminApiCheck
     @RequestMapping(value = "/deleteSysUserById/{id}", method = {RequestMethod.POST, RequestMethod.DELETE})
     public ResponseResult<String> deleteSysUserById(@PathVariable Long id)
             throws UnauthorizedException {
         if (sysuserService.removeById(id)) {
-            return ResponseResult.ok("删除管理员账户成功！");
+            return ResponseResult.ok("鍒犻櫎绠＄悊鍛樿处鎴锋垚鍔燂紒");
         } else {
-            return ResponseResult.fail("删除管理员账户失败！");
+            return ResponseResult.fail("鍒犻櫎绠＄悊鍛樿处鎴峰け璐ワ紒");
         }
     }
 
@@ -255,8 +209,8 @@ public class SysAccountController {
         systemLog.setAuthType("ANONYMOUS");
         systemLog.setHttpStatus(200);
         systemLog.setBusinessCode(businessCode);
-        systemLog.setBusinessMessage(businessMessage);
-        systemLog.setException(success ? "" : reason);
+        systemLog.setBusinessMessage(success ? "SUCCESS" : "FAIL");
+        systemLog.setException(success ? "" : StringUtils.defaultString(reason));
         systemLog.setContent(content);
         systemLog.setCreateTime(System.currentTimeMillis());
         systemLogService.saveSystemLogAsync(systemLog);
