@@ -90,8 +90,8 @@ public class StartUp {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "数据库更新失败");
             System.exit(0); // 退出程序
         }else{
-            // 更新数据库内部版号
-            if (!configService.setBuild(nowBuildVersion)){
+            String dbBuildVersion = configService.getBuild();
+            if (!Objects.equals(dbBuildVersion, nowBuildVersion) && !configService.setBuild(nowBuildVersion)){
                 UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "内部版号设置失败");
                 System.exit(0); // 退出程序
             }
