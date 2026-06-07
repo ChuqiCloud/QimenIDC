@@ -67,6 +67,16 @@ public interface VmhostService extends IService<Vmhost> {
 
     UnifiedResultDto<Object> syncVmManualIp(VmIpParams vmIpParams);
 
+    boolean startSyncAllVmFirewallProtection();
+
+    boolean startSyncVmFirewallProtection(Integer hostId);
+
+    boolean startRollbackVmFirewallProtection();
+
+    boolean startRollbackVmFirewallProtection(Integer hostId);
+
+    boolean isVmFirewallProtectionSyncRunning();
+
     void syncAllVmFirewallProtection();
 
     UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword);

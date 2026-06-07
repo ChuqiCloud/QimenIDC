@@ -342,6 +342,10 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public Os isExistOs(String osName){
+        if (osName == null || osName.trim().isEmpty()) {
+            return null;
+        }
+        osName = osName.trim();
         //判断osName是否为数字
         if (osName.matches("[0-9]+")){
             // 如果为数字，则根据id查询
@@ -376,21 +380,31 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     @Override
     public Integer getNodeOsStatus(String osName, Integer nodeId){
         Os os = this.isExistOs(osName);
+        return getNodeOsStatus(os, nodeId);
+    }
+
+    @Override
+    public Integer getNodeOsStatus(Os os, Integer nodeId){
         if (os==null){
             return 0;
         }
         Map<String,Object> map = os.getNodeStatus();
-        if (map.size() == 0){
+        if (map == null || map.size() == 0 || nodeId == null){
             return 0;
         }
         for (String key : map.keySet()) {
             Object osNodeStatusObj = map.get(key);
             OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
-            if (Objects.equals(osNodeStatus.getNodeId(), nodeId)){
+            if (osNodeStatus != null && Objects.equals(osNodeStatus.getNodeId(), nodeId)){
                 return osNodeStatus.getStatus();
             }
         }
         return 0;
+    }
+
+    @Override
+    public boolean isNodeOsDownloaded(Os os, Integer nodeId) {
+        return Objects.equals(getNodeOsStatus(os, nodeId), 2);
     }
 
 }

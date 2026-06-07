@@ -36,4 +36,18 @@ public class ThreadPoolTaskExecutorConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         return executor;
     }
+
+    @Bean(name = "vmFirewallSyncExecutor")
+    public TaskExecutor vmFirewallSyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        // 防火墙白名单全量同步属于低优先级后台任务，单线程慢速执行，避免影响业务线程池
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(1);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("vmFirewallSync-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        return executor;
+    }
 }

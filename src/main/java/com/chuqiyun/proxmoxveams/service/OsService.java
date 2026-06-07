@@ -45,5 +45,9 @@ public interface OsService extends IService<Os> {
     Os isExistOs(String osName);
 
     Integer getNodeOsStatus(String osName, Integer nodeId);
+
+    Integer getNodeOsStatus(Os os, Integer nodeId);
+
+    boolean isNodeOsDownloaded(Os os, Integer nodeId);
 }
 

@@ -5,6 +5,10 @@ config:
   admin_path: admin
   secret: 123456
   frontend_DomainName: "http://localhost:3003"
+  # 系统日志保留天数，留空默认 180 天
+  system_log_retention_days: 180
+  # 流量统计保留天数，留空默认 15 天
+  flow_data_retention_days: 15
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:

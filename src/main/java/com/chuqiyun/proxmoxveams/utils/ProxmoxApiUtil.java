@@ -568,6 +568,21 @@ public class ProxmoxApiUtil {
 
     /**
      * @Author: 星禾
+     * @Description: 关闭虚拟机级防IP和MAC伪造配置
+     * @DateTime: 2026/6/8 0:16
+     */
+    public void disableVmFirewallAntiSpoof(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("enable", 0);
+        params.put("policy_in", "ACCEPT");
+        params.put("policy_out", "ACCEPT");
+        params.put("macfilter", 0);
+        params.put("ipfilter", 0);
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/firewall/options", params);
+    }
+
+    /**
+     * @Author: 星禾
      * @Description: 获取虚拟机防火墙IPSet条目
      * @DateTime: 2026/6/7 22:47
      */
@@ -632,6 +647,23 @@ public class ProxmoxApiUtil {
         try {
             deleteNodeApiByUri(node, cookie, "/nodes/" + encodePath(node.getNodeName()) + "/qemu/" + vmid
                     + "/firewall/ipset/" + encodePath(ipsetName) + "/" + encodePath(cidr));
+        } catch (RestClientResponseException e) {
+            if (!isNotFound(e)) {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机防火墙IPSet
+     * @DateTime: 2026/6/8 0:16
+     */
+    public void deleteVmFirewallIpset(Master node, HashMap<String,String> cookie, Integer vmid,
+                                      String ipsetName) throws UnauthorizedException {
+        try {
+            deleteNodeApiByUri(node, cookie, "/nodes/" + encodePath(node.getNodeName()) + "/qemu/" + vmid
+                    + "/firewall/ipset/" + encodePath(ipsetName));
         } catch (RestClientResponseException e) {
             if (!isNotFound(e)) {
                 throw e;

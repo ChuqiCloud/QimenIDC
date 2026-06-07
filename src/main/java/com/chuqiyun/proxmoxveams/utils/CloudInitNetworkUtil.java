@@ -144,6 +144,26 @@ public class CloudInitNetworkUtil {
         return String.join(",", parts);
     }
 
+    public static String removePveNet0FirewallConfig(String netConfig) {
+        if (StringUtils.isBlank(netConfig)) {
+            return netConfig;
+        }
+        List<String> parts = new ArrayList<>();
+        for (String token : netConfig.split(",")) {
+            String item = token.trim();
+            if (StringUtils.isBlank(item)) {
+                continue;
+            }
+            int idx = item.indexOf('=');
+            String key = idx > 0 ? item.substring(0, idx).trim() : item;
+            if ("firewall".equalsIgnoreCase(key)) {
+                continue;
+            }
+            parts.add(item);
+        }
+        return String.join(",", parts);
+    }
+
     public static int getIpAddressCount(Map<String, String> ipConfig) {
         return parseIpConfigs(ipConfig).size();
     }

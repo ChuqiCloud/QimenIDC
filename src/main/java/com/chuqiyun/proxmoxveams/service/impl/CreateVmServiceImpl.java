@@ -247,20 +247,16 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
         }
-        vmParams.setOsName(vmParams.getOs()); // 保存osName
         Os os = osService.isExistOs(vmParams.getOs());
         // 判断镜像是否存在
         if (os == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
         }
-        else {
-            vmParams.setOs(os.getFileName());
-        }
-        int osStatus = osService.getNodeOsStatus(vmParams.getOs(), nodeId);
-        // 判断镜像是否可用
-        if (osStatus != 2) {
+        if (!osService.isNodeOsDownloaded(os, nodeId)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
         }
+        vmParams.setOsName(os.getName()); // osName统一保存镜像名称
+        vmParams.setOs(os.getFileName());
         // 判断osType是否为空
         if (vmParams.getOsType() == null) {
             vmParams.setOsType(os.getType());

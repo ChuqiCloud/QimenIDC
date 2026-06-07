@@ -29,12 +29,15 @@ import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.*;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -52,7 +55,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
     private static final long IP_CHANGE_RESTART_WAIT = 2000L;
+    private static final int FIREWALL_SYNC_PAGE_SIZE = 10;
+    private static final long FIREWALL_SYNC_VM_DELAY = 500L;
+    private static final long FIREWALL_SYNC_PAGE_DELAY = 3000L;
+    private static final long FIREWALL_SYNC_NODE_DELAY = 5000L;
     private static final String PENDING_STATUS = "creating";
+    private final AtomicBoolean vmFirewallProtectionSyncRunning = new AtomicBoolean(false);
 
     @Resource
     private MasterService masterService;
@@ -66,6 +74,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private IppoolService ippoolService;
     @Resource
     private IpstatusService ipstatusService;
+    @Resource(name = "vmFirewallSyncExecutor")
+    private TaskExecutor vmFirewallSyncExecutor;
 
     /**
     * @Author: mryunqi
@@ -848,6 +858,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
         Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
 
         // 判断虚拟机是否为禁用状态
         if (vmhost.getStatus() == 4){
@@ -861,15 +874,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
         }
-        // 判断虚拟机是否存在快照
-        if (hasVmSnapshot(node, vmhost)){
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_HAS_SNAPSHOT, null);
-        }
-
         Os os = osService.isExistOs(osName);
         // 判断镜像是否存在
         if (os == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
+        }
+        if (!osService.isNodeOsDownloaded(os, vmhost.getNodeid())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
+        }
+        // 判断虚拟机是否存在快照
+        if (hasVmSnapshot(node, vmhost)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_HAS_SNAPSHOT, null);
         }
 
         // 判断虚拟机是否为开机状态
@@ -878,7 +893,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         //重置用户名
         Os os_old = osService.isExistOs(vmhost.getOs());
-        if (!Objects.equals(os_old.getOsType(), os.getOsType()))
+        if (os_old == null || !Objects.equals(os_old.getOsType(), os.getOsType()))
         {
             if (os.getOsType().equals("windows")) {
                 vmhost.setUsername("administrator");
@@ -941,7 +956,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         osName = os.getFileName();
         // 设置虚拟机状态为重装系统中
         vmhost.setStatus(13);
-        vmhost.setOsName(os.getFileName());
+        vmhost.setOsName(os.getName());
         vmhost.setOsType(os.getType());
         vmhost.setOs(os.getName());
 
@@ -1463,18 +1478,143 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/6/7 14:07
      */
     @Override
+    public boolean startSyncAllVmFirewallProtection() {
+        if (!vmFirewallProtectionSyncRunning.compareAndSet(false, true)) {
+            log.info("[VmFirewallSync] 已存在运行中的同步任务，跳过本次触发");
+            return false;
+        }
+        try {
+            vmFirewallSyncExecutor.execute(() -> {
+                try {
+                    syncAllVmFirewallProtectionInternal();
+                } catch (Exception e) {
+                    log.error("[VmFirewallSync] 后台虚拟机防火墙/IP白名单同步失败", e);
+                } finally {
+                    vmFirewallProtectionSyncRunning.set(false);
+                }
+            });
+            return true;
+        } catch (RejectedExecutionException e) {
+            vmFirewallProtectionSyncRunning.set(false);
+            throw new IllegalStateException("虚拟机防火墙同步任务队列已满，请稍后再试", e);
+        }
+    }
+
+    @Override
+    public boolean startSyncVmFirewallProtection(Integer hostId) {
+        if (hostId == null) {
+            return startSyncAllVmFirewallProtection();
+        }
+        if (this.getById(hostId) == null) {
+            throw new IllegalStateException("虚拟机不存在: hostId=" + hostId);
+        }
+        if (!vmFirewallProtectionSyncRunning.compareAndSet(false, true)) {
+            log.info("[VmFirewallSync] 已存在运行中的同步任务，跳过单台同步: HostId={}", hostId);
+            return false;
+        }
+        try {
+            vmFirewallSyncExecutor.execute(() -> {
+                try {
+                    syncSingleVmFirewallProtectionInternal(hostId);
+                } catch (Exception e) {
+                    log.error("[VmFirewallSync] 后台单台虚拟机防火墙/IP白名单同步失败: HostId={}", hostId, e);
+                } finally {
+                    vmFirewallProtectionSyncRunning.set(false);
+                }
+            });
+            return true;
+        } catch (RejectedExecutionException e) {
+            vmFirewallProtectionSyncRunning.set(false);
+            throw new IllegalStateException("虚拟机防火墙同步任务队列已满，请稍后再试", e);
+        }
+    }
+
+    @Override
+    public boolean startRollbackVmFirewallProtection() {
+        if (!vmFirewallProtectionSyncRunning.compareAndSet(false, true)) {
+            log.info("[VmFirewallRollback] 已存在运行中的防火墙同步/回滚任务，跳过本次触发");
+            return false;
+        }
+        try {
+            vmFirewallSyncExecutor.execute(() -> {
+                try {
+                    rollbackVmFirewallProtectionInternal();
+                } catch (Exception e) {
+                    log.error("[VmFirewallRollback] 后台虚拟机防火墙/IP白名单回滚失败", e);
+                } finally {
+                    vmFirewallProtectionSyncRunning.set(false);
+                }
+            });
+            return true;
+        } catch (RejectedExecutionException e) {
+            vmFirewallProtectionSyncRunning.set(false);
+            throw new IllegalStateException("虚拟机防火墙回滚任务队列已满，请稍后再试", e);
+        }
+    }
+
+    @Override
+    public boolean startRollbackVmFirewallProtection(Integer hostId) {
+        if (hostId == null) {
+            return startRollbackVmFirewallProtection();
+        }
+        if (this.getById(hostId) == null) {
+            throw new IllegalStateException("虚拟机不存在: hostId=" + hostId);
+        }
+        if (!vmFirewallProtectionSyncRunning.compareAndSet(false, true)) {
+            log.info("[VmFirewallRollback] 已存在运行中的防火墙同步/回滚任务，跳过单台回滚: HostId={}", hostId);
+            return false;
+        }
+        try {
+            vmFirewallSyncExecutor.execute(() -> {
+                try {
+                    rollbackSingleVmFirewallProtectionInternal(hostId);
+                } catch (Exception e) {
+                    log.error("[VmFirewallRollback] 后台单台虚拟机防火墙/IP白名单回滚失败: HostId={}", hostId, e);
+                } finally {
+                    vmFirewallProtectionSyncRunning.set(false);
+                }
+            });
+            return true;
+        } catch (RejectedExecutionException e) {
+            vmFirewallProtectionSyncRunning.set(false);
+            throw new IllegalStateException("虚拟机防火墙回滚任务队列已满，请稍后再试", e);
+        }
+    }
+
+    @Override
+    public boolean isVmFirewallProtectionSyncRunning() {
+        return vmFirewallProtectionSyncRunning.get();
+    }
+
+    @Override
     public void syncAllVmFirewallProtection() {
+        if (!vmFirewallProtectionSyncRunning.compareAndSet(false, true)) {
+            log.info("[VmFirewallSync] 已存在运行中的同步任务，跳过本次同步");
+            return;
+        }
+        try {
+            syncAllVmFirewallProtectionInternal();
+        } finally {
+            vmFirewallProtectionSyncRunning.set(false);
+        }
+    }
+
+    private void syncAllVmFirewallProtectionInternal() {
         List<Master> nodeList = masterService.list();
         if (nodeList == null || nodeList.isEmpty()) {
             log.info("[VmFirewallSync] 未发现可同步节点");
             return;
         }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        for (Master node : nodeList) {
+        for (int i = 0; i < nodeList.size(); i++) {
+            Master node = nodeList.get(i);
             if (node == null || node.getId() == null) {
                 continue;
             }
             syncNodeVmFirewallProtection(proxmoxApiUtil, node);
+            if (i < nodeList.size() - 1) {
+                sleepFirewallSync(FIREWALL_SYNC_NODE_DELAY, "节点同步间隔");
+            }
         }
     }
 
@@ -1491,18 +1631,23 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return;
         }
 
-        int page = 1;
+        Integer lastId = 0;
+        int batch = 1;
         int successCount = 0;
         int failedCount = 0;
         while (true) {
             QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("nodeid", node.getId());
+            queryWrapper.eq("delete_state", 0);
+            queryWrapper.gt("id", lastId);
             queryWrapper.orderByAsc("id");
-            Page<Vmhost> vmhostPage = this.selectPage(page, 100, queryWrapper);
-            List<Vmhost> vmhostList = vmhostPage.getRecords();
+            queryWrapper.last("LIMIT " + FIREWALL_SYNC_PAGE_SIZE);
+            List<Vmhost> vmhostList = this.list(queryWrapper);
             if (vmhostList == null || vmhostList.isEmpty()) {
                 break;
             }
+            log.info("[VmFirewallSync] 节点批次同步开始: NodeId={}, NodeName={}, Batch={}, BatchSize={}",
+                    node.getId(), node.getNodeName(), batch, vmhostList.size());
             for (Vmhost vmhost : vmhostList) {
                 try {
                     syncVmFirewallProtection(vmhost, node, cookieMap, null, null);
@@ -1511,15 +1656,172 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     failedCount++;
                     log.error("[VmFirewallSync] 虚拟机防火墙/IP白名单同步失败: NodeId={}, HostId={}, VmId={}",
                             node.getId(), vmhost.getId(), vmhost.getVmid(), e);
+                } finally {
+                    if (vmhost.getId() != null) {
+                        lastId = vmhost.getId();
+                    }
+                    sleepFirewallSync(FIREWALL_SYNC_VM_DELAY, "虚拟机同步间隔");
                 }
             }
-            if (page >= vmhostPage.getPages()) {
+            if (vmhostList.size() < FIREWALL_SYNC_PAGE_SIZE) {
                 break;
             }
-            page++;
+            batch++;
+            sleepFirewallSync(FIREWALL_SYNC_PAGE_DELAY, "批次同步间隔");
         }
         log.info("[VmFirewallSync] 节点同步完成: NodeId={}, NodeName={}, SuccessCount={}, FailedCount={}",
                 node.getId(), node.getNodeName(), successCount, failedCount);
+    }
+
+    private void syncSingleVmFirewallProtectionInternal(Integer hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        if (vmhost == null) {
+            throw new IllegalStateException("虚拟机不存在: hostId=" + hostId);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            throw new IllegalStateException("节点不存在: nodeId=" + vmhost.getNodeid());
+        }
+        if (!masterService.isNodeOnline(node.getId())) {
+            throw new IllegalStateException("节点离线，无法同步虚拟机防火墙: nodeId=" + node.getId());
+        }
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
+        syncVmFirewallProtection(vmhost, node, cookieMap, null, null);
+        log.info("[VmFirewallSync] 单台虚拟机同步完成: NodeId={}, HostId={}, VmId={}",
+                node.getId(), vmhost.getId(), vmhost.getVmid());
+    }
+
+    private void rollbackVmFirewallProtectionInternal() {
+        List<Master> nodeList = masterService.list();
+        if (nodeList == null || nodeList.isEmpty()) {
+            log.info("[VmFirewallRollback] 未发现可回滚节点");
+            return;
+        }
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        for (int i = 0; i < nodeList.size(); i++) {
+            Master node = nodeList.get(i);
+            if (node == null || node.getId() == null) {
+                continue;
+            }
+            rollbackNodeVmFirewallProtection(proxmoxApiUtil, node);
+            if (i < nodeList.size() - 1) {
+                sleepFirewallSync(FIREWALL_SYNC_NODE_DELAY, "节点回滚间隔");
+            }
+        }
+    }
+
+    private void rollbackNodeVmFirewallProtection(ProxmoxApiUtil proxmoxApiUtil, Master node) {
+        if (!masterService.isNodeOnline(node.getId())) {
+            log.info("[VmFirewallRollback] 节点离线，跳过回滚: NodeId={}, NodeName={}", node.getId(), node.getNodeName());
+            return;
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        Integer lastId = 0;
+        int batch = 1;
+        int successCount = 0;
+        int failedCount = 0;
+        while (true) {
+            QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("nodeid", node.getId());
+            queryWrapper.eq("delete_state", 0);
+            queryWrapper.gt("id", lastId);
+            queryWrapper.orderByAsc("id");
+            queryWrapper.last("LIMIT " + FIREWALL_SYNC_PAGE_SIZE);
+            List<Vmhost> vmhostList = this.list(queryWrapper);
+            if (vmhostList == null || vmhostList.isEmpty()) {
+                break;
+            }
+            log.info("[VmFirewallRollback] 节点批次回滚开始: NodeId={}, NodeName={}, Batch={}, BatchSize={}",
+                    node.getId(), node.getNodeName(), batch, vmhostList.size());
+            for (Vmhost vmhost : vmhostList) {
+                try {
+                    rollbackVmFirewallProtection(vmhost, node, cookieMap, proxmoxApiUtil);
+                    successCount++;
+                } catch (Exception e) {
+                    failedCount++;
+                    log.error("[VmFirewallRollback] 虚拟机防火墙/IP白名单回滚失败: NodeId={}, HostId={}, VmId={}",
+                            node.getId(), vmhost.getId(), vmhost.getVmid(), e);
+                } finally {
+                    if (vmhost.getId() != null) {
+                        lastId = vmhost.getId();
+                    }
+                    sleepFirewallSync(FIREWALL_SYNC_VM_DELAY, "虚拟机回滚间隔");
+                }
+            }
+            if (vmhostList.size() < FIREWALL_SYNC_PAGE_SIZE) {
+                break;
+            }
+            batch++;
+            sleepFirewallSync(FIREWALL_SYNC_PAGE_DELAY, "批次回滚间隔");
+        }
+        log.info("[VmFirewallRollback] 节点回滚完成: NodeId={}, NodeName={}, SuccessCount={}, FailedCount={}",
+                node.getId(), node.getNodeName(), successCount, failedCount);
+    }
+
+    private void rollbackSingleVmFirewallProtectionInternal(Integer hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        if (vmhost == null) {
+            throw new IllegalStateException("虚拟机不存在: hostId=" + hostId);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            throw new IllegalStateException("节点不存在: nodeId=" + vmhost.getNodeid());
+        }
+        if (!masterService.isNodeOnline(node.getId())) {
+            throw new IllegalStateException("节点离线，无法回滚虚拟机防火墙: nodeId=" + node.getId());
+        }
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        rollbackVmFirewallProtection(vmhost, node, cookieMap, proxmoxApiUtil);
+        log.info("[VmFirewallRollback] 单台虚拟机回滚完成: NodeId={}, HostId={}, VmId={}",
+                node.getId(), vmhost.getId(), vmhost.getVmid());
+    }
+
+    private void rollbackVmFirewallProtection(Vmhost vmhost, Master node, HashMap<String, String> cookieMap,
+                                              ProxmoxApiUtil proxmoxApiUtil) {
+        if (vmhost == null || vmhost.getVmid() == null) {
+            return;
+        }
+        JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String desiredNet0Config = CloudInitNetworkUtil.removePveNet0FirewallConfig(net0Config);
+        if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
+        }
+        clearAndDeleteVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+        proxmoxApiUtil.disableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
+    }
+
+    private void clearAndDeleteVmFirewallIpset(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                               HashMap<String, String> cookieMap, Integer vmid, String ipsetName) {
+        JSONObject ipsetEntries = proxmoxApiUtil.getVmFirewallIpsetEntries(node, cookieMap, vmid, ipsetName);
+        if (ipsetEntries != null) {
+            JSONArray data = ipsetEntries.getJSONArray("data");
+            if (data != null) {
+                for (int i = 0; i < data.size(); i++) {
+                    JSONObject item = data.getJSONObject(i);
+                    if (item == null || StringUtils.isBlank(item.getString("cidr"))) {
+                        continue;
+                    }
+                    proxmoxApiUtil.deleteVmFirewallIpsetEntry(node, cookieMap, vmid, ipsetName, item.getString("cidr"));
+                }
+            }
+        }
+        proxmoxApiUtil.deleteVmFirewallIpset(node, cookieMap, vmid, ipsetName);
+    }
+
+    private void sleepFirewallSync(long millis, String stage) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("虚拟机防火墙同步被中断: " + stage, e);
+        }
     }
 
     private LinkedHashMap<String, Object> syncManualIpForVmhost(Vmhost vmhost) {
@@ -2409,7 +2711,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return;
         }
         // 更新虚拟机OS数据
-        vmhost.setOsName(os.getFileName());
+        vmhost.setOsName(os.getName());
         vmhost.setOsType(os.getType());
         vmhost.setOs(os.getName());
 

@@ -40,7 +40,7 @@ public enum UnifiedResultCode {
     // 镜像不存在
     ERROR_CLOUD_IMAGE_NOT_EXIST(1014, "Cloud Image does not exist"),
     // 镜像不可用
-    ERROR_CLOUD_IMAGE_NOT_AVAILABLE(1015, "Cloud Image is not available"),
+    ERROR_CLOUD_IMAGE_NOT_AVAILABLE(1015, "镜像不支持"),
     // vm不存在
     ERROR_VM_NOT_EXIST(1016, "Virtual machine does not exist"),
     // 重置系统失败

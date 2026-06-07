@@ -218,3 +218,34 @@ build: # 内部构建版本信息
     4:
       - "alter table system_log
                    modify business_message text null;"
+    5:
+      - "update vmhost v
+                   join os o on v.os_name = cast(o.id as char)
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and v.os_name is not null;"
+      - "update vmhost v
+                   join os o on v.os_name = o.file_name
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and v.os_name is not null;"
+      - "update vmhost v
+                   join os o on v.os = o.file_name
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and (v.os_name is null or v.os_name = '');"
+      - "update vmhost v
+                   join os o on v.os = o.name
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and (v.os_name is null or v.os_name = '');"
+      - "update vmhost v
+                   join os o on v.os = cast(o.id as char)
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and (v.os_name is null or v.os_name = '');"

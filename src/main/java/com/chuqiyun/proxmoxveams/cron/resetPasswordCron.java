@@ -80,9 +80,15 @@ public class resetPasswordCron {
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
 
         String osName = vmhost.getOs();
-        Os os = osService.selectOsByFileName(osName);
+        Os os = osService.isExistOs(osName);
         if (os == null) {
-            os = osService.selectOsByFileName(vmhost.getOsName());
+            os = osService.isExistOs(vmhost.getOsName());
+        }
+        if (os == null) {
+            task.setStatus(3);
+            task.setError("系统镜像不存在");
+            taskService.updateById(task);
+            return;
         }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         // cloud-init

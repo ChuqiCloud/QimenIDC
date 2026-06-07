@@ -288,13 +288,49 @@ public class SysVmHostController {
     */
     @AdminApiCheck
     @RequestMapping(value = "/syncVmFirewallProtection",method = {RequestMethod.POST,RequestMethod.PUT})
-    public Object syncVmFirewallProtection() {
+    public Object syncVmFirewallProtection(@RequestParam(name = "hostId", required = false) Integer hostId,
+                                           @RequestParam(name = "hostid", required = false) Integer hostid) {
         try {
-            vmhostService.syncAllVmFirewallProtection();
-            return ResponseResult.ok("同步执行完成");
+            Integer targetHostId = resolveHostId(hostId, hostid);
+            boolean started = vmhostService.startSyncVmFirewallProtection(targetHostId);
+            if (!started) {
+                return ResponseResult.ok("同步任务正在执行中，请勿重复触发");
+            }
+            if (targetHostId == null) {
+                return ResponseResult.ok("全量同步任务已开始执行，请稍后查看日志");
+            }
+            return ResponseResult.ok("单台虚拟机同步任务已开始执行，请稍后查看日志");
         } catch (Exception e) {
-            return ResponseResult.fail("同步执行失败: " + e.getMessage());
+            return ResponseResult.fail("同步任务启动失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 回滚虚拟机防火墙和IP白名单同步配置
+     * @DateTime: 2026/6/8 0:16
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/rollbackVmFirewallProtection",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object rollbackVmFirewallProtection(@RequestParam(name = "hostId", required = false) Integer hostId,
+                                               @RequestParam(name = "hostid", required = false) Integer hostid) {
+        try {
+            Integer targetHostId = resolveHostId(hostId, hostid);
+            boolean started = vmhostService.startRollbackVmFirewallProtection(targetHostId);
+            if (!started) {
+                return ResponseResult.ok("当前已有防火墙同步或回滚任务正在执行，请稍后再试");
+            }
+            if (targetHostId == null) {
+                return ResponseResult.ok("全量回滚任务已开始执行，请稍后查看日志");
+            }
+            return ResponseResult.ok("单台虚拟机回滚任务已开始执行，请稍后查看日志");
+        } catch (Exception e) {
+            return ResponseResult.fail("回滚任务启动失败: " + e.getMessage());
+        }
+    }
+
+    private Integer resolveHostId(Integer hostId, Integer hostid) {
+        return hostId == null ? hostid : hostId;
     }
 
     private VmIpParams buildSyncVmIpParams(VmIpParams vmIpParams, Integer nodeId, Integer nodeid) {

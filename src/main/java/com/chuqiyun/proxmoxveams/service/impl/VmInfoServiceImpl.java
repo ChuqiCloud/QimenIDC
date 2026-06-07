@@ -162,9 +162,10 @@ public class VmInfoServiceImpl implements VmInfoService {
         vmhost.setIpData(VmUtil.splitIpAddress(new HashMap<>(vmhost.getIpConfig())));
         // 判断osName是否为空
         if (vmhost.getOsName() == null){
-            // 提取os中镜像字符串开头到第一个.之间的字符串
-            String osName = vmhost.getOs().substring(0, vmhost.getOs().indexOf("."));
-            vmhost.setOsName(osName);
+            Os vmOs = osService.isExistOs(vmhost.getOs());
+            if (vmOs != null) {
+                vmhost.setOsName(vmOs.getName());
+            }
         }
         VmHostDto vmHostDto = new VmHostDto();
         vmHostDto.setVmhost(vmhost);
