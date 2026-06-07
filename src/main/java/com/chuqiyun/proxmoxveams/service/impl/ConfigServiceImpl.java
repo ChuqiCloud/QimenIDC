@@ -1,11 +1,12 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
-import com.baomidou.mybatisplus.extension.toolkit.SqlRunner;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.ConfigDao;
 import com.chuqiyun.proxmoxveams.entity.Config;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
  */
 @Service("configService")
 public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements ConfigService {
+    private static final Logger log = LoggerFactory.getLogger(ConfigServiceImpl.class);
+
     /**
     * @Author: mryunqi
     * @Description: 获取受控端token
@@ -91,13 +94,14 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     @Override
     public String getBuild(){
         try {
-            Object buildValue = SqlRunner.db().selectObj("select build from config where id = ?", 1);
-            if (buildValue == null) {
+            Config config = this.getById(1);
+            if (config == null) {
                 return null;
             }
-            return StringUtils.trimToNull(String.valueOf(buildValue));
+            return StringUtils.trimToNull(config.getBuild());
         } catch (Exception e) {
-            return null; // 如果出现异常，返回null
+            log.error("获取内部构建号失败", e);
+            return null;
         }
     }
 
@@ -157,8 +161,19 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     @Override
     public Boolean setBuild(String build){
         try {
-            return SqlRunner.db().update("update config set build = ? where id = ?", build, 1);
+            Config config = this.getById(1);
+            if (config == null) {
+                return false;
+            }
+            String targetBuild = StringUtils.trimToNull(build);
+            String currentBuild = StringUtils.trimToNull(config.getBuild());
+            if (StringUtils.equals(currentBuild, targetBuild)) {
+                return true;
+            }
+            config.setBuild(targetBuild);
+            return this.updateById(config);
         } catch (Exception e) {
+            log.error("设置内部构建号失败: build={}", build, e);
             return false;
         }
     }
