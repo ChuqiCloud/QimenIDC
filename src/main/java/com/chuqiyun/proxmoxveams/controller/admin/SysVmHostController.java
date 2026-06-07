@@ -281,6 +281,22 @@ public class SysVmHostController {
         return ResponseResult.ok(resultDto.getData());
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 手动同步所有虚拟机防火墙和IP白名单
+     * @DateTime: 2026/6/7 23:48
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/syncVmFirewallProtection",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object syncVmFirewallProtection() {
+        try {
+            vmhostService.syncAllVmFirewallProtection();
+            return ResponseResult.ok("同步执行完成");
+        } catch (Exception e) {
+            return ResponseResult.fail("同步执行失败: " + e.getMessage());
+        }
+    }
+
     private VmIpParams buildSyncVmIpParams(VmIpParams vmIpParams, Integer nodeId, Integer nodeid) {
         VmIpParams params = vmIpParams == null ? new VmIpParams() : vmIpParams;
         if (params.getNodeId() == null) {

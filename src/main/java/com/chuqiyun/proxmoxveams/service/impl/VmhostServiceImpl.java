@@ -1178,8 +1178,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
             if (vmParams.getBandwidth() != null) {
                 double bandWidthValue = vmParams.getBandwidth() / 8.0;
-                String bandWidth = String.format("%.2f", bandWidthValue);
-                proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
+                String bandWidth = String.format(Locale.US, "%.2f", bandWidthValue);
+                changeVmHostBandWidth(vmhost, bandWidth);
                 vmhost.setBandwidth(vmParams.getBandwidth());
             }
             Task vmStartTask = new Task();
@@ -1457,6 +1457,71 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, resultData);
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 全量同步虚拟机防火墙和IP白名单保护
+     * @DateTime: 2026/6/7 14:07
+     */
+    @Override
+    public void syncAllVmFirewallProtection() {
+        List<Master> nodeList = masterService.list();
+        if (nodeList == null || nodeList.isEmpty()) {
+            log.info("[VmFirewallSync] 未发现可同步节点");
+            return;
+        }
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        for (Master node : nodeList) {
+            if (node == null || node.getId() == null) {
+                continue;
+            }
+            syncNodeVmFirewallProtection(proxmoxApiUtil, node);
+        }
+    }
+
+    private void syncNodeVmFirewallProtection(ProxmoxApiUtil proxmoxApiUtil, Master node) {
+        if (!masterService.isNodeOnline(node.getId())) {
+            log.info("[VmFirewallSync] 节点离线，跳过同步: NodeId={}, NodeName={}", node.getId(), node.getNodeName());
+            return;
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        try {
+            proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
+        } catch (Exception e) {
+            log.error("[VmFirewallSync] 节点防火墙启用失败: NodeId={}, NodeName={}", node.getId(), node.getNodeName(), e);
+            return;
+        }
+
+        int page = 1;
+        int successCount = 0;
+        int failedCount = 0;
+        while (true) {
+            QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("nodeid", node.getId());
+            queryWrapper.orderByAsc("id");
+            Page<Vmhost> vmhostPage = this.selectPage(page, 100, queryWrapper);
+            List<Vmhost> vmhostList = vmhostPage.getRecords();
+            if (vmhostList == null || vmhostList.isEmpty()) {
+                break;
+            }
+            for (Vmhost vmhost : vmhostList) {
+                try {
+                    syncVmFirewallProtection(vmhost, node, cookieMap, null, null);
+                    successCount++;
+                } catch (Exception e) {
+                    failedCount++;
+                    log.error("[VmFirewallSync] 虚拟机防火墙/IP白名单同步失败: NodeId={}, HostId={}, VmId={}",
+                            node.getId(), vmhost.getId(), vmhost.getVmid(), e);
+                }
+            }
+            if (page >= vmhostPage.getPages()) {
+                break;
+            }
+            page++;
+        }
+        log.info("[VmFirewallSync] 节点同步完成: NodeId={}, NodeName={}, SuccessCount={}, FailedCount={}",
+                node.getId(), node.getNodeName(), successCount, failedCount);
+    }
+
     private LinkedHashMap<String, Object> syncManualIpForVmhost(Vmhost vmhost) {
         HashMap<String, String> ipConfig = new HashMap<>();
         if (vmhost.getIpConfig() != null) {
@@ -1509,15 +1574,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         resultData.put("addedIps", addedIpList);
         resultData.put("ignoredIps", ignoredIpList);
         resultData.put("syncCount", addedIpList.size());
+        List<String> newIpList = buildVmhostIpList(vmhost, ipConfig);
 
         if (boundIppoolList.isEmpty()) {
             resultData.put("message", "未发现需要同步的手动绑定IP");
+            syncVmFirewallProtectionForVmhost(vmhost, newIpList);
             log.info("[Sync-ManualVmIp] 虚拟机无需同步: NodeId={}, HostId={}, VmId={}, Message={}",
                     vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), resultData.get("message"));
             return resultData;
         }
 
-        List<String> newIpList = buildVmhostIpList(vmhost, ipConfig);
         List<?> newIpData = VmUtil.splitIpAddress(ipConfig);
         boolean needUpdate = !Objects.equals(vmhost.getIpConfig(), ipConfig)
                 || !Objects.equals(vmhost.getIpList(), newIpList)
@@ -1534,6 +1600,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         } else {
             resultData.put("message", "同步手动绑定IP成功");
         }
+        syncVmFirewallProtectionForVmhost(vmhost, newIpList);
         log.info("[Sync-ManualVmIp] 虚拟机同步结果: NodeId={}, HostId={}, VmId={}, SyncCount={}, Message={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedIpList.size(), resultData.get("message"));
         return resultData;
@@ -1968,6 +2035,121 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", String.join(" ", nameservers));
         }
         proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+        syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getIpList(ipConfig));
+    }
+
+    private void syncVmFirewallProtectionForVmhost(Vmhost vmhost, Collection<String> allowedIps) {
+        if (vmhost == null || vmhost.getVmid() == null) {
+            return;
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            throw new IllegalStateException("节点不存在: nodeId=" + vmhost.getNodeid());
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        syncVmFirewallProtection(vmhost, node, cookieMap, null, allowedIps);
+    }
+
+    private void syncVmFirewallProtection(Vmhost vmhost, Master node, HashMap<String, String> cookieMap,
+                                          String rate, Collection<String> allowedIps) {
+        if (vmhost == null || node == null || cookieMap == null || vmhost.getVmid() == null) {
+            return;
+        }
+        try {
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+            String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+            if (StringUtils.isBlank(net0Config)) {
+                throw new IllegalStateException("虚拟机net0配置为空: vmid=" + vmhost.getVmid());
+            }
+            String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
+            String bridge = resolveNet0Bridge(vmhost, net0Config);
+            String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(net0Config, bridge, macAddress, rate, true);
+            if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
+                proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
+            }
+            proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
+            syncVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost, allowedIps);
+        } catch (Exception e) {
+            throw new IllegalStateException("同步虚拟机防火墙配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+    }
+
+    private void syncVmFirewallIpset(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
+                                     Vmhost vmhost, Collection<String> allowedIps) throws Exception {
+        LinkedHashSet<String> desiredCidrSet = new LinkedHashSet<>();
+        if (allowedIps != null) {
+            for (String ip : allowedIps) {
+                if (StringUtils.isBlank(ip)) {
+                    continue;
+                }
+                String normalizedIp = ip.trim();
+                desiredCidrSet.add(normalizedIp.contains("/") ? normalizedIp : normalizedIp + "/32");
+            }
+        } else if (vmhost != null) {
+            if (vmhost.getIpList() != null) {
+                for (String ip : vmhost.getIpList()) {
+                    if (StringUtils.isNotBlank(ip)) {
+                        desiredCidrSet.add(ip.trim() + "/32");
+                    }
+                }
+            }
+            if (vmhost.getIpConfig() != null) {
+                for (String ip : CloudInitNetworkUtil.getIpList(vmhost.getIpConfig())) {
+                    if (StringUtils.isNotBlank(ip)) {
+                        desiredCidrSet.add(ip.trim() + "/32");
+                    }
+                }
+            }
+        }
+
+        proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+        JSONObject ipsetEntries = proxmoxApiUtil.getVmFirewallIpsetEntries(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+        LinkedHashSet<String> currentCidrSet = new LinkedHashSet<>();
+        if (ipsetEntries != null) {
+            JSONArray data = ipsetEntries.getJSONArray("data");
+            if (data != null) {
+                for (int i = 0; i < data.size(); i++) {
+                    JSONObject item = data.getJSONObject(i);
+                    if (item == null) {
+                        continue;
+                    }
+                    String cidr = item.getString("cidr");
+                    if (StringUtils.isNotBlank(cidr)) {
+                        currentCidrSet.add(cidr.trim());
+                    }
+                }
+            }
+        }
+
+        for (String cidr : currentCidrSet) {
+            if (!desiredCidrSet.contains(cidr)) {
+                proxmoxApiUtil.deleteVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
+            }
+        }
+        for (String cidr : desiredCidrSet) {
+            if (!currentCidrSet.contains(cidr)) {
+                proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
+            }
+        }
+    }
+
+    private String resolveNet0Bridge(Vmhost vmhost, String net0Config) {
+        if (vmhost != null && StringUtils.isNotBlank(vmhost.getBridge())) {
+            return vmhost.getBridge();
+        }
+        if (StringUtils.isNotBlank(net0Config)) {
+            for (String token : net0Config.split(",")) {
+                String item = token.trim();
+                if (item.startsWith("bridge=")) {
+                    String bridge = item.substring("bridge=".length()).trim();
+                    if (StringUtils.isNotBlank(bridge)) {
+                        return bridge;
+                    }
+                }
+            }
+        }
+        return "vmbr0";
     }
 
     /**
@@ -2427,8 +2609,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandwidth);
+        syncVmFirewallProtection(vmhost, node, cookieMap, bandwidth, null);
         return true;
     }
     /**

@@ -12,6 +12,7 @@ import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 import java.security.KeyManagementException;
@@ -475,6 +476,168 @@ public class ProxmoxApiUtil {
     public JSONObject getVmActiveTasks(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/tasks?source=active&vmid=" + vmid, new HashMap<>());
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取指定虚拟机配置
+     * @DateTime: 2026/6/7 22:47
+     */
+    public JSONObject getVmConfig(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        JSONObject result = getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config", new HashMap<>());
+        return result == null ? null : result.getJSONObject("data");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启用集群和节点防火墙并保持默认策略放行
+     * @DateTime: 2026/6/7 14:07
+     */
+    public void ensureFirewallEnabledAccept(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        enableClusterFirewallAccept(node, cookie);
+        enableNodeFirewallAccept(node, cookie);
+        startPveFirewallService(node, cookie);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启用集群防火墙并保持输入输出默认ACCEPT
+     * @DateTime: 2026/6/7 14:07
+     */
+    public void enableClusterFirewallAccept(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("enable", 1);
+        params.put("policy_in", "ACCEPT");
+        params.put("policy_out", "ACCEPT");
+        putNodeApi(node, cookie, "/cluster/firewall/options", params);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启用节点防火墙并尽量保持节点输入输出默认ACCEPT
+     * @DateTime: 2026/6/7 14:07
+     */
+    public void enableNodeFirewallAccept(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("enable", 1);
+        params.put("policy_in", "ACCEPT");
+        params.put("policy_out", "ACCEPT");
+        try {
+            putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/firewall/options", params);
+        } catch (RestClientResponseException e) {
+            if (!containsResponseBody(e, "policy_in") && !containsResponseBody(e, "policy_out")
+                    && !containsResponseBody(e, "Parameter verification failed")) {
+                throw e;
+            }
+            HashMap<String,Object> fallbackParams = new HashMap<>();
+            fallbackParams.put("enable", 1);
+            putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/firewall/options", fallbackParams);
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启动节点pve-firewall服务
+     * @DateTime: 2026/6/7 14:07
+     */
+    public void startPveFirewallService(Master node, HashMap<String,String> cookie) throws UnauthorizedException {
+        JSONObject result = getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/services/pve-firewall/state", new HashMap<>());
+        JSONObject data = result == null ? null : result.getJSONObject("data");
+        String state = data == null ? null : data.getString("state");
+        if ("running".equalsIgnoreCase(state)) {
+            return;
+        }
+        postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/services/pve-firewall/start", new HashMap<>());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启用虚拟机级防IP和MAC伪造配置
+     * @DateTime: 2026/6/7 22:47
+     */
+    public void enableVmFirewallAntiSpoof(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("enable", 1);
+        params.put("policy_in", "ACCEPT");
+        params.put("policy_out", "ACCEPT");
+        params.put("macfilter", 1);
+        params.put("ipfilter", 1);
+        params.put("dhcp", 1);
+        params.put("ndp", 1);
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/firewall/options", params);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取虚拟机防火墙IPSet条目
+     * @DateTime: 2026/6/7 22:47
+     */
+    public JSONObject getVmFirewallIpsetEntries(Master node, HashMap<String,String> cookie, Integer vmid,
+                                                String ipsetName) throws UnauthorizedException {
+        try {
+            return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid
+                    + "/firewall/ipset/" + encodePath(ipsetName), new HashMap<>());
+        } catch (RestClientResponseException e) {
+            if (isNotFound(e)) {
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 创建虚拟机防火墙IPSet
+     * @DateTime: 2026/6/7 22:47
+     */
+    public void createVmFirewallIpset(Master node, HashMap<String,String> cookie, Integer vmid,
+                                      String ipsetName) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("name", ipsetName);
+        params.put("comment", "QimenIDC auto managed VM IP allow list");
+        try {
+            postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/firewall/ipset", params);
+        } catch (RestClientResponseException e) {
+            if (!isAlreadyExists(e)) {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 添加虚拟机防火墙IPSet条目
+     * @DateTime: 2026/6/7 22:47
+     */
+    public void addVmFirewallIpsetEntry(Master node, HashMap<String,String> cookie, Integer vmid,
+                                        String ipsetName, String cidr) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("cidr", cidr);
+        try {
+            postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid
+                    + "/firewall/ipset/" + encodePath(ipsetName), params);
+        } catch (RestClientResponseException e) {
+            if (!isAlreadyExists(e)) {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除虚拟机防火墙IPSet条目
+     * @DateTime: 2026/6/7 22:47
+     */
+    public void deleteVmFirewallIpsetEntry(Master node, HashMap<String,String> cookie, Integer vmid,
+                                           String ipsetName, String cidr) throws UnauthorizedException {
+        try {
+            deleteNodeApiByUri(node, cookie, "/nodes/" + encodePath(node.getNodeName()) + "/qemu/" + vmid
+                    + "/firewall/ipset/" + encodePath(ipsetName) + "/" + encodePath(cidr));
+        } catch (RestClientResponseException e) {
+            if (!isNotFound(e)) {
+                throw e;
+            }
+        }
+    }
     /**
      * @Author: 星禾
      * @Description: 创建指定虚拟机快照
@@ -647,6 +810,26 @@ public class ProxmoxApiUtil {
         if (!hasText(volid) || !volid.contains(":") || !volid.contains("/")) {
             throw new IllegalArgumentException("备份卷标无效");
         }
+    }
+
+    private boolean isNotFound(RestClientResponseException e) {
+        return e.getRawStatusCode() == HttpStatus.NOT_FOUND.value()
+                || containsResponseBody(e, "not found");
+    }
+
+    private boolean isAlreadyExists(RestClientResponseException e) {
+        return e.getRawStatusCode() == HttpStatus.CONFLICT.value()
+                || containsResponseBody(e, "already exists")
+                || containsResponseBody(e, "file exists")
+                || containsResponseBody(e, "exists");
+    }
+
+    private boolean containsResponseBody(RestClientResponseException e, String keyword) {
+        if (e == null || keyword == null) {
+            return false;
+        }
+        String body = e.getResponseBodyAsString();
+        return body != null && body.toLowerCase().contains(keyword.toLowerCase());
     }
 
     private String encodePath(String value) {

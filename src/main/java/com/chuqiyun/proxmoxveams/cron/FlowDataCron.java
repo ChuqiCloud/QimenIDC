@@ -2,13 +2,11 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.FlowService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.service.impl.FlowdataServiceImpl;
-import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
@@ -183,13 +181,9 @@ public class FlowDataCron {
                             vmhost.setStatus(15);
                             vmhost.setPauseInfo("流量超限");
                             vmhostService.updateById(vmhost);
-                            Master node = masterService.getById(vmhost.getNodeid());
-                            // 获取cookie
-                            HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-                            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
                             double bandWidthValue = vmhost.getOutFlow() / 1024.0 / 8.0;
                             String bandWidth = String.format("%.3f", bandWidthValue);
-                            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", "virtio,bridge=" + vmhost.getBridge() + ",rate=" + bandWidth);
+                            vmhostService.changeVmHostBandWidth(vmhost, bandWidth);
                         }
                     }
                 }

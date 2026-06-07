@@ -7,6 +7,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -27,6 +28,7 @@ public class CloudInitNetworkUtil {
     private static final String SNIPPET_DIR = "/var/lib/vz/snippets";
     private static final String INTERFACE_NAME = "eth0";
     private static final Pattern MAC_PATTERN = Pattern.compile("(?i)(?:^|,)(?:virtio|e1000|rtl8139|vmxnet3)=([0-9a-f]{2}(?::[0-9a-f]{2}){5})");
+    private static final String NET_MODEL = "virtio";
 
     public static String getNetworkSnippetFileName(Integer vmid) {
         return "qimen-vm-" + vmid + "-network.yaml";
@@ -60,6 +62,86 @@ public class CloudInitNetworkUtil {
             return matcher.group(1).toLowerCase();
         }
         return null;
+    }
+
+    public static String buildPveNet0Config(String bridge, String macAddress, String rate) {
+        return buildPveNet0Config(bridge, macAddress, rate, true);
+    }
+
+    public static String buildPveNet0Config(String bridge, String macAddress, String rate, boolean firewallEnabled) {
+        List<String> parts = new ArrayList<>();
+        if (StringUtils.isNotBlank(macAddress)) {
+            parts.add(NET_MODEL + "=" + macAddress.toLowerCase());
+        } else {
+            parts.add(NET_MODEL);
+        }
+        if (StringUtils.isNotBlank(bridge)) {
+            parts.add("bridge=" + bridge);
+        }
+        if (StringUtils.isNotBlank(rate)) {
+            parts.add("rate=" + rate);
+        }
+        if (firewallEnabled) {
+            parts.add("firewall=1");
+        }
+        return String.join(",", parts);
+    }
+
+    public static String ensurePveNet0Config(String netConfig, String bridge, String macAddress, String rate,
+                                             boolean firewallEnabled) {
+        if (StringUtils.isBlank(netConfig)) {
+            return buildPveNet0Config(bridge, macAddress, rate, firewallEnabled);
+        }
+
+        String[] tokens = netConfig.split(",");
+        List<String> extras = new ArrayList<>();
+        LinkedHashMap<String, String> optionMap = new LinkedHashMap<>();
+        String modelToken = tokens[0].trim();
+        String existingMac = extractMacAddress(modelToken);
+        boolean hasModelMac = StringUtils.isNotBlank(existingMac);
+
+        for (int i = 1; i < tokens.length; i++) {
+            String token = tokens[i].trim();
+            if (StringUtils.isBlank(token)) {
+                continue;
+            }
+            int idx = token.indexOf('=');
+            if (idx > 0) {
+                optionMap.put(token.substring(0, idx), token.substring(idx + 1));
+            } else {
+                extras.add(token);
+            }
+        }
+
+        if (StringUtils.isNotBlank(bridge)) {
+            optionMap.put("bridge", bridge);
+        }
+        if (StringUtils.isNotBlank(rate)) {
+            optionMap.put("rate", rate);
+        }
+        if (firewallEnabled) {
+            optionMap.put("firewall", "1");
+        }
+
+        if (StringUtils.isNotBlank(macAddress)) {
+            String normalizedMac = macAddress.toLowerCase();
+            if (hasModelMac) {
+                modelToken = modelToken.substring(0, modelToken.indexOf('=') + 1) + normalizedMac;
+            } else if (modelToken.contains("=")) {
+                String modelName = modelToken.substring(0, modelToken.indexOf('='));
+                modelToken = modelName + "=" + normalizedMac;
+            } else {
+                modelToken = NET_MODEL + "=" + normalizedMac;
+            }
+        }
+
+        List<String> parts = new ArrayList<>();
+        parts.add(modelToken);
+        for (Map.Entry<String, String> entry : optionMap.entrySet()) {
+            parts.add(entry.getKey() + "=" + entry.getValue());
+        }
+        parts.addAll(extras);
+        return String.join(",", parts);
     }
 
     public static int getIpAddressCount(Map<String, String> ipConfig) {

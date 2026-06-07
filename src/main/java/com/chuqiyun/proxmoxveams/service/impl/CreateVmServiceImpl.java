@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
@@ -534,6 +535,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         HashMap<String, String> authentications = masterService.getMasterCookieMap(vmParams.getNodeid());
         JSONObject jsonObject =  proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);
         if (jsonObject.containsKey("data")){
+            syncCreateVmFirewallProtection(node, authentications, vmParams, vmId, proxmoxApiUtil);
             return vmId;
         }else {
             return 0;
@@ -612,8 +614,7 @@ public class CreateVmServiceImpl implements CreateVmService {
                 bridge = "vmbr0";
             }
         }
-        String netModel = macAddress == null ? "virtio" : "virtio=" + macAddress;
-        return netModel + ",bridge=" + bridge + ",rate=" + bandWidth;
+        return CloudInitNetworkUtil.buildPveNet0Config(bridge, macAddress, bandWidth);
     }
 
     private List<String> getNameservers(VmParams vmParams) {
@@ -628,5 +629,81 @@ public class CreateVmServiceImpl implements CreateVmService {
             }
         }
         return CloudInitNetworkUtil.distinctNameservers(nameservers);
+    }
+
+    private void syncCreateVmFirewallProtection(Master node, HashMap<String, String> cookieMap, VmParams vmParams,
+                                                Integer vmId, ProxmoxApiUtil proxmoxApiUtil) {
+        if (node == null || cookieMap == null || vmParams == null || vmId == null) {
+            return;
+        }
+        try {
+            JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmId);
+            String net0Config = pveVmConfig == null ? null : pveVmConfig.getString("net0");
+            String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
+            String bridge = vmParams.getBridge();
+            if (bridge == null) {
+                bridge = vmParams.getIfnat() != null && vmParams.getIfnat() == 1 && node.getNatbridge() != null
+                        ? node.getNatbridge() : "vmbr0";
+            }
+            String rate = formatBandwidth(vmParams.getBandwidth());
+            String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(net0Config, bridge, macAddress, rate, true);
+            if (desiredNet0Config != null && !desiredNet0Config.equals(net0Config)) {
+                proxmoxApiUtil.resetVmConfig(node, cookieMap, vmId, "net0", desiredNet0Config);
+            }
+            syncCreateVmFirewallIpSet(node, cookieMap, vmId, allowedFirewallIps(vmParams));
+            proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmId);
+            updateCreatedIppoolMac(vmParams, vmId, macAddress);
+        } catch (Exception e) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "初始化虚拟机防IP伪造配置失败: vmid=" + vmId + ", err=" + e.getMessage());
+        }
+    }
+
+    private void syncCreateVmFirewallIpSet(Master node, HashMap<String, String> cookieMap, Integer vmId, List<String> allowedIps) {
+        if (allowedIps == null || allowedIps.isEmpty()) {
+            return;
+        }
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmId, "ipfilter-net0");
+        for (String ip : allowedIps) {
+            proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmId, "ipfilter-net0", ip + "/32");
+        }
+    }
+
+    private List<String> allowedFirewallIps(VmParams vmParams) {
+        LinkedHashSet<String> ipSet = new LinkedHashSet<>();
+        if (vmParams == null) {
+            return new ArrayList<>();
+        }
+        if (vmParams.getIpConfig() != null) {
+            ipSet.addAll(CloudInitNetworkUtil.getIpList(vmParams.getIpConfig()));
+        }
+        if (vmParams.getIpList() != null) {
+            for (String ip : vmParams.getIpList()) {
+                if (ip != null && !ip.trim().isEmpty()) {
+                    ipSet.add(ip.trim());
+                }
+            }
+        }
+        return new ArrayList<>(ipSet);
+    }
+
+    private void updateCreatedIppoolMac(VmParams vmParams, Integer vmId, String macAddress) {
+        if (vmParams == null || vmParams.getNodeid() == null || vmId == null || macAddress == null || macAddress.isBlank()) {
+            return;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("node_id", vmParams.getNodeid());
+        updateWrapper.eq("vm_id", vmId);
+        updateWrapper.eq("status", 1);
+        updateWrapper.set("mac", macAddress.toLowerCase());
+        ippoolService.update(updateWrapper);
+    }
+
+    private String formatBandwidth(Integer bandwidth) {
+        if (bandwidth == null) {
+            return null;
+        }
+        double bandWidthValue = bandwidth / 8.0;
+        return String.format(Locale.US, "%.2f", bandWidthValue);
     }
 }
