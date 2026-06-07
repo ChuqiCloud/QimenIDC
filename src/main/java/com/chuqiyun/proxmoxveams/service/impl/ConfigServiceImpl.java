@@ -1,9 +1,11 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.baomidou.mybatisplus.extension.toolkit.SqlRunner;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.ConfigDao;
 import com.chuqiyun.proxmoxveams.entity.Config;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 /**
@@ -88,9 +90,12 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     */
     @Override
     public String getBuild(){
-        // return this.getById(1).getBuild();
         try {
-            return this.getById(1).getBuild();
+            Object buildValue = SqlRunner.db().selectObj("select build from config where id = ?", 1);
+            if (buildValue == null) {
+                return null;
+            }
+            return StringUtils.trimToNull(String.valueOf(buildValue));
         } catch (Exception e) {
             return null; // 如果出现异常，返回null
         }
@@ -151,9 +156,11 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
     */
     @Override
     public Boolean setBuild(String build){
-        Config config = this.getById(1);
-        config.setBuild(build);
-        return this.updateById(config);
+        try {
+            return SqlRunner.db().update("update config set build = ? where id = ?", build, 1);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
