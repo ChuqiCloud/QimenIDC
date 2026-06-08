@@ -34,6 +34,9 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class DiskCron {
+    private static final long SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT = 20000L;
+    private static final long SYSTEM_DISK_RESIZE_VERIFY_INTERVAL = 3000L;
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -241,19 +244,52 @@ public class DiskCron {
             try {
                 proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/resize", params);
             } catch (Exception e) {
-                log.error("[Task-UpdateSystemDisk] 修改系统盘大小任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                // 修改任务状态为失败
-                task.setStatus(3);
-                task.setError(e.getMessage());
-                taskService.updateById(task);
-                e.printStackTrace();
-                continue;
+                log.warn("[Task-UpdateSystemDisk] 修改系统盘大小任务执行返回异常，开始确认实际结果: NodeID:{} VM-ID:{} Target:{}G",
+                        node.getId(), task.getVmid(), size, e);
             }
+            boolean resizeConfirmed = waitForSystemDiskResizeApplied(proxmoxApiUtil, node, authentications, vmhost, size);
+            if (!resizeConfirmed) {
+                log.warn("[Task-UpdateSystemDisk] 修改系统盘大小任务确认超时，继续执行后续任务: NodeID:{} VM-ID:{} Target:{}G",
+                        node.getId(), task.getVmid(), size);
+            }
+            vmhost.setSystemDiskSize(size);
+            vmhostService.updateById(vmhost);
             // 修改任务状态为成功
             task.setStatus(2);
             taskService.updateById(task);
             log.info("[Task-UpdateSystemDisk] 添加修改系统盘大小任务: NodeID:{} VM-ID:{} 完成",node.getId(),vmhost.getVmid());
         }
+    }
+
+    private boolean waitForSystemDiskResizeApplied(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                                   HashMap<String, String> authentications, Vmhost vmhost,
+                                                   int targetSizeGb) {
+        long targetSizeBytes = targetSizeGb * 1024L * 1024L * 1024L;
+        long deadline = System.currentTimeMillis() + SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT;
+        while (System.currentTimeMillis() <= deadline) {
+            try {
+                Long currentMaxDisk = proxmoxApiUtil.getVmMaxDisk(node, authentications, vmhost.getVmid());
+                if (currentMaxDisk != null && currentMaxDisk >= targetSizeBytes) {
+                    if (proxmoxApiUtil.syncVmSystemDiskDisplaySize(node, authentications, vmhost.getVmid(), targetSizeGb + "G")) {
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[Task-UpdateSystemDisk] 确认系统盘扩容结果时读取PVE状态失败: NodeID:{} VM-ID:{}",
+                        node.getId(), vmhost.getVmid(), e);
+            }
+            long sleepTime = Math.min(SYSTEM_DISK_RESIZE_VERIFY_INTERVAL, deadline - System.currentTimeMillis());
+            if (sleepTime <= 0) {
+                break;
+            }
+            try {
+                Thread.sleep(sleepTime);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     @Async

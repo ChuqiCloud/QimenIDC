@@ -55,6 +55,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
     private static final long IP_CHANGE_RESTART_WAIT = 2000L;
+    private static final long SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT = 20000L;
+    private static final long SYSTEM_DISK_RESIZE_VERIFY_INTERVAL = 3000L;
     private static final int FIREWALL_SYNC_PAGE_SIZE = 10;
     private static final long FIREWALL_SYNC_VM_DELAY = 500L;
     private static final long FIREWALL_SYNC_PAGE_DELAY = 3000L;
@@ -1185,10 +1187,15 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     params.put("size",vmParams.getSystemDiskSize()+"G");
                     try {
                         proxmoxApiUtil.putNodeApi(node,cookieMap, "/nodes/"+node.getNodeName()+"/qemu/"+vmhost.getVmid()+"/resize", params);
-                        vmhost.setSystemDiskSize(vmParams.getSystemDiskSize());
                     } catch (Exception e) {
-                        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null);
+                        log.warn("[Task-UpdateSystemDisk] 改配系统盘扩容接口返回异常，开始确认实际结果: NodeID:{} VM-ID:{} Target:{}G",
+                                node.getId(), vmhost.getVmid(), vmParams.getSystemDiskSize(), e);
                     }
+                    if (!waitForSystemDiskResizeApplied(proxmoxApiUtil, node, cookieMap, vmhost.getVmid(), vmParams.getSystemDiskSize())) {
+                        log.warn("[Task-UpdateSystemDisk] 改配系统盘扩容确认超时，继续执行后续逻辑: NodeID:{} VM-ID:{} Target:{}G",
+                                node.getId(), vmhost.getVmid(), vmParams.getSystemDiskSize());
+                    }
+                    vmhost.setSystemDiskSize(vmParams.getSystemDiskSize());
                 }
             }
             if (vmParams.getBandwidth() != null) {
@@ -2535,6 +2542,39 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return null;
         }
         return result.getJSONObject("data");
+    }
+
+    private boolean waitForSystemDiskResizeApplied(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                                   HashMap<String, String> cookieMap, Integer vmid,
+                                                   Integer targetSizeGb) {
+        if (targetSizeGb == null) {
+            return false;
+        }
+        long targetSizeBytes = targetSizeGb * 1024L * 1024L * 1024L;
+        long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime <= SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT) {
+            try {
+                Long currentMaxDisk = proxmoxApiUtil.getVmMaxDisk(node, cookieMap, vmid);
+                if (currentMaxDisk != null && currentMaxDisk >= targetSizeBytes) {
+                    return proxmoxApiUtil.syncVmSystemDiskDisplaySize(node, cookieMap, vmid, targetSizeGb + "G");
+                }
+            } catch (Exception e) {
+                log.warn("[Task-UpdateSystemDisk] 改配确认系统盘扩容结果失败: NodeID:{} VM-ID:{} Target:{}G",
+                        node.getId(), vmid, targetSizeGb, e);
+            }
+            long elapsedTime = System.currentTimeMillis() - startTime;
+            long sleepTime = Math.min(SYSTEM_DISK_RESIZE_VERIFY_INTERVAL, SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT - elapsedTime);
+            if (sleepTime <= 0) {
+                break;
+            }
+            try {
+                Thread.sleep(sleepTime);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     private String mergeCicustomNetwork(JSONObject pveVmConfig, Integer vmid) {

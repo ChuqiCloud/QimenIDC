@@ -31,6 +31,10 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.UPDATE_VM_BOOT;
 @Component
 @EnableScheduling
 public class BootCron {
+    private static final int UPDATE_BOOT_MAX_RETRY = 10;
+    private static final long UPDATE_BOOT_RETRY_INTERVAL = 5000L;
+    private static final String PVE_LOCK_TIMEOUT_MESSAGE = "can't lock file";
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -63,7 +67,7 @@ public class BootCron {
                 ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
                 HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
                 try {
-                    proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", param);
+                    updateBootWithRetry(proxmoxApiUtil, node, authentications, task, param);
                 } catch (Exception e) {
                     log.error("[Task-UpdateBoot] 修改启动项失败: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
                     task.setStatus(3);
@@ -98,6 +102,38 @@ public class BootCron {
                     taskService.updateById(task);
                 }*/
             }
+        }
+    }
+
+    private void updateBootWithRetry(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                     HashMap<String, String> authentications, Task task,
+                                     HashMap<String, Object> param) throws Exception {
+        for (int retry = 1; retry <= UPDATE_BOOT_MAX_RETRY; retry++) {
+            try {
+                proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", param);
+                return;
+            } catch (Exception e) {
+                if (!isPveLockTimeout(e) || retry >= UPDATE_BOOT_MAX_RETRY) {
+                    throw e;
+                }
+                log.warn("[Task-UpdateBoot] PVE配置锁占用，等待后重试: NodeID:{} VM-ID:{} Retry:{}/{}",
+                        node.getId(), task.getVmid(), retry, UPDATE_BOOT_MAX_RETRY);
+                sleepBeforeRetry();
+            }
+        }
+    }
+
+    private boolean isPveLockTimeout(Exception e) {
+        String message = e.getMessage();
+        return message != null && message.contains(PVE_LOCK_TIMEOUT_MESSAGE);
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(UPDATE_BOOT_RETRY_INTERVAL);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("修改启动项重试被中断", e);
         }
     }
 }

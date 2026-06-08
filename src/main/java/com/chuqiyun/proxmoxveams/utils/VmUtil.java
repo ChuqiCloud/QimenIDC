@@ -604,6 +604,43 @@ public class VmUtil {
     }
 
     /**
+    * @Author: 星禾
+    * @Description: 更新PVE磁盘配置中的指定参数，保留其余已有配置
+    * @DateTime: 2026/6/8 12:08
+    * @Params: String diskInfo 磁盘配置字符串 String option 参数名 String value 参数值
+    * @Return String 更新后的磁盘配置
+    */
+    public static String upsertDiskOption(String diskInfo, String option, String value) {
+        if (diskInfo == null || diskInfo.trim().isEmpty() || option == null || option.trim().isEmpty()) {
+            return diskInfo;
+        }
+
+        String[] diskConfigArray = diskInfo.split(",");
+        StringBuilder diskConfigBuilder = new StringBuilder(diskConfigArray[0].trim());
+        boolean updated = false;
+        for (int i = 1; i < diskConfigArray.length; i++) {
+            String item = diskConfigArray[i].trim();
+            if (item.isEmpty()) {
+                continue;
+            }
+            int separatorIndex = item.indexOf("=");
+            if (separatorIndex > 0) {
+                String optionName = item.substring(0, separatorIndex).trim();
+                if (optionName.equals(option)) {
+                    diskConfigBuilder.append(",").append(option).append("=").append(value);
+                    updated = true;
+                    continue;
+                }
+            }
+            diskConfigBuilder.append(",").append(item);
+        }
+        if (!updated) {
+            diskConfigBuilder.append(",").append(option).append("=").append(value);
+        }
+        return diskConfigBuilder.toString();
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 获取scsi类型列表，范围:lsi | lsi53c810 | virtio-scsi-pci | virtio-scsi-single | megasas | pvscsi
     * @Return ArrayList<String> scsi类型列表

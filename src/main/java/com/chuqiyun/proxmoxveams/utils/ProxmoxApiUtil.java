@@ -489,6 +489,43 @@ public class ProxmoxApiUtil {
 
     /**
      * @Author: 星禾
+     * @Description: 获取指定虚拟机当前最大磁盘容量
+     * @DateTime: 2026/6/8 12:25
+     */
+    public Long getVmMaxDisk(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        JSONObject result = getVmStatus(node, cookie, vmid);
+        if (result == null || result.getJSONObject("data") == null) {
+            return null;
+        }
+        return result.getJSONObject("data").getLong("maxdisk");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 同步PVE系统盘显示容量，避免前端显示旧大小
+     * @DateTime: 2026/6/8 12:25
+     */
+    public boolean syncVmSystemDiskDisplaySize(Master node, HashMap<String,String> cookie, Integer vmid, String targetSize)
+            throws UnauthorizedException {
+        JSONObject vmConfig = getVmConfig(node, cookie, vmid);
+        if (vmConfig == null) {
+            return false;
+        }
+        String scsi0 = vmConfig.getString("scsi0");
+        if (scsi0 == null || scsi0.trim().isEmpty()) {
+            return false;
+        }
+        String targetDiskConfig = VmUtil.upsertDiskOption(scsi0, "size", targetSize);
+        if (!targetDiskConfig.equals(scsi0)) {
+            resetVmConfig(node, cookie, vmid, "scsi0", targetDiskConfig);
+        }
+        JSONObject refreshedVmConfig = getVmConfig(node, cookie, vmid);
+        String refreshedScsi0 = refreshedVmConfig == null ? null : refreshedVmConfig.getString("scsi0");
+        return refreshedScsi0 != null && refreshedScsi0.contains("size=" + targetSize);
+    }
+
+    /**
+     * @Author: 星禾
      * @Description: 启用集群和节点防火墙并保持默认策略放行
      * @DateTime: 2026/6/7 14:07
      */
