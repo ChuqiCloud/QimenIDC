@@ -380,7 +380,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
             return 0;
         }
         Map<String,Object> map = os.getNodeStatus();
-        if (map.size() == 0){
+        if (map == null || map.size() == 0){
             return 0;
         }
         for (String key : map.keySet()) {
@@ -395,18 +395,45 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
 
     /**
     * @Author: 星禾
+    * @Description: 判断指定节点上是否已下载该镜像
+    * @Params: Os os 镜像对象，Integer nodeId 节点id
+    * @Return boolean 是否已下载
+    */
+    @Override
+    public boolean isNodeOsDownloaded(Os os, Integer nodeId){
+        if (os == null || nodeId == null || os.getFileName() == null){
+            return false;
+        }
+        Map<String,Object> map = os.getNodeStatus();
+        if (map != null){
+            for (Object osNodeStatusObj : map.values()) {
+                OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
+                if (Objects.equals(osNodeStatus.getNodeId(), nodeId) && Objects.equals(osNodeStatus.getStatus(), 2)){
+                    return true;
+                }
+            }
+        }
+        return isOsExistOnNode(os.getFileName(), os.getPath(), nodeId);
+    }
+
+    /**
+    * @Author: 星禾
     * @Description: 判断指定节点上是否已存在该镜像文件
     * @Params: String fileName 镜像文件名，String path 镜像目录，Integer nodeId 节点id
     * @Return boolean 是否存在
     */
     @Override
     public boolean isOsExistOnNode(String fileName, String path, Integer nodeId){
+        if (fileName == null || fileName.trim().isEmpty() || nodeId == null){
+            return false;
+        }
+        String osPath = path == null || path.trim().isEmpty() || "default".equals(path) ? "/home/images" : path.trim();
         Master node = masterService.getById(nodeId);
         if (node == null){
             return false;
         }
         try {
-            JSONArray files = ClientApiUtil.getPathFileList(node.getHost(), node.getControllerPort(), configService.getToken(), path);
+            JSONArray files = ClientApiUtil.getPathFileList(node.getHost(), node.getControllerPort(), configService.getToken(), osPath);
             return files != null && files.contains(fileName);
         } catch (Exception e){
             return false;
