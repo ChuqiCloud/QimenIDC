@@ -342,10 +342,6 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public Os isExistOs(String osName){
-        if (osName == null || osName.trim().isEmpty()) {
-            return null;
-        }
-        osName = osName.trim();
         //判断osName是否为数字
         if (osName.matches("[0-9]+")){
             // 如果为数字，则根据id查询
@@ -380,31 +376,41 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     @Override
     public Integer getNodeOsStatus(String osName, Integer nodeId){
         Os os = this.isExistOs(osName);
-        return getNodeOsStatus(os, nodeId);
-    }
-
-    @Override
-    public Integer getNodeOsStatus(Os os, Integer nodeId){
         if (os==null){
             return 0;
         }
         Map<String,Object> map = os.getNodeStatus();
-        if (map == null || map.size() == 0 || nodeId == null){
+        if (map.size() == 0){
             return 0;
         }
         for (String key : map.keySet()) {
             Object osNodeStatusObj = map.get(key);
             OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
-            if (osNodeStatus != null && Objects.equals(osNodeStatus.getNodeId(), nodeId)){
+            if (Objects.equals(osNodeStatus.getNodeId(), nodeId)){
                 return osNodeStatus.getStatus();
             }
         }
         return 0;
     }
 
+    /**
+    * @Author: 星禾
+    * @Description: 判断指定节点上是否已存在该镜像文件
+    * @Params: String fileName 镜像文件名，String path 镜像目录，Integer nodeId 节点id
+    * @Return boolean 是否存在
+    */
     @Override
-    public boolean isNodeOsDownloaded(Os os, Integer nodeId) {
-        return Objects.equals(getNodeOsStatus(os, nodeId), 2);
+    public boolean isOsExistOnNode(String fileName, String path, Integer nodeId){
+        Master node = masterService.getById(nodeId);
+        if (node == null){
+            return false;
+        }
+        try {
+            JSONArray files = ClientApiUtil.getPathFileList(node.getHost(), node.getControllerPort(), configService.getToken(), path);
+            return files != null && files.contains(fileName);
+        } catch (Exception e){
+            return false;
+        }
     }
 
 }
