@@ -186,9 +186,37 @@ public class CloudInitNetworkUtil {
         return ipList;
     }
 
+    public static Map<String, String> getIpAddressMap(Map<String, String> ipConfig) {
+        Map<String, String> ipAddressMap = new LinkedHashMap<>();
+        for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
+            ipAddressMap.put(item.ip, item.address);
+        }
+        return ipAddressMap;
+    }
+
     public static String getIpFromCloudInitConfig(String ipConfig) {
         CloudInitIpConfig config = parseIpConfig(ipConfig);
         return config == null ? null : config.ip;
+    }
+
+    public static String getAddressFromCloudInitConfig(String ipConfig) {
+        CloudInitIpConfig config = parseIpConfig(ipConfig);
+        return config == null ? null : config.address;
+    }
+
+    public static Integer getPrefixLength(String address) {
+        if (StringUtils.isBlank(address)) {
+            return null;
+        }
+        int maskIndex = address.indexOf('/');
+        if (maskIndex < 0 || maskIndex == address.length() - 1) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(address.substring(maskIndex + 1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     public static String buildSingleNicNetworkConfig(Map<String, String> ipConfig, List<String> nameservers) {

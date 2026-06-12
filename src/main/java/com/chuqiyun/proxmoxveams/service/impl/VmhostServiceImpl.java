@@ -2331,6 +2331,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
+        if (nameservers != null && !nameservers.isEmpty()) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", String.join(" ", nameservers));
+        }
+        if (isWindowsVm(vmhost)) {
+            removeCicustomNetworkConfig(proxmoxApiUtil, node, cookieMap, vmhost, pveVmConfig);
+            proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+            syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getIpList(ipConfig));
+            return;
+        }
         String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
         String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
         try {
@@ -2338,13 +2348,30 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         } catch (Exception e) {
             throw new IllegalStateException("写入cloud-init单网卡多IP配置失败: vmid=" + vmhost.getVmid(), e);
         }
-        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
         proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
-        if (nameservers != null && !nameservers.isEmpty()) {
-            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", String.join(" ", nameservers));
-        }
         proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
         syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getIpList(ipConfig));
+    }
+
+    private boolean isWindowsVm(Vmhost vmhost) {
+        return vmhost != null && "windows".equalsIgnoreCase(vmhost.getOsType());
+    }
+
+    private void removeCicustomNetworkConfig(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
+                                             Vmhost vmhost, JSONObject pveVmConfig) {
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("cicustom"))) {
+            return;
+        }
+        String cicustom = pveVmConfig.getString("cicustom");
+        String value = removeCicustomNetwork(cicustom);
+        if (StringUtils.equals(cicustom, value)) {
+            return;
+        }
+        if (StringUtils.isBlank(value)) {
+            proxmoxApiUtil.deleteVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom");
+        } else {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom", value);
+        }
     }
 
     private void syncVmFirewallProtectionForVmhost(Vmhost vmhost, Collection<String> allowedIps) {
@@ -2599,6 +2626,21 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         if (!hasNetwork) {
             items.add("network=" + networkVolume);
+        }
+        return String.join(",", items);
+    }
+
+    private String removeCicustomNetwork(String cicustom) {
+        if (StringUtils.isBlank(cicustom)) {
+            return null;
+        }
+        List<String> items = new ArrayList<>();
+        for (String item : cicustom.split(",")) {
+            String value = item.trim();
+            if (StringUtils.isBlank(value) || value.startsWith("network=")) {
+                continue;
+            }
+            items.add(value);
         }
         return String.join(",", items);
     }

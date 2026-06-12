@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.cron;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
@@ -12,16 +13,20 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -103,6 +108,7 @@ public class ResetSystemCron {
             citype = "nocloud";
         }
         proxmoxApiUtil.resetVmCitype(node,authentications,vmhost.getVmid(),citype);
+        syncReinstallCloudInitNetwork(proxmoxApiUtil, node, authentications, vmhost);
 
         // 删除系统盘
         proxmoxApiUtil.deleteVmDisk(node,authentications,vmhost.getVmid(),"scsi0");
@@ -405,5 +411,117 @@ public class ResetSystemCron {
         // 更新主线程任务task状态为2
         task.setStatus(2);
         taskService.updateById(task);
+    }
+
+    private void syncReinstallCloudInitNetwork(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                               HashMap<String, String> authentications, Vmhost vmhost) {
+        if (vmhost == null || vmhost.getVmid() == null || vmhost.getIpConfig() == null) {
+            return;
+        }
+        String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(vmhost.getIpConfig());
+        if (StringUtils.isBlank(primaryIpConfig)) {
+            return;
+        }
+
+        JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, authentications, vmhost.getVmid());
+        proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
+        if ("windows".equalsIgnoreCase(vmhost.getOsType())) {
+            removeCicustomNetworkConfig(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
+            proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+            return;
+        }
+
+        if (!"linux".equalsIgnoreCase(vmhost.getOsType())
+                || CloudInitNetworkUtil.getIpAddressCount(vmhost.getIpConfig()) <= 1) {
+            proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+            return;
+        }
+
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
+        try {
+            CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(
+                    node,
+                    vmhost.getVmid(),
+                    vmhost.getIpConfig(),
+                    getNameservers(pveVmConfig),
+                    macAddress);
+        } catch (Exception e) {
+            throw new IllegalStateException("写入重装系统cloud-init单网卡多IP配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+        proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
+        proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+    }
+
+    private List<String> getNameservers(JSONObject pveVmConfig) {
+        List<String> nameservers = new ArrayList<>();
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("nameserver"))) {
+            return nameservers;
+        }
+        for (String item : pveVmConfig.getString("nameserver").split("[,\\s]+")) {
+            if (StringUtils.isNotBlank(item)) {
+                nameservers.add(item.trim());
+            }
+        }
+        return CloudInitNetworkUtil.distinctNameservers(nameservers);
+    }
+
+    private void removeCicustomNetworkConfig(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                             HashMap<String, String> authentications, Vmhost vmhost,
+                                             JSONObject pveVmConfig) {
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("cicustom"))) {
+            return;
+        }
+        String cicustom = pveVmConfig.getString("cicustom");
+        String value = removeCicustomNetwork(cicustom);
+        if (StringUtils.equals(cicustom, value)) {
+            return;
+        }
+        if (StringUtils.isBlank(value)) {
+            proxmoxApiUtil.deleteVmConfig(node, authentications, vmhost.getVmid(), "cicustom");
+        } else {
+            proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "cicustom", value);
+        }
+    }
+
+    private String mergeCicustomNetwork(JSONObject pveVmConfig, Integer vmid) {
+        String networkVolume = CloudInitNetworkUtil.getNetworkSnippetVolume(vmid);
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("cicustom"))) {
+            return "network=" + networkVolume;
+        }
+        String cicustom = pveVmConfig.getString("cicustom");
+        List<String> items = new ArrayList<>();
+        boolean hasNetwork = false;
+        for (String item : cicustom.split(",")) {
+            String value = item.trim();
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+            if (value.startsWith("network=")) {
+                items.add("network=" + networkVolume);
+                hasNetwork = true;
+            } else {
+                items.add(value);
+            }
+        }
+        if (!hasNetwork) {
+            items.add("network=" + networkVolume);
+        }
+        return String.join(",", items);
+    }
+
+    private String removeCicustomNetwork(String cicustom) {
+        if (StringUtils.isBlank(cicustom)) {
+            return null;
+        }
+        List<String> items = new ArrayList<>();
+        for (String item : cicustom.split(",")) {
+            String value = item.trim();
+            if (StringUtils.isBlank(value) || value.startsWith("network=")) {
+                continue;
+            }
+            items.add(value);
+        }
+        return String.join(",", items);
     }
 }

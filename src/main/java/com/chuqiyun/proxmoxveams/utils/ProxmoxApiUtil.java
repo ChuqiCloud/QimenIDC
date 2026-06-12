@@ -458,6 +458,40 @@ public class ProxmoxApiUtil {
         params.put(type,values);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
     }
+
+    public void deleteVmConfig(Master node, HashMap<String,String> cookie, Integer vmid, String type) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("delete", type);
+        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+    }
+
+    public JSONObject guestExec(Master node, HashMap<String,String> cookie, Integer vmid, String command,
+                                List<String> args) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("command", buildGuestExecCommand(command, args));
+        return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/exec", params);
+    }
+
+    private String buildGuestExecCommand(String command, List<String> args) {
+        StringBuilder builder = new StringBuilder(command == null ? "" : command);
+        if (args == null || args.isEmpty()) {
+            return builder.toString();
+        }
+        for (String arg : args) {
+            builder.append(' ').append(quoteCommandArg(arg));
+        }
+        return builder.toString();
+    }
+
+    private String quoteCommandArg(String arg) {
+        if (arg == null) {
+            return "\"\"";
+        }
+        if (!arg.contains(" ") && !arg.contains("\"")) {
+            return arg;
+        }
+        return "\"" + arg.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
     /**
      * @Author: 星禾
      * @Description: 获取指定虚拟机快照

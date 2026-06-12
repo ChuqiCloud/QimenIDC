@@ -514,9 +514,10 @@ public class CreateVmServiceImpl implements CreateVmService {
         double bandWidthValue = vmParams.getBandwidth() / 8.0;
         String bandWidth = String.format(Locale.US, "%.2f", bandWidthValue);
         boolean multiIp = CloudInitNetworkUtil.getIpAddressCount(vmParams.getIpConfig()) > 1;
-        String macAddress = multiIp ? CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId) : null;
+        boolean linuxMultiIp = multiIp && !"windows".equals(vmParams.getOsType());
+        String macAddress = linuxMultiIp ? CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId) : null;
         param.put("net0", buildNet0Config(node, vmParams, bandWidth, macAddress));
-        if (multiIp) {
+        if (linuxMultiIp) {
             try {
                 CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmId, vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
             } catch (Exception e) {

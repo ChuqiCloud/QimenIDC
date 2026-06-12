@@ -10,10 +10,13 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
+import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,8 +24,12 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -93,6 +100,7 @@ public class VmStatusCron {
             // 设置数据库中的vm状态为0
             vmhost.setStatus(0);
             vmhostService.updateById(vmhost);
+            createApplyWindowsVmIpTaskIfNeeded(vmhost);
             // 设置任务状态为2 2为执行完成
             task.setStatus(2);
             taskService.updateById(task);
@@ -311,6 +319,7 @@ public class VmStatusCron {
             updateVmStatusOnly(vmhost, 7);
             proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", new HashMap<>());
             updateVmStatusOnly(vmhost, 0);
+            createApplyWindowsVmIpTaskIfNeeded(vmhost);
             task.setStatus(2);
             task.setError(null);
             taskService.updateById(task);
@@ -329,6 +338,59 @@ public class VmStatusCron {
             taskService.updateById(task);
             log.error("[Task-IpChangeRestart] IP变更重启任务失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}",
                     task.getId(), node.getId(), task.getVmid(), task.getHostid(), e);
+        }
+    }
+
+    @Async
+    @Scheduled(fixedDelay = 5000)
+    public void applyWindowsVmIp(){
+        QueryWrapper<Task> queryWrap = new QueryWrapper<>();
+        queryWrap.eq("type", APPLY_WINDOWS_VM_IP);
+        queryWrap.eq("status", 0);
+        queryWrap.orderByAsc("create_date");
+        queryWrap.last("LIMIT 1");
+        Task task = taskService.getOne(queryWrap);
+        if (task == null){
+            return;
+        }
+        task.setStatus(1);
+        taskService.updateById(task);
+
+        Master node = masterService.getById(task.getNodeid());
+        Vmhost vmhost = vmhostService.getById(task.getHostid());
+        if (node == null || vmhost == null) {
+            task.setStatus(3);
+            task.setError("节点或虚拟机不存在");
+            taskService.updateById(task);
+            return;
+        }
+        try {
+            if (!isWindowsIpManagedVm(vmhost)) {
+                task.setStatus(2);
+                task.setError(null);
+                taskService.updateById(task);
+                return;
+            }
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+            if (!"running".equals(getVmStatus(proxmoxApiUtil, node, authentications, task.getVmid()))) {
+                task.setStatus(0);
+                task.setError("等待Windows虚拟机启动");
+                taskService.updateById(task);
+                return;
+            }
+            applyWindowsIpByGuestAgent(node, vmhost);
+            task.setStatus(2);
+            task.setError(null);
+            taskService.updateById(task);
+            log.info("[Task-ApplyWindowsVmIp] Windows附加IP应用完成: NodeID:{} VM-ID:{} HostId:{}",
+                    node.getId(), task.getVmid(), task.getHostid());
+        } catch (Exception e) {
+            task.setStatus(0);
+            task.setError("等待QEMU Guest Agent应用Windows附加IP: " + e.getMessage());
+            taskService.updateById(task);
+            log.warn("[Task-ApplyWindowsVmIp] Windows附加IP暂未应用，等待下次重试: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
+                    task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), e.getMessage());
         }
     }
 
@@ -781,6 +843,119 @@ public class VmStatusCron {
             throw new IllegalStateException("更新虚拟机状态失败: hostId=" + vmhost.getId() + ", status=" + status);
         }
         vmhost.setStatus(status);
+    }
+
+    private void createApplyWindowsVmIpTaskIfNeeded(Vmhost vmhost) {
+        if (!isWindowsIpManagedVm(vmhost) || getPendingApplyWindowsVmIpTask(vmhost.getId()) != null) {
+            return;
+        }
+        Task task = new Task();
+        task.setNodeid(vmhost.getNodeid());
+        task.setVmid(vmhost.getVmid());
+        task.setHostid(vmhost.getId());
+        task.setType(APPLY_WINDOWS_VM_IP);
+        task.setStatus(0);
+        HashMap<Object, Object> params = new HashMap<>();
+        params.put("source", "windows_multi_ip");
+        task.setParams(params);
+        task.setCreateDate(System.currentTimeMillis());
+        if (!taskService.insertTask(task)) {
+            throw new IllegalStateException("创建Windows附加IP应用任务失败: hostId=" + vmhost.getId());
+        }
+        vmhostService.addVmHostTask(vmhost.getId(), task.getId());
+    }
+
+    private Task getPendingApplyWindowsVmIpTask(Integer hostId) {
+        if (hostId == null) {
+            return null;
+        }
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("hostid", hostId);
+        queryWrapper.eq("type", APPLY_WINDOWS_VM_IP);
+        queryWrapper.in("status", 0, 1);
+        queryWrapper.orderByDesc("create_date");
+        queryWrapper.last("limit 1");
+        return taskService.getOne(queryWrapper);
+    }
+
+    private boolean isWindowsIpManagedVm(Vmhost vmhost) {
+        return vmhost != null
+                && "windows".equalsIgnoreCase(vmhost.getOsType())
+                && CloudInitNetworkUtil.getIpAddressCount(vmhost.getIpConfig()) > 0;
+    }
+
+    private void applyWindowsIpByGuestAgent(Master node, Vmhost vmhost) throws Exception {
+        if (node == null || node.getSshPort() == null || StringUtils.isBlank(node.getSshUsername())
+                || StringUtils.isBlank(node.getSshPassword())) {
+            throw new IllegalStateException("节点SSH配置不完整，无法通过qm guest exec应用Windows附加IP");
+        }
+        String script = buildWindowsMultiIpScript(vmhost);
+        String encodedCommand = Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
+        String command = "qm guest exec " + vmhost.getVmid()
+                + " -- powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand "
+                + shellQuote(encodedCommand);
+        SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
+        try {
+            sshUtil.connect();
+            sshUtil.executeCommand(command);
+        } finally {
+            sshUtil.disconnect();
+        }
+    }
+
+    private String buildWindowsMultiIpScript(Vmhost vmhost) {
+        Map<String, String> ipAddressMap = CloudInitNetworkUtil.getIpAddressMap(vmhost.getIpConfig());
+        List<String> desiredIpItems = new ArrayList<>();
+        List<String> desiredPrefixItems = new ArrayList<>();
+        String primaryIp = null;
+        for (Map.Entry<String, String> entry : ipAddressMap.entrySet()) {
+            if (primaryIp == null) {
+                primaryIp = entry.getKey();
+                continue;
+            }
+            Integer prefixLength = CloudInitNetworkUtil.getPrefixLength(entry.getValue());
+            if (prefixLength == null) {
+                continue;
+            }
+            desiredIpItems.add("'" + escapePowerShellString(entry.getKey()) + "'");
+            desiredPrefixItems.add("'" + escapePowerShellString(entry.getKey()) + "'=" + prefixLength);
+        }
+        if (StringUtils.isBlank(primaryIp)) {
+            return "";
+        }
+        String desiredIps = "@(" + String.join(",", desiredIpItems) + ")";
+        String desiredPrefixes = "@{" + String.join(";", desiredPrefixItems) + "}";
+        String escapedPrimaryIp = escapePowerShellString(primaryIp);
+        return "$ErrorActionPreference = 'Stop'\n"
+                + "$primaryIp = '" + escapedPrimaryIp + "'\n"
+                + "$desiredIps = " + desiredIps + "\n"
+                + "$prefixMap = " + desiredPrefixes + "\n"
+                + "$adapter = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -eq $primaryIp } | Select-Object -First 1\n"
+                + "if ($null -eq $adapter) { throw \"Primary IP $primaryIp not found\" }\n"
+                + "$index = $adapter.InterfaceIndex\n"
+                + "$currentIps = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
+                + "foreach ($ip in $currentIps) {\n"
+                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIps -notcontains $ip.IPAddress) {\n"
+                + "        Remove-NetIPAddress -InterfaceIndex $index -IPAddress $ip.IPAddress -Confirm:$false\n"
+                + "    }\n"
+                + "}\n"
+                + "foreach ($ip in $desiredIps) {\n"
+                + "    $exists = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index -IPAddress $ip -ErrorAction SilentlyContinue\n"
+                + "    if ($null -eq $exists) {\n"
+                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$prefixMap[$ip]) | Out-Null\n"
+                + "    }\n"
+                + "}\n";
+    }
+
+    private String escapePowerShellString(String value) {
+        return value == null ? "" : value.replace("'", "''");
+    }
+
+    private String shellQuote(String value) {
+        if (value == null) {
+            return "''";
+        }
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private void waitVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> authentications, Integer vmid) throws InterruptedException {

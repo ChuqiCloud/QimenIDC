@@ -42,7 +42,14 @@ public class SshUtil {
         channel.setOutputStream(new CustomOutputStream(output));
 
         channel.connect();
+        while (!channel.isClosed()) {
+            Thread.sleep(100);
+        }
+        int exitStatus = channel.getExitStatus();
         channel.disconnect();
+        if (exitStatus != 0) {
+            throw new IllegalStateException("SSH命令执行失败，退出码: " + exitStatus + ", output=" + output);
+        }
 
         return output.toString();
     }
