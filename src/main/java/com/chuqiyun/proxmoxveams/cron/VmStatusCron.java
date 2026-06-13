@@ -43,6 +43,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class VmStatusCron {
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
     private static final long IP_CHANGE_RESTART_WAIT = 2000L;
+    private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 10 * 60 * 1000L;
+    private static final long WINDOWS_GUEST_AGENT_COMMAND_TIMEOUT = 120_000L;
 
     @Resource
     private MasterService masterService;
@@ -62,6 +64,7 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", START_VM);
         queryWrap.eq("status", 0);
+        queryWrap.le("create_date", System.currentTimeMillis());
         queryWrap.orderByAsc("create_date");
         queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
@@ -347,6 +350,7 @@ public class VmStatusCron {
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", APPLY_WINDOWS_VM_IP);
         queryWrap.eq("status", 0);
+        queryWrap.le("create_date", System.currentTimeMillis());
         queryWrap.orderByAsc("create_date");
         queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
@@ -362,6 +366,14 @@ public class VmStatusCron {
             task.setStatus(3);
             task.setError("节点或虚拟机不存在");
             taskService.updateById(task);
+            return;
+        }
+        if (isApplyWindowsVmIpTimeout(task)) {
+            task.setStatus(3);
+            task.setError("Windows附加IP应用超时，最后错误: " + StringUtils.defaultIfBlank(task.getError(), "未知错误"));
+            taskService.updateById(task);
+            log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用超时失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
+                    task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), task.getError());
             return;
         }
         try {
@@ -386,6 +398,14 @@ public class VmStatusCron {
             log.info("[Task-ApplyWindowsVmIp] Windows附加IP应用完成: NodeID:{} VM-ID:{} HostId:{}",
                     node.getId(), task.getVmid(), task.getHostid());
         } catch (Exception e) {
+            if (isApplyWindowsVmIpTimeout(task)) {
+                task.setStatus(3);
+                task.setError("Windows附加IP应用超时，最后错误: " + StringUtils.defaultIfBlank(e.getMessage(), "未知错误"));
+                taskService.updateById(task);
+                log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用超时失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
+                        task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), e.getMessage(), e);
+                return;
+            }
             task.setStatus(0);
             task.setError("等待QEMU Guest Agent应用Windows附加IP: " + e.getMessage());
             taskService.updateById(task);
@@ -884,6 +904,11 @@ public class VmStatusCron {
                 && CloudInitNetworkUtil.getIpAddressCount(vmhost.getIpConfig()) > 0;
     }
 
+    private boolean isApplyWindowsVmIpTimeout(Task task) {
+        return task == null || task.getCreateDate() == null
+                || System.currentTimeMillis() - task.getCreateDate() >= APPLY_WINDOWS_VM_IP_TIMEOUT;
+    }
+
     private void applyWindowsIpByGuestAgent(Master node, Vmhost vmhost) throws Exception {
         if (node == null || node.getSshPort() == null || StringUtils.isBlank(node.getSshUsername())
                 || StringUtils.isBlank(node.getSshPassword())) {
@@ -897,7 +922,7 @@ public class VmStatusCron {
         SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
         try {
             sshUtil.connect();
-            sshUtil.executeCommand(command);
+            sshUtil.executeCommand(command, WINDOWS_GUEST_AGENT_COMMAND_TIMEOUT);
         } finally {
             sshUtil.disconnect();
         }

@@ -38,6 +38,8 @@ import java.util.*;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -55,6 +57,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
     private static final long IP_CHANGE_RESTART_WAIT = 2000L;
+    private static final long UPDATE_VM_START_DELAY = 30_000L;
     private static final long SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT = 20000L;
     private static final long SYSTEM_DISK_RESIZE_VERIFY_INTERVAL = 3000L;
     private static final int FIREWALL_SYNC_PAGE_SIZE = 10;
@@ -62,6 +65,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final long FIREWALL_SYNC_PAGE_DELAY = 3000L;
     private static final long FIREWALL_SYNC_NODE_DELAY = 5000L;
     private static final String PENDING_STATUS = "creating";
+    private static final Pattern SMP_ARGS_PATTERN = Pattern.compile("(^|\\s)-smp\\s+\\d+(?:,[^\\s]*)?");
     private final AtomicBoolean vmFirewallProtectionSyncRunning = new AtomicBoolean(false);
 
     @Resource
@@ -1154,24 +1158,33 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
         || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
             // 判断状态，先关机
-            if (vmhost.getStatus() == 0){
+            boolean wasRunning = vmhost.getStatus() == 0;
+            if (wasRunning){
                 this.power(vmhost.getId(), "shutdown",null);
             }
             Master node = masterService.getById(vmhost.getNodeid());
             // 获取cookie
             HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-            if (vmParams.getSockets() != null) {
-                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"sockets",vmParams.getSockets().toString());
-                vmhost.setSockets(vmParams.getSockets());
+            if (wasRunning) {
+                waitPveVmStopped(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
             }
-            if (vmParams.getCores() != null) {
-                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"cores",vmParams.getCores().toString());
-                vmhost.setCores(vmParams.getCores());
-            }
-            if (vmParams.getThreads() != null) {
-                proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"threads",vmParams.getThreads().toString());
-                vmhost.setThreads(vmParams.getThreads());
+            boolean updateCpu = vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null;
+            if (updateCpu && isCustomCpuVm(vmhost)) {
+                updateCustomCpuConfig(proxmoxApiUtil, node, cookieMap, vmhost, vmParams);
+            } else {
+                if (vmParams.getSockets() != null) {
+                    proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"sockets",vmParams.getSockets().toString());
+                    vmhost.setSockets(vmParams.getSockets());
+                }
+                if (vmParams.getCores() != null) {
+                    proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"cores",vmParams.getCores().toString());
+                    vmhost.setCores(vmParams.getCores());
+                }
+                if (vmParams.getThreads() != null) {
+                    proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"threads",vmParams.getThreads().toString());
+                    vmhost.setThreads(vmParams.getThreads());
+                }
             }
             if (vmParams.getMemory() != null) {
                 proxmoxApiUtil.resetVmConfig(node,cookieMap,vmhost.getVmid(),"memory",vmParams.getMemory().toString());
@@ -1210,13 +1223,68 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             vmStartTask.setHostid(vmhost.getId());
             vmStartTask.setType(START_VM);
             vmStartTask.setStatus(0);
-            vmStartTask.setCreateDate(System.currentTimeMillis());
+            vmStartTask.setCreateDate(System.currentTimeMillis() + UPDATE_VM_START_DELAY);
             if (taskService.save(vmStartTask)) {
                 log.info("[Task-StartVm] 改配-开机任务创建成功: NodeId: " + vmhost.getNodeid() + ",VmId: " + vmhost.getVmid() + ",HostId: " + vmhost.getId());
             }
         }
         this.updateById(vmhost);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+
+    private boolean isCustomCpuVm(Vmhost vmhost) {
+        return vmhost.getCpuModel() != null || vmhost.getModelGroup() != null;
+    }
+
+    private void updateCustomCpuConfig(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
+                                       Vmhost vmhost, VmParams vmParams) {
+        int sockets = getCpuValue(vmParams.getSockets(), vmhost.getSockets(), 1);
+        int cores = getCpuValue(vmParams.getCores(), vmhost.getCores(), 1);
+        int threads = getCpuValue(vmParams.getThreads(), vmhost.getThreads(), 1);
+
+        JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
+        String args = pveVmConfig == null ? null : pveVmConfig.getString("args");
+        String newArgs = buildCustomCpuArgs(args, vmhost.getArgs(), vmhost.getCpu(), sockets, cores, threads);
+
+        if (vmParams.getSockets() != null) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "sockets", vmParams.getSockets().toString());
+            vmhost.setSockets(vmParams.getSockets());
+        }
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "args", newArgs);
+        vmhost.setArgs(newArgs);
+        if (vmParams.getCores() != null) {
+            vmhost.setCores(vmParams.getCores());
+        }
+        if (vmParams.getThreads() != null) {
+            vmhost.setThreads(vmParams.getThreads());
+        }
+    }
+
+    private int getCpuValue(Integer newValue, Integer oldValue, int defaultValue) {
+        if (newValue != null) {
+            return newValue;
+        }
+        if (oldValue != null) {
+            return oldValue;
+        }
+        return defaultValue;
+    }
+
+    private String buildCustomCpuArgs(String currentArgs, String savedArgs, String cpu, int sockets, int cores, int threads) {
+        int vcpu = sockets * cores * threads;
+        String smpArgs = "-smp " + vcpu + ",cores=" + cores + ",threads=" + threads + ",maxcpus=" + vcpu;
+        String args = StringUtils.defaultIfBlank(currentArgs, savedArgs);
+        if (StringUtils.isBlank(args)) {
+            return smpArgs + " -cpu " + cpu;
+        }
+        Matcher matcher = SMP_ARGS_PATTERN.matcher(args);
+        if (matcher.find()) {
+            return matcher.replaceFirst(Matcher.quoteReplacement(matcher.group(1) + smpArgs)).trim();
+        }
+        if (args.contains("-cpu ")) {
+            return smpArgs + " " + args.trim();
+        }
+        return smpArgs + " -cpu " + cpu + "," + args.trim();
     }
 
     /**

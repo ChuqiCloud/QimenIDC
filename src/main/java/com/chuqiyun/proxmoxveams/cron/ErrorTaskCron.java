@@ -32,6 +32,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class ErrorTaskCron {
+    private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 10 * 60 * 1000L;
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -48,6 +50,9 @@ public class ErrorTaskCron {
     @Async
     @Scheduled(fixedDelay = 60000)
     public void errorTaskCron() {
+        if (failTimeoutApplyWindowsVmIpTask()) {
+            return;
+        }
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("status", 1).apply("create_date <= {0}", System.currentTimeMillis() - 600_000);
         taskQueryWrapper.orderByAsc("create_date");
@@ -69,5 +74,24 @@ public class ErrorTaskCron {
         task.setError("异常任务监控处理超时");
         taskService.updateById(task);
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "异常任务状态监控处理完成: NodeID:{} VM-ID:{} TASK-TYPE:{}", node.getId(), task.getVmid(),task.getType());
+    }
+
+    private boolean failTimeoutApplyWindowsVmIpTask() {
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("type", APPLY_WINDOWS_VM_IP);
+        queryWrapper.eq("status", 0);
+        queryWrapper.apply("create_date <= {0}", System.currentTimeMillis() - APPLY_WINDOWS_VM_IP_TIMEOUT);
+        queryWrapper.orderByAsc("create_date");
+        Page<Task> taskPage = taskService.getTaskList(1, 1, queryWrapper);
+        if (taskPage.getRecords().isEmpty()) {
+            return false;
+        }
+        Task task = taskPage.getRecords().get(0);
+        task.setStatus(3);
+        task.setError("Windows附加IP应用超时，超过10分钟未执行成功");
+        taskService.updateById(task);
+        UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "Windows附加IP应用任务超时失败: NodeID:{} VM-ID:{} TASK-ID:{}",
+                task.getNodeid(), task.getVmid(), task.getId());
+        return true;
     }
 }

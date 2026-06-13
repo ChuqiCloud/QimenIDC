@@ -16,6 +16,7 @@ public class SshUtil {
     private final String username;
     private final String password;
     private Session session;
+    private static final long DEFAULT_COMMAND_TIMEOUT = 120_000L;
 
     public SshUtil(String hostname, int port, String username, String password) {
         this.hostname = hostname;
@@ -29,20 +30,29 @@ public class SshUtil {
         session = jsch.getSession(username, hostname, port);
         session.setPassword(password);
         session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
+        session.connect(30_000);
     }
 
     public String executeCommand(String command) throws JSchException, InterruptedException {
+        return executeCommand(command, DEFAULT_COMMAND_TIMEOUT);
+    }
+
+    public String executeCommand(String command, long timeoutMillis) throws JSchException, InterruptedException {
         ChannelExec channel = (ChannelExec) session.openChannel("exec");
         channel.setCommand(command);
         channel.setInputStream(null);
-        channel.setErrStream(System.err);
 
         StringBuilder output = new StringBuilder();
         channel.setOutputStream(new CustomOutputStream(output));
+        channel.setErrStream(new CustomOutputStream(output));
 
         channel.connect();
+        long startTime = System.currentTimeMillis();
         while (!channel.isClosed()) {
+            if (System.currentTimeMillis() - startTime > timeoutMillis) {
+                channel.disconnect();
+                throw new IllegalStateException("SSH命令执行超时, output=" + output);
+            }
             Thread.sleep(100);
         }
         int exitStatus = channel.getExitStatus();
