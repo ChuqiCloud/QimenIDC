@@ -189,7 +189,7 @@ public class DiskCron {
                 params.put("scsihw", "virtio-scsi-pci");
                 //params.put("scsihw", "lsi53c810");
                 //params.put("scsi0", VmUtil.getSystemDiskParams(vmhost, vmInfo.getString("unused0"),false,true));
-                params.put("scsi0", vmInfo.getString("unused0"));
+                params.put("scsi0", vmInfo.getString("unused0") + ",discard=on");
                 try {
                     proxmoxApiUtil.putNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/config", params);
                 } catch (Exception e) {

@@ -130,7 +130,7 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         String level = resolveLogLevel(responseWrapper.getStatus(), businessCode, throwable);
         String auditContent = buildAuditContent(request, level, businessMessage, throwable, requestBody);
         saveAccessLogToDatabase(requestId, level, request, pathPattern, handler, clientIp, operator, authType,
-                responseWrapper.getStatus(), businessCode, durationMs, throwable, auditContent);
+                responseWrapper.getStatus(), businessCode, durationMs, throwable, auditContent, requestBody, responseBody);
     }
 
     private String resolvePathPattern(HttpServletRequest request) {
@@ -533,7 +533,9 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
                                          Integer businessCode,
                                          Long durationMs,
                                          Throwable throwable,
-                                         String content) {
+                                         String content,
+                                         String requestBody,
+                                         String responseBody) {
         SystemLog systemLog = new SystemLog();
         systemLog.setRequestId(requestId);
         systemLog.setLogType("API");
@@ -551,6 +553,9 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         systemLog.setDurationMs(durationMs);
         systemLog.setException(buildExceptionMessage(throwable));
         systemLog.setContent(content);
+        systemLog.setQueryString(request.getQueryString());
+        systemLog.setRequestBody(requestBody);
+        systemLog.setResponseBody(responseBody);
         systemLog.setCreateTime(System.currentTimeMillis());
         systemLogService.saveSystemLogAsync(systemLog);
     }

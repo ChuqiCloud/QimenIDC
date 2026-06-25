@@ -20,6 +20,8 @@ public interface SystemLogService extends IService<SystemLog> {
                                   String requestId,
                                   String date);
 
+    SystemLog getSystemLogById(Integer id);
+
     /**
      * @Author: 星禾
      * @Description: 清理过期系统日志

@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.service.SystemLogService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,5 +42,20 @@ public class SysLogController {
             @RequestParam(name = "date", required = false) String date
     ) throws UnauthorizedException {
         return ResponseResult.ok(systemLogService.getSystemLogs(page, size, type, level, keyword, requestId, date));
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 根据ID获取系统日志详情
+     * @DateTime: 2026/6/25
+     */
+    @AdminApiCheck
+    @GetMapping("/getSystemLogDetail/{id}")
+    public ResponseResult<SystemLog> getSystemLogDetail(@PathVariable("id") Integer id) throws UnauthorizedException {
+        SystemLog systemLog = systemLogService.getSystemLogById(id);
+        if (systemLog == null) {
+            return ResponseResult.fail("日志不存在");
+        }
+        return ResponseResult.ok(systemLog);
     }
 }

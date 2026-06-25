@@ -45,6 +45,14 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
     }
 
     @Override
+    public SystemLog getSystemLogById(Integer id) {
+        if (Objects.isNull(id) || id <= 0) {
+            return null;
+        }
+        return this.getById(id);
+    }
+
+    @Override
     public Page<SystemLog> getSystemLogs(Integer page,
                                          Integer size,
                                          String type,

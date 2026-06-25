@@ -600,6 +600,8 @@ public class VmUtil {
             // 追加size
             systemDiskParams = systemDiskParams + ",size=" + vmhost.getSystemDiskSize();
         }
+        // 追加discard参数
+        systemDiskParams = systemDiskParams + ",discard=on";
         return systemDiskParams;
     }
 

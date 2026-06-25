@@ -160,6 +160,8 @@ public class DataDiskUtil {
         String storage = firstTextOrDefault(valueMap, defaultStorage, "storage", "pool", "storageName");
         String diskValue = appendStorage(storage, size);
         String options = buildDiskOptions(valueMap);
+        // 追加discard参数
+        diskValue = diskValue + ",discard=on";
         return isBlank(options) ? diskValue : diskValue + options;
     }
 
