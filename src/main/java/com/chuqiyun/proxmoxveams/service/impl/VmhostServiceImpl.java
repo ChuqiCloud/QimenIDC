@@ -2927,7 +2927,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         Vmhost vmhost = this.getById(vm);
         if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
-                || source_port < 1000 || source_port > 65535 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
+                || source_port < 1000 || source_port > 60050 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
                 || source_port == 5404 || source_port == 5405 || (source_port >= 5900 && source_port < 6000)
                 || (source_port >= 59000 && source_port <= 60050) || source_port == 6080
         ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有写错误提示
