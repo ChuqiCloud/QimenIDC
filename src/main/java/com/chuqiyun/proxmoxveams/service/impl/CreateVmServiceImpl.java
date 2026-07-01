@@ -35,6 +35,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.CREATE_VM;
 @Service("createVmService")
 public class CreateVmServiceImpl implements CreateVmService {
     private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
+    private static final String NETWORK_TYPE_CLASSIC = "classic";
+    private static final String NETWORK_TYPE_VPC = "vpc";
 
     @Resource
     private MasterService masterService;
@@ -58,6 +60,10 @@ public class CreateVmServiceImpl implements CreateVmService {
     private VmhostService vmhostService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private SubnetpoolService subnetpoolService;
+    @Resource
+    private SubnetService subnetService;
     /**
      * 创建PVE虚拟机
      *
@@ -73,7 +79,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 判断nodeId是否为空
         if (vmParams.getNodeid() == null) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+            return invalidParam("nodeid不能为空");
         }
         int nodeId = vmParams.getNodeid();
         Master node = masterService.getById(nodeId);
@@ -233,8 +239,17 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getIfnat() == null) {
             vmParams.setIfnat(0);
         }
+        normalizeNetworkType(vmParams);
         // 设置网络
-        if (vmParams.getBridge() == null) {
+        if (isVpcNetwork(vmParams)) {
+            Subnet subnet = resolveVpcSubnet(vmParams);
+            if (subnet == null) {
+                return invalidParam(buildVpcSubnetInvalidMessage(vmParams));
+            }
+            vmParams.setVpcSubnetId(subnet.getId());
+            vmParams.setBridge(subnet.getVnet());
+            vmParams.setIfnat(0);
+        } else if (vmParams.getBridge() == null) {
             if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat网口
             {
                 vmParams.setBridge(node.getNatbridge());
@@ -298,23 +313,40 @@ public class CreateVmServiceImpl implements CreateVmService {
         HashMap<String, String> ipConfigMap = vmParams.getIpConfig() == null ? new HashMap<>() : vmParams.getIpConfig();
         int ipCount = getIpConfigCount(ipConfigMap);
         Set<String> selectedIpSet = new LinkedHashSet<>(CloudInitNetworkUtil.getIpList(ipConfigMap));
+        if (isVpcNetwork(vmParams) && !isVpcSelectedIpAvailable(nodeId, vmParams.getVpcSubnetId(), selectedIpSet)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "VPC子网中指定的私网IP不可用: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+        }
         for (int i = 1; i <= ipCount; i++) {
             String ipConfig = ipConfigMap.get(String.valueOf(i));
             if (CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig) != null) {
                 continue;
             }
-            Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet);
-            if (ipEntity == null) {
-                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
-            }
-            Ipstatus currentIpPool = ipstatusService.getById(ipEntity.getPoolId());
-            if (currentIpPool == null) {
-                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
-            }
-            ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + currentIpPool.getMask() + ",gw=" + ipEntity.getGateway());
-            selectedIpSet.add(ipEntity.getIp());
-            if (ipPool == null) {
-                ipPool = currentIpPool;
+            if (isVpcNetwork(vmParams)) {
+                Subnetpool subnetpool = getOneFreeVpcIpForCreateVm(nodeId, vmParams.getVpcSubnetId(), selectedIpSet);
+                if (subnetpool == null) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                            "VPC子网没有可用私网IP: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+                }
+                ipConfigMap.put(String.valueOf(i), "ip=" + subnetpool.getIp() + "/" + subnetpool.getMask() + ",gw=" + subnetpool.getGateway());
+                selectedIpSet.add(subnetpool.getIp());
+                if (vmParams.getDns1() == null) {
+                    vmParams.setDns1(subnetpool.getDns());
+                }
+            } else {
+                Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet);
+                if (ipEntity == null) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+                }
+                Ipstatus currentIpPool = ipstatusService.getById(ipEntity.getPoolId());
+                if (currentIpPool == null) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
+                }
+                ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + currentIpPool.getMask() + ",gw=" + ipEntity.getGateway());
+                selectedIpSet.add(ipEntity.getIp());
+                if (ipPool == null) {
+                    ipPool = currentIpPool;
+                }
             }
         }
         vmParams.setIpConfig(ipConfigMap);
@@ -328,6 +360,14 @@ public class CreateVmServiceImpl implements CreateVmService {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_NOT_CHINESE, null);
         }
         vmParams.setIpList(ipList);
+        if (isVpcNetwork(vmParams)) {
+            List<String> publicIpList = getVpcPublicIpListForCreateVm(nodeId, node, vmParams, ipList.size());
+            if (publicIpList == null || publicIpList.size() < ipList.size()) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                        "公网IP池没有足够可用IP: nodeid=" + nodeId + ", publicIpPoolId=" + vmParams.getPublicIpPoolId());
+            }
+            vmParams.setPublicIpList(publicIpList);
+        }
         // 设置dns
         if (vmParams.getDns1() == null && ipPool != null) {
             vmParams.setDns1(ipPool.getDns1());
@@ -602,6 +642,214 @@ public class CreateVmServiceImpl implements CreateVmService {
         return ippoolService.getOne(queryWrapper);
     }
 
+    private List<String> getVpcPublicIpListForCreateVm(Integer nodeId, Master node, VmParams vmParams, int count) {
+        if (count <= 0) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<String> selectedPublicIpSet = new LinkedHashSet<>();
+        if (vmParams.getPublicIpList() != null) {
+            for (String ip : vmParams.getPublicIpList()) {
+                if (ip == null || ip.trim().isEmpty()) {
+                    continue;
+                }
+                String publicIp = ip.trim();
+                if (!isVpcPublicIpAvailable(nodeId, node, vmParams.getPublicIpPoolId(), publicIp)) {
+                    return null;
+                }
+                selectedPublicIpSet.add(publicIp);
+                if (selectedPublicIpSet.size() >= count) {
+                    return new ArrayList<>(selectedPublicIpSet);
+                }
+            }
+        }
+        Integer publicPoolId = vmParams.getPublicIpPoolId();
+        Integer natPoolId = node == null ? null : node.getNatippool();
+        while (selectedPublicIpSet.size() < count) {
+            Ippool ippool = getOneFreePublicIpForVpc(nodeId, publicPoolId, natPoolId, node == null ? null : node.getHost(), selectedPublicIpSet);
+            if (ippool == null) {
+                return null;
+            }
+            selectedPublicIpSet.add(ippool.getIp());
+        }
+        return new ArrayList<>(selectedPublicIpSet);
+    }
+
+    private Ippool getOneFreePublicIpForVpc(Integer nodeId, Integer poolId, Integer natPoolId, String nodeHost, Set<String> excludeIpSet) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("status", 0);
+        if (nodeHost != null && !nodeHost.trim().isEmpty()) {
+            queryWrapper.ne("ip", nodeHost.trim());
+        }
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        } else if (natPoolId != null) {
+            queryWrapper.ne("pool_id", natPoolId);
+        }
+        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+            queryWrapper.notIn("ip", excludeIpSet);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
+    }
+
+    private boolean isVpcPublicIpAvailable(Integer nodeId, Master node, Integer poolId, String ip) {
+        if (nodeId == null || ip == null || ip.trim().isEmpty()) {
+            return false;
+        }
+        if (node != null && node.getHost() != null && ip.trim().equals(node.getHost().trim())) {
+            return false;
+        }
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("ip", ip.trim());
+        queryWrapper.eq("status", 0);
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        }
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper) != null;
+    }
+
+    private Subnetpool getOneFreeVpcIpForCreateVm(Integer nodeId, Integer subnetId, Set<String> excludeIpSet) {
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("subnat_id", subnetId);
+        queryWrapper.eq("status", 0);
+        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+            queryWrapper.notIn("ip", excludeIpSet);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return subnetpoolService.getOne(queryWrapper);
+    }
+
+    private boolean isVpcSelectedIpAvailable(Integer nodeId, Integer subnetId, Set<String> selectedIpSet) {
+        if (selectedIpSet == null || selectedIpSet.isEmpty()) {
+            return true;
+        }
+        for (String ip : selectedIpSet) {
+            if (ip == null || ip.trim().isEmpty()) {
+                continue;
+            }
+            QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("node_id", nodeId);
+            queryWrapper.eq("subnat_id", subnetId);
+            queryWrapper.eq("ip", ip.trim());
+            queryWrapper.eq("status", 0);
+            queryWrapper.last("limit 1");
+            if (subnetpoolService.getOne(queryWrapper) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void normalizeNetworkType(VmParams vmParams) {
+        String networkType = vmParams.getNetworkType();
+        if (networkType == null || networkType.trim().isEmpty()) {
+            vmParams.setNetworkType(NETWORK_TYPE_CLASSIC);
+            return;
+        }
+        networkType = networkType.trim().toLowerCase(Locale.ROOT);
+        if (!NETWORK_TYPE_VPC.equals(networkType)) {
+            networkType = NETWORK_TYPE_CLASSIC;
+        }
+        vmParams.setNetworkType(networkType);
+    }
+
+    private boolean isVpcNetwork(VmParams vmParams) {
+        return vmParams != null && NETWORK_TYPE_VPC.equals(vmParams.getNetworkType());
+    }
+
+    private UnifiedResultDto<Object> invalidParam(String message) {
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, message);
+    }
+
+    private String buildVpcSubnetInvalidMessage(VmParams vmParams) {
+        if (vmParams == null) {
+            return "VPC子网参数无效: vmParams为空";
+        }
+        Integer subnetId = vmParams.getVpcSubnetId();
+        if (subnetId != null && subnetId > 0) {
+            Subnet subnet = subnetService.getById(subnetId);
+            if (subnet == null) {
+                return "VPC子网不存在: vpcSubnetId=" + subnetId;
+            }
+            if (subnet.getNodeid() == null) {
+                return "VPC子网未记录节点，且子网IP池未找到当前节点记录: nodeid=" + vmParams.getNodeid()
+                        + ", vpcSubnetId=" + subnetId + ", subnetNodeid=null";
+            }
+            if (!isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+                return "VPC子网不属于当前节点: nodeid=" + vmParams.getNodeid()
+                        + ", vpcSubnetId=" + subnetId + ", subnetNodeid=" + subnet.getNodeid();
+            }
+        }
+        if (vmParams.getBridge() == null || vmParams.getBridge().trim().isEmpty()) {
+            return "VPC网络需要传vpcSubnetId，或传bridge/vnet用于反查子网: nodeid=" + vmParams.getNodeid();
+        }
+        return "未找到匹配的VPC子网: nodeid=" + vmParams.getNodeid()
+                + ", vpcSubnetId=" + vmParams.getVpcSubnetId()
+                + ", bridge=" + vmParams.getBridge();
+    }
+
+    private Subnet resolveVpcSubnet(VmParams vmParams) {
+        if (vmParams == null || vmParams.getNodeid() == null) {
+            return null;
+        }
+        Integer subnetId = vmParams.getVpcSubnetId();
+        if (subnetId != null && subnetId > 0) {
+            Subnet subnet = subnetService.getById(subnetId);
+            if (isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+                return subnet;
+            }
+        }
+        if (vmParams.getBridge() == null || vmParams.getBridge().trim().isEmpty()) {
+            return null;
+        }
+        List<Subnet> subnets = subnetService.lambdaQuery()
+                .eq(Subnet::getVnet, vmParams.getBridge().trim())
+                .list();
+        if (subnets == null || subnets.isEmpty()) {
+            return null;
+        }
+        if (subnetId != null && subnetId > 0) {
+            for (Subnet subnet : subnets) {
+                if (Objects.equals(subnet.getId(), subnetId) && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+                    return subnet;
+                }
+            }
+        }
+        for (Subnet subnet : subnets) {
+            if (isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+                return subnet;
+            }
+        }
+        return null;
+    }
+
+    private boolean isSubnetBelongToNode(Subnet subnet, Integer nodeId) {
+        if (subnet == null || subnet.getId() == null || nodeId == null) {
+            return false;
+        }
+        if (subnet.getNodeid() != null) {
+            return Objects.equals(subnet.getNodeid(), nodeId);
+        }
+        return hasSubnetpoolForNode(subnet.getId(), nodeId);
+    }
+
+    private boolean hasSubnetpoolForNode(Integer subnetId, Integer nodeId) {
+        if (subnetId == null || nodeId == null) {
+            return false;
+        }
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("subnat_id", subnetId);
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.last("limit 1");
+        return subnetpoolService.getOne(queryWrapper) != null;
+    }
+
     private String buildNet0Config(Master node, VmParams vmParams, String bandWidth, String macAddress) {
         String bridge = vmParams.getBridge();
         if (bridge == null) {
@@ -686,6 +934,15 @@ public class CreateVmServiceImpl implements CreateVmService {
 
     private void updateCreatedIppoolMac(VmParams vmParams, Integer vmId, String macAddress) {
         if (vmParams == null || vmParams.getNodeid() == null || vmId == null || macAddress == null || macAddress.isBlank()) {
+            return;
+        }
+        if (isVpcNetwork(vmParams)) {
+            UpdateWrapper<Subnetpool> updateWrapper = new UpdateWrapper<>();
+            updateWrapper.eq("node_id", vmParams.getNodeid());
+            updateWrapper.eq("vm_id", vmId);
+            updateWrapper.eq("status", 1);
+            updateWrapper.set("mac", macAddress.toLowerCase());
+            subnetpoolService.update(updateWrapper);
             return;
         }
         UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();

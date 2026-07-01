@@ -18,8 +18,10 @@ import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
+import com.chuqiyun.proxmoxveams.entity.Subnetpool;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.VpcIpBinding;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
@@ -65,6 +67,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final long FIREWALL_SYNC_PAGE_DELAY = 3000L;
     private static final long FIREWALL_SYNC_NODE_DELAY = 5000L;
     private static final String PENDING_STATUS = "creating";
+    private static final String NETWORK_TYPE_VPC = "vpc";
+    private static final String VPC_FORWARD_MODE_NAT_1TO1 = "nat_1to1";
+    private static final int VPC_BINDING_STATUS_ACTIVE = 1;
+    private static final int VPC_BINDING_STATUS_DELETED = 0;
     private static final Pattern SMP_ARGS_PATTERN = Pattern.compile("(^|\\s)-smp\\s+\\d+(?:,[^\\s]*)?");
     private final AtomicBoolean vmFirewallProtectionSyncRunning = new AtomicBoolean(false);
 
@@ -80,6 +86,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private IppoolService ippoolService;
     @Resource
     private IpstatusService ipstatusService;
+    @Resource
+    private SubnetpoolService subnetpoolService;
+    @Resource
+    private VpcIpBindingService vpcIpBindingService;
     @Resource(name = "vmFirewallSyncExecutor")
     private TaskExecutor vmFirewallSyncExecutor;
 
@@ -266,6 +276,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setIopsWrMax(vmParams.getIopsWrMax());
         vmhost.setDataDisk(vmParams.getDataDisk());
         vmhost.setBridge(vmParams.getBridge());
+        vmhost.setNetworkType(vmParams.getNetworkType());
+        vmhost.setVpcSubnetId(vmParams.getVpcSubnetId());
         vmhost.setOs(vmParams.getOs());
         vmhost.setOsName(vmParams.getOsName());
         vmhost.setOsType(vmParams.getOsType());
@@ -1306,6 +1318,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (node == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
         }
+        if (isVpcNetwork(vmhost)) {
+            return updateVpcVmIp(vmIpParams, vmhost, node);
+        }
 
         int networkIndex = vmIpParams.getNetworkIndex() == null ? 1 : vmIpParams.getNetworkIndex();
         if (networkIndex < 1) {
@@ -1357,7 +1372,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         restartVmAfterIpChange(vmhost, node);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "修改IP成功，已创建异步强制重启任务，请稍后查看任务状态");
     }
-
     /**
      * @Author: 星禾
      * @Description: 给虚拟机新增单网卡多IP并重生成cloud-init镜像
@@ -1380,6 +1394,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         int count = getAddIpCount(vmIpParams);
         if (count < 1) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        if (isVpcNetwork(vmhost)) {
+            return addVpcVmIp(vmIpParams, vmhost, node, count);
         }
 
         HashMap<String, String> ipConfig = new HashMap<>();
@@ -1446,6 +1463,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(vmhost.getNodeid());
         if (node == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        if (isVpcNetwork(vmhost)) {
+            return deleteVpcVmIp(vmIpParams, vmhost, node);
         }
 
         HashMap<String, String> ipConfig = new HashMap<>();
@@ -1981,6 +2001,404 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         log.info("[Sync-ManualVmIp] 虚拟机同步结果: NodeId={}, HostId={}, VmId={}, SyncCount={}, Message={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedIpList.size(), resultData.get("message"));
         return resultData;
+    }
+
+    private UnifiedResultDto<Object> addVpcVmIp(VmIpParams vmIpParams, Vmhost vmhost, Master node, int count) {
+        if (vmhost.getVpcSubnetId() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC虚拟机缺少vpcSubnetId: hostId=" + vmhost.getId());
+        }
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        Set<String> usedPrivateIpSet = getVmhostIpSet(vmhost, ipConfig);
+        List<Subnetpool> privateIpList = getAddVpcSubnetpoolList(vmhost, usedPrivateIpSet, count);
+        if (privateIpList == null || privateIpList.size() < count) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "VPC子网没有足够可用私网IP: hostId=" + vmhost.getId());
+        }
+        List<Ippool> publicIpList = getAddVpcPublicIpList(vmIpParams, vmhost, node, count);
+        if (publicIpList == null || publicIpList.size() < count) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "公网IP池没有足够可用IP: hostId=" + vmhost.getId());
+        }
+
+        int networkIndex = vmIpParams.getNetworkIndex() == null ? getNextIpConfigIndex(ipConfig) : vmIpParams.getNetworkIndex();
+        if (networkIndex < 1) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        List<Subnetpool> boundPrivateIpList = new ArrayList<>();
+        List<Ippool> boundPublicIpList = new ArrayList<>();
+        List<String> addedPrivateIps = new ArrayList<>();
+        try {
+            for (int i = 0; i < count; i++) {
+                Subnetpool privateIp = privateIpList.get(i);
+                Ippool publicIp = publicIpList.get(i);
+                while (ipConfig.containsKey(String.valueOf(networkIndex))) {
+                    networkIndex++;
+                }
+                if (!bindVpcPrivateIp(privateIp, vmhost)) {
+                    throw new IllegalStateException("绑定VPC私网IP失败: ip=" + privateIp.getIp());
+                }
+                boundPrivateIpList.add(privateIp);
+                if (!bindNewIp(publicIp, vmhost)) {
+                    throw new IllegalStateException("绑定VPC公网IP失败: ip=" + publicIp.getIp());
+                }
+                boundPublicIpList.add(publicIp);
+                if (!addVmhostVpcIpForward(vmhost.getId(), publicIp.getIp(), privateIp.getIp())) {
+                    throw new IllegalStateException("创建VPC公网IP转发失败: publicIp=" + publicIp.getIp() + ", privateIp=" + privateIp.getIp());
+                }
+                ipConfig.put(String.valueOf(networkIndex), buildVpcIpConfigValue(privateIp));
+                addedPrivateIps.add(privateIp.getIp());
+                networkIndex++;
+            }
+        } catch (RuntimeException e) {
+            rollbackVpcAddedIps(vmhost, boundPrivateIpList, boundPublicIpList);
+            throw e;
+        }
+
+        List<String> newIpList = buildVmhostIpList(vmhost, ipConfig);
+        updateVmhostIpFields(vmhost, ipConfig, newIpList, "新增VPC虚拟机IP失败");
+        log.info("[VmIpChange] 新增VPC IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, AddedPrivateIps={}, AddedPublicIps={}, IpList={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedPrivateIps,
+                publicIpList.stream().map(Ippool::getIp).collect(Collectors.toList()), newIpList);
+
+        syncSingleNicCloudInitNetwork(vmhost, node, getVpcNameserversByIpConfig(ipConfig, privateIpList));
+        restartVmAfterIpChange(vmhost, node);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "新增VPC IP成功，已创建异步强制重启任务，请稍后查看任务状态");
+    }
+
+    private UnifiedResultDto<Object> updateVpcVmIp(VmIpParams vmIpParams, Vmhost vmhost, Master node) {
+        List<String> privateIpList = vmhost.getIpList() == null ? Collections.emptyList() : vmhost.getIpList();
+        List<Ippool> publicIpList = getVpcPublicIpList(vmhost);
+        if (privateIpList.isEmpty() || publicIpList.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC虚拟机缺少可更新的IP绑定: hostId=" + vmhost.getId());
+        }
+
+        int targetIndex = resolveVpcTargetIpIndex(vmIpParams, publicIpList, privateIpList.size());
+        if (targetIndex < 0 || targetIndex >= privateIpList.size() || targetIndex >= publicIpList.size()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+
+        String oldPublicIp = publicIpList.get(targetIndex).getIp();
+        String privateIp = privateIpList.get(targetIndex);
+        String newPublicIp = StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp());
+        if (StringUtils.isBlank(newPublicIp)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC修改IP需要传newIp或ip: hostId=" + vmhost.getId());
+        }
+        String trimmedNewPublicIp = newPublicIp.trim();
+        if (StringUtils.equals(oldPublicIp, trimmedNewPublicIp)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC修改后的公网IP不能与原IP相同: hostId=" + vmhost.getId());
+        }
+
+        Ippool newPublicPool = getVpcPublicPoolForUpdate(vmIpParams, vmhost, node, trimmedNewPublicIp, oldPublicIp, publicIpList);
+        if (newPublicPool == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "VPC公网IP池没有可用IP: hostId=" + vmhost.getId());
+        }
+        if (isNodeHostIp(node, newPublicPool.getIp())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC公网IP不能使用宿主机管理IP: hostId=" + vmhost.getId());
+        }
+
+        if (!delVmhostVpcIpForward(vmhost.getId(), oldPublicIp, privateIp)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "VPC回收旧公网IP转发失败: hostId=" + vmhost.getId());
+        }
+        if (!addVmhostVpcIpForward(vmhost.getId(), newPublicPool.getIp(), privateIp)) {
+            addVmhostVpcIpForward(vmhost.getId(), oldPublicIp, privateIp);
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "VPC修改公网IP转发失败: hostId=" + vmhost.getId());
+        }
+
+        Ippool oldPublicPool = publicIpList.get(targetIndex);
+        if (oldPublicPool != null && !Objects.equals(oldPublicPool.getId(), newPublicPool.getId())) {
+            releaseIppool(oldPublicPool);
+        }
+        log.info("[VmIpChange] VPC公网IP修改成功: NodeId={}, HostId={}, VmId={}, OldPublicIp={}, NewPublicIp={}, PrivateIp={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), oldPublicIp, newPublicPool.getIp(), privateIp);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "VPC公网IP修改成功，私网IP保持不变，转发绑定已更新");
+    }
+    private UnifiedResultDto<Object> deleteVpcVmIp(VmIpParams vmIpParams, Vmhost vmhost, Master node) {
+        HashMap<String, String> ipConfig = new HashMap<>();
+        if (vmhost.getIpConfig() != null) {
+            ipConfig.putAll(vmhost.getIpConfig());
+        }
+        List<String> privateIpList = CloudInitNetworkUtil.getIpList(ipConfig);
+        List<Ippool> publicIpList = getVpcPublicIpList(vmhost);
+        Set<String> deletePrivateIpSet = getVpcDeletePrivateIpSet(vmIpParams, ipConfig, privateIpList, publicIpList);
+        if (deletePrivateIpSet.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        HashMap<String, String> newIpConfig = removeIpConfigItems(ipConfig, deletePrivateIpSet);
+        if (newIpConfig.size() == ipConfig.size() || newIpConfig.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+
+        Map<String, Ippool> privateToPublicIpMap = buildVpcPrivateToPublicIpMap(privateIpList, publicIpList);
+        for (String privateIp : deletePrivateIpSet) {
+            Ippool publicIp = privateToPublicIpMap.get(privateIp);
+            if (publicIp != null && !delVmhostVpcIpForward(vmhost.getId(), publicIp.getIp(), privateIp)) {
+                throw new IllegalStateException("删除VPC公网IP转发失败: publicIp=" + publicIp.getIp() + ", privateIp=" + privateIp);
+            }
+            releaseVpcPrivateIp(privateIp, vmhost);
+            if (publicIp != null) {
+                releaseIppool(publicIp);
+            }
+        }
+
+        List<String> newIpList = buildVmhostIpListAfterDelete(vmhost, newIpConfig, deletePrivateIpSet);
+        updateVmhostIpFields(vmhost, newIpConfig, newIpList, "删除VPC虚拟机IP失败");
+        log.info("[VmIpChange] 删除VPC IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, RemovedPrivateIps={}, IpList={}",
+                vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), deletePrivateIpSet, newIpList);
+
+        syncSingleNicCloudInitNetwork(vmhost, node, getVpcNameserversByIpConfig(newIpConfig, null));
+        restartVmAfterIpChange(vmhost, node);
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "删除VPC IP成功，已创建异步强制重启任务，请稍后查看任务状态");
+    }
+
+    private List<Subnetpool> getAddVpcSubnetpoolList(Vmhost vmhost, Set<String> usedPrivateIpSet, int count) {
+        List<Subnetpool> subnetpoolList = new ArrayList<>();
+        Set<String> selectedIpSet = new LinkedHashSet<>();
+        for (int i = 0; i < count; i++) {
+            QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("node_id", vmhost.getNodeid());
+            queryWrapper.eq("subnat_id", vmhost.getVpcSubnetId());
+            queryWrapper.eq("status", 0);
+            if (usedPrivateIpSet != null && !usedPrivateIpSet.isEmpty()) {
+                queryWrapper.notIn("ip", usedPrivateIpSet);
+            }
+            if (!selectedIpSet.isEmpty()) {
+                queryWrapper.notIn("ip", selectedIpSet);
+            }
+            queryWrapper.orderByAsc("id");
+            queryWrapper.last("limit 1");
+            Subnetpool subnetpool = subnetpoolService.getOne(queryWrapper);
+            if (subnetpool == null) {
+                return null;
+            }
+            subnetpoolList.add(subnetpool);
+            selectedIpSet.add(subnetpool.getIp());
+        }
+        return subnetpoolList;
+    }
+
+    private List<Ippool> getAddVpcPublicIpList(VmIpParams vmIpParams, Vmhost vmhost, Master node, int count) {
+        List<String> requestIpList = getRequestIpList(vmIpParams);
+        Set<String> currentPublicIpSet = getVpcPublicIpList(vmhost).stream().map(Ippool::getIp).collect(Collectors.toCollection(LinkedHashSet::new));
+        List<Ippool> ippoolList = new ArrayList<>();
+        Set<String> selectedIpSet = new LinkedHashSet<>(currentPublicIpSet);
+        if (!requestIpList.isEmpty()) {
+            for (String ip : requestIpList) {
+                if (selectedIpSet.contains(ip)) {
+                    return null;
+                }
+                Ippool ippool = getIppoolByIpAndNodeIdAndPoolId(ip, vmhost.getNodeid(), vmIpParams.getPoolId());
+                if (ippool == null || !Objects.equals(ippool.getStatus(), 0) || isNodeHostIp(node, ippool.getIp())) {
+                    return null;
+                }
+                ippoolList.add(ippool);
+                selectedIpSet.add(ippool.getIp());
+            }
+            return ippoolList;
+        }
+        while (ippoolList.size() < count) {
+            Ippool ippool = getOneFreePublicIpForVpc(vmhost, node, vmIpParams.getPoolId(), selectedIpSet);
+            if (ippool == null) {
+                return null;
+            }
+            ippoolList.add(ippool);
+            selectedIpSet.add(ippool.getIp());
+        }
+        return ippoolList;
+    }
+
+    private int resolveVpcTargetIpIndex(VmIpParams vmIpParams, List<Ippool> publicIpList, int privateIpSize) {
+        if (vmIpParams == null || publicIpList == null || publicIpList.isEmpty()) {
+            return -1;
+        }
+        String requestIp = StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp());
+        if (StringUtils.isNotBlank(requestIp)) {
+            for (int i = 0; i < publicIpList.size(); i++) {
+                if (StringUtils.equals(publicIpList.get(i).getIp(), requestIp.trim())) {
+                    return i;
+                }
+            }
+        }
+        Integer networkIndex = vmIpParams.getNetworkIndex();
+        if (networkIndex != null && networkIndex > 0) {
+            int idx = networkIndex - 1;
+            if (idx >= 0 && idx < publicIpList.size()) {
+                return idx;
+            }
+        }
+        return publicIpList.size() == 1 && privateIpSize > 0 ? 0 : -1;
+    }
+
+    private Ippool getVpcPublicPoolForUpdate(VmIpParams vmIpParams, Vmhost vmhost, Master node,
+                                             String newPublicIp, String oldPublicIp, List<Ippool> currentPublicIpList) {
+        if (StringUtils.isBlank(newPublicIp) || vmhost == null) {
+            return null;
+        }
+        String trimmedNewPublicIp = newPublicIp.trim();
+        Set<String> excludeIpSet = new LinkedHashSet<>();
+        if (currentPublicIpList != null) {
+            excludeIpSet.addAll(currentPublicIpList.stream().map(Ippool::getIp).collect(Collectors.toList()));
+        }
+        excludeIpSet.add(oldPublicIp);
+        Ippool explicitIppool = getIppoolByIpAndNodeIdAndPoolId(trimmedNewPublicIp, vmhost.getNodeid(), vmIpParams.getPoolId());
+        if (explicitIppool != null && Objects.equals(explicitIppool.getStatus(), 0) && !isNodeHostIp(node, explicitIppool.getIp())) {
+            return explicitIppool;
+        }
+        if (StringUtils.isNotBlank(vmIpParams.getNewIp())) {
+            return null;
+        }
+        return getOneFreePublicIpForVpc(vmhost, node, vmIpParams.getPoolId(), excludeIpSet);
+    }
+    private Ippool getOneFreePublicIpForVpc(Vmhost vmhost, Master node, Integer poolId, Set<String> excludeIpSet) {
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", vmhost.getNodeid());
+        queryWrapper.eq("status", 0);
+        if (node != null && node.getHost() != null && StringUtils.isNotBlank(node.getHost())) {
+            queryWrapper.ne("ip", node.getHost().trim());
+        }
+        if (poolId != null) {
+            queryWrapper.eq("pool_id", poolId);
+        } else if (node != null && node.getNatippool() != null) {
+            queryWrapper.ne("pool_id", node.getNatippool());
+        }
+        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+            queryWrapper.notIn("ip", excludeIpSet);
+        }
+        queryWrapper.orderByAsc("id");
+        queryWrapper.last("limit 1");
+        return ippoolService.getOne(queryWrapper);
+    }
+
+    private boolean isNodeHostIp(Master node, String ip) {
+        return node != null && StringUtils.isNotBlank(node.getHost()) && StringUtils.equals(node.getHost().trim(), StringUtils.trim(ip));
+    }
+
+    private boolean bindVpcPrivateIp(Subnetpool subnetpool, Vmhost vmhost) {
+        UpdateWrapper<Subnetpool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", subnetpool.getId());
+        updateWrapper.eq("status", 0);
+        updateWrapper.set("status", 1);
+        updateWrapper.set("vm_id", vmhost.getVmid());
+        return subnetpoolService.update(updateWrapper);
+    }
+
+    private void releaseVpcPrivateIp(String privateIp, Vmhost vmhost) {
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", vmhost.getNodeid());
+        queryWrapper.eq("subnat_id", vmhost.getVpcSubnetId());
+        queryWrapper.eq("ip", privateIp);
+        queryWrapper.last("limit 1");
+        Subnetpool subnetpool = subnetpoolService.getOne(queryWrapper);
+        if (subnetpool == null) {
+            return;
+        }
+        UpdateWrapper<Subnetpool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", subnetpool.getId());
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        updateWrapper.set("mac", null);
+        if (!subnetpoolService.update(updateWrapper)) {
+            throw new IllegalStateException("释放VPC私网IP失败: ip=" + privateIp);
+        }
+    }
+
+    private void rollbackVpcAddedIps(Vmhost vmhost, List<Subnetpool> privateIpList, List<Ippool> publicIpList) {
+        int count = Math.min(privateIpList.size(), publicIpList.size());
+        for (int i = 0; i < count; i++) {
+            delVmhostVpcIpForward(vmhost.getId(), publicIpList.get(i).getIp(), privateIpList.get(i).getIp());
+        }
+        for (Subnetpool subnetpool : privateIpList) {
+            releaseVpcPrivateIp(subnetpool.getIp(), vmhost);
+        }
+        for (Ippool ippool : publicIpList) {
+            releaseIppool(ippool);
+        }
+    }
+
+    private String buildVpcIpConfigValue(Subnetpool subnetpool) {
+        return "ip=" + subnetpool.getIp() + "/" + subnetpool.getMask() + ",gw=" + subnetpool.getGateway();
+    }
+
+    private Set<String> getVpcDeletePrivateIpSet(VmIpParams vmIpParams, HashMap<String, String> ipConfig,
+                                                  List<String> privateIpList, List<Ippool> publicIpList) {
+        Set<String> deletePrivateIpSet = new LinkedHashSet<>();
+        Map<String, String> publicToPrivateIpMap = buildVpcPublicToPrivateIpMap(privateIpList, publicIpList);
+        Set<String> requestIpSet = new LinkedHashSet<>(getRequestIpList(vmIpParams));
+        for (String ip : requestIpSet) {
+            if (publicToPrivateIpMap.containsKey(ip)) {
+                deletePrivateIpSet.add(publicToPrivateIpMap.get(ip));
+            } else if (privateIpList.contains(ip)) {
+                deletePrivateIpSet.add(ip);
+            }
+        }
+        if (!deletePrivateIpSet.isEmpty()) {
+            return deletePrivateIpSet;
+        }
+        Integer networkIndex = vmIpParams.getNetworkIndex();
+        if (networkIndex == null || networkIndex < 1) {
+            return deletePrivateIpSet;
+        }
+        String privateIp = getIpFromCloudInitConfig(ipConfig.get(String.valueOf(networkIndex)));
+        if (StringUtils.isNotBlank(privateIp)) {
+            deletePrivateIpSet.add(privateIp);
+        }
+        return deletePrivateIpSet;
+    }
+
+    private Map<String, String> buildVpcPublicToPrivateIpMap(List<String> privateIpList, List<Ippool> publicIpList) {
+        Map<String, String> result = new LinkedHashMap<>();
+        int count = Math.min(privateIpList.size(), publicIpList.size());
+        for (int i = 0; i < count; i++) {
+            result.put(publicIpList.get(i).getIp(), privateIpList.get(i));
+        }
+        return result;
+    }
+
+    private Map<String, Ippool> buildVpcPrivateToPublicIpMap(List<String> privateIpList, List<Ippool> publicIpList) {
+        Map<String, Ippool> result = new LinkedHashMap<>();
+        int count = Math.min(privateIpList.size(), publicIpList.size());
+        for (int i = 0; i < count; i++) {
+            result.put(privateIpList.get(i), publicIpList.get(i));
+        }
+        return result;
+    }
+
+    private List<String> getVpcNameserversByIpConfig(HashMap<String, String> ipConfig, List<Subnetpool> fallbackSubnetpoolList) {
+        Set<String> nameserverSet = new LinkedHashSet<>();
+        if (fallbackSubnetpoolList != null) {
+            for (Subnetpool subnetpool : fallbackSubnetpoolList) {
+                if (StringUtils.isNotBlank(subnetpool.getDns())) {
+                    nameserverSet.add(subnetpool.getDns().trim());
+                }
+            }
+        }
+        for (String ip : CloudInitNetworkUtil.getIpList(ipConfig)) {
+            Subnetpool subnetpool = getSubnetpoolByIp(ip);
+            if (subnetpool != null && StringUtils.isNotBlank(subnetpool.getDns())) {
+                nameserverSet.add(subnetpool.getDns().trim());
+            }
+        }
+        return CloudInitNetworkUtil.distinctNameservers(new ArrayList<>(nameserverSet));
+    }
+
+    private Subnetpool getSubnetpoolByIp(String ip) {
+        if (StringUtils.isBlank(ip)) {
+            return null;
+        }
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("ip", ip.trim());
+        queryWrapper.last("limit 1");
+        return subnetpoolService.getOne(queryWrapper);
     }
 
     private Ippool getNewIppool(VmIpParams vmIpParams, Vmhost vmhost, Ippool oldIppool) {
@@ -2956,6 +3374,280 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
     }
+
+    @Override
+    public Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        String token = configService.getToken();
+        Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        if (node == null || publicIp == null || privateIp == null) {
+            return false;
+        }
+        if (hasActiveVpcIpBindingConflict(hostId, publicIp, privateIp)) {
+            log.error("[VPC-IP-Binding] 存在有效绑定冲突，拒绝创建转发: HostId={}, PublicIp={}, PrivateIp={}", hostId, publicIp, privateIp);
+            return false;
+        }
+        Boolean result = ClientApiUtil.addIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
+        if (Boolean.TRUE.equals(result)) {
+            saveOrActiveVpcIpBinding(hostId, publicIp, privateIp);
+        }
+        return result;
+    }
+
+    @Override
+    public Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        String token = configService.getToken();
+        Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        if (node == null || publicIp == null || privateIp == null) {
+            return false;
+        }
+        Boolean result = ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
+        if (Boolean.TRUE.equals(result)) {
+            deleteVpcIpBinding(hostId, publicIp, privateIp);
+        }
+        return result;
+    }
+
+    @Override
+    public Boolean clearVmhostVpcIpBinding(int hostId) {
+        UpdateWrapper<VpcIpBinding> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("host_id", hostId);
+        updateWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        updateWrapper.set("status", VPC_BINDING_STATUS_DELETED);
+        updateWrapper.set("update_time", System.currentTimeMillis());
+        return vpcIpBindingService.update(updateWrapper);
+    }
+
+    @Override
+    public Object getVmhostVpcIpForward(int hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        if (!isVpcNetwork(vmhost)) {
+            return ResponseResult.ok(Collections.emptyList());
+        }
+        List<VpcIpBinding> bindingList = getActiveVpcIpBindings(vmhost);
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        if (!bindingList.isEmpty()) {
+            for (VpcIpBinding binding : bindingList) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("privateIp", binding.getPrivateIp());
+                item.put("publicIp", binding.getPublicIp());
+                item.put("ippoolId", binding.getIppoolId());
+                item.put("subnetpoolId", binding.getSubnetpoolId());
+                item.put("poolId", getIppoolPoolId(binding));
+                item.put("forwardMode", binding.getForwardMode());
+                item.put("hostId", hostId);
+                item.put("vmid", vmhost.getVmid());
+                resultList.add(item);
+            }
+            return ResponseResult.ok(resultList);
+        }
+        List<Ippool> publicIpList = getVpcPublicIpListFallback(vmhost);
+        List<String> privateIpList = vmhost.getIpList() == null ? Collections.emptyList() : vmhost.getIpList();
+        int count = Math.max(publicIpList.size(), privateIpList.size());
+        for (int i = 0; i < count; i++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("privateIp", i < privateIpList.size() ? privateIpList.get(i) : null);
+            if (i < publicIpList.size()) {
+                Ippool ippool = publicIpList.get(i);
+                item.put("publicIp", ippool.getIp());
+                item.put("ippoolId", ippool.getId());
+                item.put("poolId", ippool.getPoolId());
+            } else {
+                item.put("publicIp", null);
+                item.put("ippoolId", null);
+                item.put("poolId", null);
+            }
+            item.put("hostId", hostId);
+            item.put("vmid", vmhost.getVmid());
+            resultList.add(item);
+        }
+        return ResponseResult.ok(resultList);
+    }
+
+    @Override
+    public Boolean syncVmhostVpcIpForward(int hostId) {
+        Vmhost vmhost = this.getById(hostId);
+        if (!isVpcNetwork(vmhost) || vmhost.getIpList() == null || vmhost.getIpList().isEmpty()) {
+            return false;
+        }
+        List<VpcIpBinding> bindingList = getActiveVpcIpBindings(vmhost);
+        if (!bindingList.isEmpty()) {
+            for (VpcIpBinding binding : bindingList) {
+                if (!addVmhostVpcIpForward(hostId, binding.getPublicIp(), binding.getPrivateIp())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        List<Ippool> publicIpList = getVpcPublicIpListFallback(vmhost);
+        if (publicIpList.isEmpty() || publicIpList.size() < vmhost.getIpList().size()) {
+            return false;
+        }
+        for (int i = 0; i < vmhost.getIpList().size(); i++) {
+            if (!addVmhostVpcIpForward(hostId, publicIpList.get(i).getIp(), vmhost.getIpList().get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isVpcNetwork(Vmhost vmhost) {
+        return vmhost != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType());
+    }
+
+    private List<Ippool> getVpcPublicIpList(Vmhost vmhost) {
+        List<VpcIpBinding> bindingList = getActiveVpcIpBindings(vmhost);
+        if (!bindingList.isEmpty()) {
+            List<Ippool> ippoolList = new ArrayList<>();
+            for (VpcIpBinding binding : bindingList) {
+                Ippool ippool = getIppoolByBinding(binding);
+                if (ippool != null) {
+                    ippoolList.add(ippool);
+                }
+            }
+            return ippoolList;
+        }
+        return getVpcPublicIpListFallback(vmhost);
+    }
+
+    private List<Ippool> getVpcPublicIpListFallback(Vmhost vmhost) {
+        if (vmhost == null || vmhost.getNodeid() == null || vmhost.getVmid() == null) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", vmhost.getNodeid());
+        queryWrapper.eq("vm_id", vmhost.getVmid());
+        queryWrapper.eq("status", 1);
+        if (vmhost.getIpList() != null && !vmhost.getIpList().isEmpty()) {
+            queryWrapper.notIn("ip", vmhost.getIpList());
+        }
+        queryWrapper.orderByAsc("id");
+        List<Ippool> ippoolList = ippoolService.list(queryWrapper);
+        return ippoolList == null ? Collections.emptyList() : ippoolList;
+    }
+
+    private List<VpcIpBinding> getActiveVpcIpBindings(Vmhost vmhost) {
+        if (vmhost == null || vmhost.getId() == null) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<VpcIpBinding> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("host_id", vmhost.getId());
+        queryWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        queryWrapper.orderByAsc("id");
+        List<VpcIpBinding> bindingList = vpcIpBindingService.list(queryWrapper);
+        return bindingList == null ? Collections.emptyList() : bindingList;
+    }
+
+    private VpcIpBinding getActiveVpcIpBinding(int hostId, String publicIp, String privateIp) {
+        QueryWrapper<VpcIpBinding> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("host_id", hostId);
+        queryWrapper.eq("public_ip", publicIp);
+        queryWrapper.eq("private_ip", privateIp);
+        queryWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        queryWrapper.last("limit 1");
+        return vpcIpBindingService.getOne(queryWrapper);
+    }
+
+    private boolean hasActiveVpcIpBindingConflict(int hostId, String publicIp, String privateIp) {
+        if (StringUtils.isBlank(publicIp) || StringUtils.isBlank(privateIp)) {
+            return true;
+        }
+        QueryWrapper<VpcIpBinding> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        queryWrapper.and(wrapper -> wrapper.eq("public_ip", publicIp.trim()).or().eq("private_ip", privateIp.trim()));
+        List<VpcIpBinding> bindingList = vpcIpBindingService.list(queryWrapper);
+        if (bindingList == null || bindingList.isEmpty()) {
+            return false;
+        }
+        for (VpcIpBinding binding : bindingList) {
+            if (Objects.equals(binding.getHostId(), hostId)
+                    && StringUtils.equals(binding.getPublicIp(), publicIp.trim())
+                    && StringUtils.equals(binding.getPrivateIp(), privateIp.trim())) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private Ippool getIppoolByBinding(VpcIpBinding binding) {
+        if (binding == null) {
+            return null;
+        }
+        if (binding.getIppoolId() != null) {
+            Ippool ippool = ippoolService.getById(binding.getIppoolId());
+            if (ippool != null) {
+                return ippool;
+            }
+        }
+        if (StringUtils.isBlank(binding.getPublicIp()) || binding.getNodeId() == null) {
+            return null;
+        }
+        return getIppoolByIpAndNodeId(binding.getPublicIp(), binding.getNodeId());
+    }
+
+    private Integer getIppoolPoolId(VpcIpBinding binding) {
+        Ippool ippool = getIppoolByBinding(binding);
+        return ippool == null ? null : ippool.getPoolId();
+    }
+
+    private void saveOrActiveVpcIpBinding(int hostId, String publicIp, String privateIp) {
+        if (StringUtils.isBlank(publicIp) || StringUtils.isBlank(privateIp)) {
+            return;
+        }
+        Vmhost vmhost = this.getById(hostId);
+        if (!isVpcNetwork(vmhost)) {
+            return;
+        }
+        VpcIpBinding oldBinding = getActiveVpcIpBinding(hostId, publicIp.trim(), privateIp.trim());
+        long now = System.currentTimeMillis();
+        if (oldBinding != null) {
+            oldBinding.setUpdateTime(now);
+            oldBinding.setForwardMode(VPC_FORWARD_MODE_NAT_1TO1);
+            vpcIpBindingService.updateById(oldBinding);
+            return;
+        }
+
+        Ippool ippool = getIppoolByIpAndNodeId(publicIp.trim(), vmhost.getNodeid());
+        Subnetpool subnetpool = getVpcSubnetpoolByIp(vmhost, privateIp.trim());
+        VpcIpBinding binding = new VpcIpBinding();
+        binding.setHostId(vmhost.getId());
+        binding.setVmId(vmhost.getVmid());
+        binding.setNodeId(vmhost.getNodeid());
+        binding.setVpcSubnetId(vmhost.getVpcSubnetId());
+        binding.setIppoolId(ippool == null ? null : ippool.getId());
+        binding.setSubnetpoolId(subnetpool == null ? null : subnetpool.getId());
+        binding.setPublicIp(publicIp.trim());
+        binding.setPrivateIp(privateIp.trim());
+        binding.setForwardMode(VPC_FORWARD_MODE_NAT_1TO1);
+        binding.setStatus(VPC_BINDING_STATUS_ACTIVE);
+        binding.setCreateTime(now);
+        binding.setUpdateTime(now);
+        vpcIpBindingService.save(binding);
+    }
+
+    private void deleteVpcIpBinding(int hostId, String publicIp, String privateIp) {
+        UpdateWrapper<VpcIpBinding> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("host_id", hostId);
+        updateWrapper.eq("public_ip", publicIp.trim());
+        updateWrapper.eq("private_ip", privateIp.trim());
+        updateWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        updateWrapper.set("status", VPC_BINDING_STATUS_DELETED);
+        updateWrapper.set("update_time", System.currentTimeMillis());
+        vpcIpBindingService.update(updateWrapper);
+    }
+
+    private Subnetpool getVpcSubnetpoolByIp(Vmhost vmhost, String privateIp) {
+        if (vmhost == null || vmhost.getNodeid() == null || vmhost.getVpcSubnetId() == null || StringUtils.isBlank(privateIp)) {
+            return null;
+        }
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", vmhost.getNodeid());
+        queryWrapper.eq("subnat_id", vmhost.getVpcSubnetId());
+        queryWrapper.eq("ip", privateIp.trim());
+        queryWrapper.last("limit 1");
+        return subnetpoolService.getOne(queryWrapper);
+    }
+
     /**
      * @Author: 星禾
      * @Description: 获取指定虚拟机ID的节点ID

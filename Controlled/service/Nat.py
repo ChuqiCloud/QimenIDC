@@ -19,6 +19,14 @@ class ForwardRule(Base):
     protocol = Column(Enum('tcp', 'udp'), nullable=False)
     vm = Column(String, nullable=False)
 
+class IpForwardRule(Base):
+    __tablename__ = 'ip_forward_rules'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_ip = Column(String, nullable=False)
+    destination_ip = Column(String, nullable=False)
+    vm = Column(String, nullable=False)
+
 class ForwardRuleManager:
     def __init__(self, database_file='forward_rules.db'):
         # 获取脚本所在目录，并连接数据库文件路径
@@ -165,6 +173,61 @@ class ForwardRuleManager:
 # print("TCP Rules Page 2:", tcp_rules_page2)
 
 
+class IpForwardRuleManager:
+    def __init__(self, database_file='forward_rules.db'):
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        script_directory = os.path.dirname(script_directory)
+        database_path = os.path.join(script_directory, database_file)
+        database_url = f'sqlite:///{database_path}'
+        self.initialize_database(database_url)
+        self.engine = create_engine(database_url)
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine)
+
+    def initialize_database(self, database_url):
+        if not os.path.exists(database_url.replace('sqlite:///', '')):
+            engine = create_engine(database_url)
+            Base.metadata.create_all(engine)
+
+    def add_ip_forward_rule(self, source_ip, destination_ip, vm):
+        with self.Session() as session:
+            rule = session.query(IpForwardRule).filter(
+                IpForwardRule.source_ip == source_ip
+            ).first()
+            if rule:
+                if rule.destination_ip != destination_ip or rule.vm != vm:
+                    rule.destination_ip = destination_ip
+                    rule.vm = vm
+                    session.commit()
+                return True
+            rule = IpForwardRule(
+                source_ip=source_ip,
+                destination_ip=destination_ip,
+                vm=vm
+            )
+            session.add(rule)
+            session.commit()
+            return True
+
+    def delete_ip_forward_rule(self, source_ip, destination_ip=None):
+        with self.Session() as session:
+            query = session.query(IpForwardRule).filter(IpForwardRule.source_ip == source_ip)
+            if destination_ip:
+                query = query.filter(IpForwardRule.destination_ip == destination_ip)
+            deleted_count = query.delete()
+            session.commit()
+            return deleted_count > 0
+
+    def get_ip_forward_rules(self):
+        with self.Session() as session:
+            rules = session.query(IpForwardRule).all()
+            return [{
+                'source_ip': rule.source_ip,
+                'destination_ip': rule.destination_ip,
+                'vm': rule.vm
+            } for rule in rules]
+
+
 class IptablesForwardRuleManager:
     
     def __init__(self):
@@ -241,6 +304,66 @@ class IptablesForwardRuleManager:
         except subprocess.CalledProcessError as e:
             print(f"Error executing iptables: {e}")
             return False
+
+    def get_ip_forward_rules(self, source_ip, destination_ip, is_delete=False):
+        action = "-D" if is_delete else "-A"
+        return [
+            f"{action} PREROUTING -d {source_ip}/32 -j DNAT --to-destination {destination_ip}",
+            f"{action} POSTROUTING -s {destination_ip}/32 -j SNAT --to-source {source_ip}"
+        ]
+
+    def add_ip_forward_rule(self, source_ip, destination_ip):
+        try:
+            subprocess.check_output("echo 1 > /proc/sys/net/ipv4/ip_forward", shell=True, universal_newlines=True)
+            rules = [
+                (
+                    f"PREROUTING -d {source_ip}/32 -j DNAT --to-destination {destination_ip}",
+                    f"iptables -t nat -I PREROUTING 1 -d {source_ip}/32 -j DNAT --to-destination {destination_ip}",
+                    f"iptables -t nat -D PREROUTING -d {source_ip}/32 -j DNAT --to-destination {destination_ip}"
+                ),
+                (
+                    f"POSTROUTING -s {destination_ip}/32 -j SNAT --to-source {source_ip}",
+                    f"iptables -t nat -I POSTROUTING 1 -s {destination_ip}/32 -j SNAT --to-source {source_ip}",
+                    f"iptables -t nat -D POSTROUTING -s {destination_ip}/32 -j SNAT --to-source {source_ip}"
+                )
+            ]
+            for check_rule, insert_command, delete_command in rules:
+                while self.check_iptables_rule(f"-A {check_rule}"):
+                    subprocess.check_output(delete_command, shell=True, universal_newlines=True)
+                subprocess.check_output(insert_command, shell=True, universal_newlines=True)
+            self.clear_ip_forward_conntrack(source_ip, destination_ip)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing iptables: {e}")
+            return False
+
+    def delete_ip_forward_rule(self, source_ip, destination_ip):
+        for rule in self.get_ip_forward_rules(source_ip, destination_ip, True):
+            try:
+                subprocess.check_output(f"iptables -t nat {rule}", shell=True, universal_newlines=True)
+            except subprocess.CalledProcessError:
+                pass
+        try:
+            subprocess.check_output(f"conntrack -D -d {source_ip}", shell=True, universal_newlines=True)
+        except subprocess.CalledProcessError:
+            pass
+        try:
+            subprocess.check_output(f"conntrack -D -s {destination_ip}", shell=True, universal_newlines=True)
+        except subprocess.CalledProcessError:
+            pass
+        return True
+
+    def clear_ip_forward_conntrack(self, source_ip, destination_ip):
+        for command in [
+            f"conntrack -D -d {source_ip}",
+            f"conntrack -D -s {source_ip}",
+            f"conntrack -D -d {destination_ip}",
+            f"conntrack -D -s {destination_ip}"
+        ]:
+            try:
+                subprocess.check_output(command, shell=True, universal_newlines=True)
+            except subprocess.CalledProcessError:
+                pass
         
 
 class NatManager:
@@ -329,10 +452,41 @@ class NatManager:
         return self.response(0,'success')
 
 
+class IpForwardManager:
+    def __init__(self, source_ip, destination_ip, vm):
+        self.source_ip = source_ip
+        self.destination_ip = destination_ip
+        self.vm = vm
+        self.ip_forward_rule_manager = IpForwardRuleManager()
+        self.iptables_forward_rule_manager = IptablesForwardRuleManager()
+
+    def response(self,code,message,data=None):
+        return {
+            'code': code,
+            'message': message,
+            'data': data
+        }
+
+    def add_ip_forward_rule(self) -> dict:
+        if self.ip_forward_rule_manager.add_ip_forward_rule(self.source_ip,self.destination_ip,self.vm) == False:
+            return self.response(1,'source_ip already exists')
+        if self.iptables_forward_rule_manager.add_ip_forward_rule(self.source_ip,self.destination_ip) == False:
+            self.ip_forward_rule_manager.delete_ip_forward_rule(self.source_ip,self.destination_ip)
+            return self.response(1,'Failed to add ip forward rule to iptables')
+        return self.response(0,'success')
+
+    def delete_ip_forward_rule(self):
+        self.ip_forward_rule_manager.delete_ip_forward_rule(self.source_ip,self.destination_ip)
+        if self.iptables_forward_rule_manager.delete_ip_forward_rule(self.source_ip,self.destination_ip) == False:
+            return self.response(1,'Failed to delete ip forward rule from iptables')
+        return self.response(0,'success')
+
+
 class Manager:
 
     def __init__(self):
         self.forward_rule_manager = ForwardRuleManager()
+        self.ip_forward_rule_manager = IpForwardRuleManager()
         self.iptables_forward_rule_manager = IptablesForwardRuleManager()
 
     '''
@@ -367,22 +521,19 @@ class Manager:
     '''
     def active_forward_rules(self, page_size=50):
         try:
-            data = self.forward_rule_manager.get_forward_rules_by_protocol(
+            rules = self.forward_rule_manager.get_forward_rules_by_protocol(
                 'all', page_size=page_size, page_number=1
             )
-            rules = data['data']
         except:
-            return False
+            rules = []
 
-        if len(rules) == 0:
-            return False
-        first_rule = rules[0]
-        destination_ip = first_rule['destination_ip']
-        ip_segments = destination_ip.split('.')
-        cidr_prefix = '.'.join(ip_segments[:3])
-        cidr = f"{cidr_prefix}.0/24"
-
-        self.active_nat_back(cidr)
+        if len(rules) > 0:
+            first_rule = rules[0]
+            destination_ip = first_rule['destination_ip']
+            ip_segments = destination_ip.split('.')
+            cidr_prefix = '.'.join(ip_segments[:3])
+            cidr = f"{cidr_prefix}.0/24"
+            self.active_nat_back(cidr)
 
         # 5. 激活转发规则
         total_page = 0
@@ -392,10 +543,9 @@ class Manager:
             return False
 
         for page_number in range(1, total_page + 1):
-            data = self.forward_rule_manager.get_forward_rules_by_protocol(
+            rules = self.forward_rule_manager.get_forward_rules_by_protocol(
                 'all', page_size, page_number
             )
-            rules = data['data']
 
             for rule in rules:
                 self.iptables_forward_rule_manager.add_iptables_rule(
@@ -405,6 +555,12 @@ class Manager:
                     rule['destination_port'],
                     rule['protocol']
                 )
+
+        for rule in self.ip_forward_rule_manager.get_ip_forward_rules():
+            self.iptables_forward_rule_manager.add_ip_forward_rule(
+                rule['source_ip'],
+                rule['destination_ip']
+            )
 
         return True
 

@@ -153,6 +153,14 @@ public class VmParams {
      */
     private String bridge;
     /**
+     * 网络类型: classic/vpc
+     */
+    private String networkType;
+    /**
+     * VPC子网ID
+     */
+    private Integer vpcSubnetId;
+    /**
      * ipconfig
      */
     private HashMap<String,String> ipConfig;
@@ -196,6 +204,8 @@ public class VmParams {
     private Long expirationTime;
     // 临时ip list
     private List<String> ipList;
+    private Integer publicIpPoolId;
+    private List<String> publicIpList;
     // 是否开启Nat 0关闭 1开启
     private Integer ifnat;
     // nat数量

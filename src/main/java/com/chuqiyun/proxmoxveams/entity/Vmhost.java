@@ -175,6 +175,14 @@ public class Vmhost extends Model<Vmhost> {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<Object, Object> dataDisk;
     private String  bridge;
+    /**
+     * 网络类型: classic/vpc
+     */
+    private String networkType;
+    /**
+     * VPC子网ID
+     */
+    private Integer vpcSubnetId;
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, String>  ipConfig;
     /**

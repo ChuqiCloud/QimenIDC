@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -387,6 +388,46 @@ public class ClientApiUtil {
         paramMap.put("destination_port", destination_port);
         paramMap.put("protocol", protocol);
         JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    public static Boolean addIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
+        String url = "http://" + ip + ":" + controllerPort + "/nat/addIpForward";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vm", hostId);
+        paramMap.put("source_ip", publicIp);
+        paramMap.put("destination_ip", privateIp);
+        JSONObject result = null;
+        try {
+            result = postControllerApi(url, paramMap, token);
+        } catch (RestClientException e) {
+            System.out.println("[VPC-IP-FORWARD] add request failed url=" + url + ", publicIp=" + publicIp
+                    + ", privateIp=" + privateIp + ", error=" + e.getMessage());
+            return false;
+        }
+        if (result == null || result.getInteger("code") != 200) {
+            System.out.println("[VPC-IP-FORWARD] add failed url=" + url + ", publicIp=" + publicIp + ", privateIp=" + privateIp + ", result=" + result);
+        }
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    public static Boolean deleteIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
+        String url = "http://" + ip + ":" + controllerPort + "/nat/deleteIpForward";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vm", hostId);
+        paramMap.put("source_ip", publicIp);
+        paramMap.put("destination_ip", privateIp);
+        JSONObject result = null;
+        try {
+            result = postControllerApi(url, paramMap, token);
+        } catch (RestClientException e) {
+            System.out.println("[VPC-IP-FORWARD] delete request failed url=" + url + ", publicIp=" + publicIp
+                    + ", privateIp=" + privateIp + ", error=" + e.getMessage());
+            return false;
+        }
+        if (result == null || result.getInteger("code") != 200) {
+            System.out.println("[VPC-IP-FORWARD] delete failed url=" + url + ", publicIp=" + publicIp + ", privateIp=" + privateIp + ", result=" + result);
+        }
         return result != null && result.getInteger("code") == 200;
     }
 

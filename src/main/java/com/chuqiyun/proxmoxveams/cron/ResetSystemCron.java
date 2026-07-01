@@ -38,6 +38,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class ResetSystemCron {
+    private static final String NETWORK_TYPE_VPC = "vpc";
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -424,6 +426,7 @@ public class ResetSystemCron {
         }
 
         JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, authentications, vmhost.getVmid());
+        syncVpcNet0Config(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
         proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
         if ("windows".equalsIgnoreCase(vmhost.getOsType())) {
             removeCicustomNetworkConfig(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
@@ -451,6 +454,33 @@ public class ResetSystemCron {
         }
         proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
         proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+    }
+
+    private void syncVpcNet0Config(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                   HashMap<String, String> authentications, Vmhost vmhost,
+                                   JSONObject pveVmConfig) {
+        if (vmhost == null || !NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType())
+                || StringUtils.isBlank(vmhost.getBridge())) {
+            return;
+        }
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
+        String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(
+                net0Config,
+                vmhost.getBridge(),
+                macAddress,
+                formatBandwidth(vmhost.getBandwidth()),
+                true);
+        if (StringUtils.isNotBlank(desiredNet0Config) && !StringUtils.equals(desiredNet0Config, net0Config)) {
+            proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "net0", desiredNet0Config);
+        }
+    }
+
+    private String formatBandwidth(Integer bandwidth) {
+        if (bandwidth == null) {
+            return null;
+        }
+        return String.format(java.util.Locale.US, "%.2f", bandwidth / 8.0);
     }
 
     private List<String> getNameservers(JSONObject pveVmConfig) {

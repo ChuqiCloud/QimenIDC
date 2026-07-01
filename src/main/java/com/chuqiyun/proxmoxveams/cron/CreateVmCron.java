@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Subnetpool;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -37,6 +38,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @EnableScheduling
 public class CreateVmCron {
     private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
+    private static final String NETWORK_TYPE_VPC = "vpc";
 
     @Resource
     private VmhostService vmhostService;
@@ -46,6 +48,8 @@ public class CreateVmCron {
     private CreateVmService createVmService;
     @Resource
     private IppoolService ippoolService;
+    @Resource
+    private SubnetpoolService subnetpoolService;
     @Resource
     private MasterService masterService;
 
@@ -125,6 +129,7 @@ public class CreateVmCron {
             }else {
                 UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机信息存入数据库成功");
                 // 设置为4 4为提示api接口调用时非异步成功
+                vmParams.setHostid(vmhostId);
                 task.setStatus(4);
                 task.setVmid(vmIdInit);
                 task.setHostid(vmhostId);
@@ -133,13 +138,26 @@ public class CreateVmCron {
 
             List<String> ipList = vmParams.getIpList();
             for (String ip : ipList){
-                // 根据ip查询ip实体类
-                Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
-                if (ippool != null){
-                    ippool.setVmId(vmIdInit);
-                    ippool.setStatus(1);
-                    ippoolService.updateById(ippool);
+                if (isVpcNetwork(vmParams)) {
+                    Subnetpool subnetpool = getSubnetpoolByIpAndNodeId(ip, vmParams.getNodeid(), vmParams.getVpcSubnetId());
+                    if (subnetpool != null){
+                        subnetpool.setVmId(vmIdInit);
+                        subnetpool.setStatus(1);
+                        subnetpoolService.updateById(subnetpool);
+                    }
+                } else {
+                    // 根据ip查询ip实体类
+                    Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+                    if (ippool != null){
+                        ippool.setVmId(vmIdInit);
+                        ippool.setStatus(1);
+                        ippoolService.updateById(ippool);
+                    }
                 }
+            }
+
+            if (isVpcNetwork(vmParams)) {
+                bindVpcPublicIps(vmParams, vmIdInit);
             }
 
             int vmId;
@@ -156,6 +174,12 @@ public class CreateVmCron {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败");
                 finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建基础虚拟机失败");
                 // 结束任务
+                return;
+            }
+
+            if (isVpcNetwork(vmParams) && !addVpcIpForwards(vmhostId, vmParams)) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "VPC公网IP转发绑定失败 NodeID:{} VM-ID:{}", vmParams.getNodeid(), vmIdInit);
+                finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "VPC公网IP转发绑定失败");
                 return;
             }
 
@@ -459,6 +483,64 @@ public class CreateVmCron {
         return ippoolService.getOne(queryWrapper);
     }
 
+    private Subnetpool getSubnetpoolByIpAndNodeId(String ip, Integer nodeId, Integer subnetId) {
+        if (ip == null || ip.trim().isEmpty() || nodeId == null || subnetId == null) {
+            return null;
+        }
+        QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("ip", ip.trim());
+        queryWrapper.eq("node_id", nodeId);
+        queryWrapper.eq("subnat_id", subnetId);
+        queryWrapper.last("limit 1");
+        return subnetpoolService.getOne(queryWrapper);
+    }
+
+    private void bindVpcPublicIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getPublicIpList() == null || vmParams.getPublicIpList().isEmpty()) {
+            return;
+        }
+        for (String ip : vmParams.getPublicIpList()) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+            if (ippool != null) {
+                ippool.setVmId(vmId);
+                ippool.setStatus(1);
+                ippoolService.updateById(ippool);
+            }
+        }
+    }
+
+    private boolean addVpcIpForwards(Integer vmhostId, VmParams vmParams) {
+        if (vmhostId == null || vmParams == null || vmParams.getIpList() == null || vmParams.getPublicIpList() == null) {
+            return false;
+        }
+        if (vmParams.getIpList().isEmpty() || vmParams.getPublicIpList().size() < vmParams.getIpList().size()) {
+            return false;
+        }
+        for (int i = 0; i < vmParams.getIpList().size(); i++) {
+            String privateIp = vmParams.getIpList().get(i);
+            String publicIp = vmParams.getPublicIpList().get(i);
+            if (!vmhostService.addVmhostVpcIpForward(vmhostId, publicIp, privateIp)) {
+                rollbackVpcIpForwards(vmhostId, vmParams, i);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void rollbackVpcIpForwards(Integer vmhostId, VmParams vmParams, int createdCount) {
+        if (vmhostId == null || vmParams == null || vmParams.getIpList() == null || vmParams.getPublicIpList() == null) {
+            return;
+        }
+        int max = Math.min(createdCount, Math.min(vmParams.getIpList().size(), vmParams.getPublicIpList().size()));
+        for (int i = 0; i < max; i++) {
+            vmhostService.delVmhostVpcIpForward(vmhostId, vmParams.getPublicIpList().get(i), vmParams.getIpList().get(i));
+        }
+    }
+
+    private boolean isVpcNetwork(VmParams vmParams) {
+        return vmParams != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmParams.getNetworkType());
+    }
+
     /**
      * @Author: 星禾
      * @Description: 标记创建虚拟机失败并回滚本次占用的IP
@@ -474,7 +556,55 @@ public class CreateVmCron {
             vmhost.setStatus(1);
             vmhostService.updateById(vmhost);
         }
+        if (isVpcNetwork(vmParams)) {
+            releaseCreatedVpcIps(vmParams, vmId);
+            return;
+        }
         releaseCreatedIps(vmParams, vmId);
+    }
+
+    private void releaseCreatedVpcIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getIpList() == null || vmParams.getIpList().isEmpty()) {
+            return;
+        }
+        int releaseCount = 0;
+        rollbackVpcIpForwards(vmParams.getHostid(), vmParams, vmParams.getPublicIpList() == null ? 0 : vmParams.getPublicIpList().size());
+        for (String ip : vmParams.getIpList()) {
+            Subnetpool subnetpool = getSubnetpoolByIpAndNodeId(ip, vmParams.getNodeid(), vmParams.getVpcSubnetId());
+            if (subnetpool == null || !Objects.equals(subnetpool.getVmId(), vmId)) {
+                continue;
+            }
+            subnetpool.setStatus(0);
+            subnetpool.setVmId(0);
+            if (subnetpoolService.updateById(subnetpool)) {
+                releaseCount++;
+            }
+        }
+        if (releaseCount > 0) {
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败，已释放本次占用VPC IP数量: NodeID:{} VM-ID:{} Count:{}", vmParams.getNodeid(), vmId, releaseCount);
+        }
+        releaseCreatedPublicIps(vmParams, vmId);
+    }
+
+    private void releaseCreatedPublicIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getPublicIpList() == null || vmParams.getPublicIpList().isEmpty()) {
+            return;
+        }
+        int releaseCount = 0;
+        for (String ip : vmParams.getPublicIpList()) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+            if (ippool == null || !Objects.equals(ippool.getVmId(), vmId)) {
+                continue;
+            }
+            ippool.setStatus(0);
+            ippool.setVmId(0);
+            if (ippoolService.updateById(ippool)) {
+                releaseCount++;
+            }
+        }
+        if (releaseCount > 0) {
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败，已释放本次占用VPC公网IP数量: NodeID:{} VM-ID:{} Count:{}", vmParams.getNodeid(), vmId, releaseCount);
+        }
     }
 
     private void releaseCreatedIps(VmParams vmParams, Integer vmId) {

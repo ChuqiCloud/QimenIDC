@@ -22,6 +22,10 @@ public interface PveSdnService {
 
     UnifiedResultDto<Object> addVnet(Vnets vnets);
 
+    UnifiedResultDto<Object> deleteVnetById(Integer id);
+
+    UnifiedResultDto<Object> deleteVnetByName(String vnet);
+
     Page<Vnets> getVnetsByPage(Integer page, Integer size);
 
     UnifiedResultDto<Object> addSubnet(Subnet subnet);

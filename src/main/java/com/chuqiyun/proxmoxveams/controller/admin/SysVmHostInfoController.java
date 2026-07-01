@@ -138,4 +138,22 @@ public class SysVmHostInfoController {
     ) throws UnauthorizedException {
         return vmhostService.getVmhostNatAddrByVmid(hostId);
     }
+
+    @AdminApiCheck
+    @GetMapping(value = "/vpc/getIpForward")
+    public Object getVpcIpForward(@RequestParam(name = "hostId") Integer hostId
+    ) throws UnauthorizedException {
+        return vmhostService.getVmhostVpcIpForward(hostId);
+    }
+
+    @AdminApiCheck
+    @RequestMapping(value = "/vpc/syncIpForward",method = {RequestMethod.POST,RequestMethod.PUT})
+    public Object syncVpcIpForward(@RequestParam(name = "hostId") Integer hostId
+    ) throws UnauthorizedException {
+        Boolean result = vmhostService.syncVmhostVpcIpForward(hostId);
+        if (result) {
+            return ResponseResult.ok();
+        }
+        return ResponseResult.fail();
+    }
 }

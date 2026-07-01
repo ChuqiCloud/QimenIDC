@@ -324,6 +324,8 @@ create table vmhost
     iops_wr_max           int          default 0                     not null comment 'iops写突发限制 单位ops/s',
     data_disk             json                                       null,
     bridge                varchar(255)                               null,
+    network_type          varchar(20)  default 'classic'             not null comment '网络类型 classic/vpc',
+    vpc_subnet_id         int                                        null comment 'VPC子网ID',
     ip_config             json                                       null,
     ip_data               text                                       null,
     nested                int          default 0                     not null comment '嵌套虚拟化',
@@ -342,6 +344,27 @@ create table vmhost
     index idx_vmhost_status_nodeid (status, nodeid),
     index idx_vmhost_reset_flow_time (reset_flow_time)
 );
+
+create table vpc_ip_binding
+(
+    id             int auto_increment
+        primary key,
+    host_id        int         not null comment '虚拟机主机ID',
+    vm_id          int         null comment 'Proxmox VMID',
+    node_id        int         not null comment '节点ID',
+    vpc_subnet_id  int         null comment 'VPC子网ID',
+    ippool_id      int         null comment '公网IP池明细ID',
+    subnetpool_id  int         null comment '私网IP池明细ID',
+    public_ip      varchar(64) not null comment '公网IP',
+    private_ip     varchar(64) not null comment '私网IP',
+    forward_mode   varchar(20) default 'nat_1to1' not null comment '转发模式',
+    status         int         default 1          not null comment '状态 0已删除 1有效',
+    create_time    bigint      null,
+    update_time    bigint      null,
+    index idx_vpc_ip_binding_host_status (host_id, status),
+    index idx_vpc_ip_binding_public_ip (public_ip),
+    index idx_vpc_ip_binding_private_ip (private_ip)
+) comment 'VPC公网IP与私网IP绑定关系';
 
 create table vm_resource_rank
 (

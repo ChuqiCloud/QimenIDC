@@ -236,7 +236,7 @@ build: # 内部构建版本信息
                    set v.os_name = o.name
                    where o.name is not null
                      and o.name <> ''
-                     and (v.os_name is null or v.os_name = '');"
+                   and (v.os_name is null or v.os_name = '');"
       - "update vmhost v
                    join os o on v.os = o.name
                    set v.os_name = o.name
@@ -249,3 +249,58 @@ build: # 内部构建版本信息
                    where o.name is not null
                      and o.name <> ''
                      and (v.os_name is null or v.os_name = '');"
+    6:
+      - "alter table vmhost
+                   add network_type varchar(20) default 'classic' not null comment '网络类型 classic/vpc' after bridge;"
+      - "alter table vmhost
+                   add vpc_subnet_id int null comment 'VPC子网ID' after network_type;"
+      - "update vmhost v
+                   join os o on v.os = o.name
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and (v.os_name is null or v.os_name = '');"
+      - "update vmhost v
+                   join os o on v.os = cast(o.id as char)
+                   set v.os_name = o.name
+                   where o.name is not null
+                     and o.name <> ''
+                     and (v.os_name is null or v.os_name = '');"
+    7:
+      - "create table if not exists vpc_ip_binding
+         (
+             id             int auto_increment
+                 primary key,
+             host_id        int         not null comment '虚拟机主机ID',
+             vm_id          int         null comment 'Proxmox VMID',
+             node_id        int         not null comment '节点ID',
+             vpc_subnet_id  int         null comment 'VPC子网ID',
+             ippool_id      int         null comment '公网IP池明细ID',
+             subnetpool_id  int         null comment '私网IP池明细ID',
+             public_ip      varchar(64) not null comment '公网IP',
+             private_ip     varchar(64) not null comment '私网IP',
+             forward_mode   varchar(20) default 'nat_1to1' not null comment '转发模式',
+             status         int         default 1          not null comment '状态 0已删除 1有效',
+             create_time    bigint      null,
+             update_time    bigint      null,
+             index idx_vpc_ip_binding_host_status (host_id, status),
+             index idx_vpc_ip_binding_public_ip (public_ip),
+             index idx_vpc_ip_binding_private_ip (private_ip)
+         ) comment 'VPC公网IP与私网IP绑定关系';"
+    8:
+      - "alter table vmhost
+                   modify network_type varchar(20) default 'classic' not null comment '网络类型 classic/vpc';"
+      - "alter table vmhost
+                   modify vpc_subnet_id int null comment 'VPC子网ID';"
+      - "alter table vpc_ip_binding comment 'VPC公网IP与私网IP绑定关系';"
+      - "alter table vpc_ip_binding
+                   modify host_id int not null comment '虚拟机主机ID',
+                   modify vm_id int null comment 'Proxmox VMID',
+                   modify node_id int not null comment '节点ID',
+                   modify vpc_subnet_id int null comment 'VPC子网ID',
+                   modify ippool_id int null comment '公网IP池明细ID',
+                   modify subnetpool_id int null comment '私网IP池明细ID',
+                   modify public_ip varchar(64) not null comment '公网IP',
+                   modify private_ip varchar(64) not null comment '私网IP',
+                   modify forward_mode varchar(20) default 'nat_1to1' not null comment '转发模式',
+                   modify status int default 1 not null comment '状态 0已删除 1有效';"

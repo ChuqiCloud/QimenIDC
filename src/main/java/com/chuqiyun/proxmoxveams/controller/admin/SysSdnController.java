@@ -97,6 +97,36 @@ public class SysSdnController {
 
     /**
     * @Author: mryunqi
+    * @Description: 根据id删除vnet区域
+    * @DateTime: 2024/1/24 23:25
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/sdn/deleteVnetById/{id}",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<Object> deleteVnetById(@PathVariable Integer id) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = pveSdnService.deleteVnetById(id);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据vnet名称删除vnet区域
+    * @DateTime: 2024/1/24 23:25
+    */
+    @AdminApiCheck
+    @RequestMapping(value = "/sdn/deleteVnetByName/{vnet}",method = {RequestMethod.POST,RequestMethod.DELETE})
+    public ResponseResult<Object> deleteVnetByName(@PathVariable String vnet) throws UnauthorizedException {
+        UnifiedResultDto<Object> resultDto = pveSdnService.deleteVnetByName(vnet);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+        }
+        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    /**
+    * @Author: mryunqi
     * @Description: 查询vnet列表
     * @DateTime: 2024/1/24 23:26
     */

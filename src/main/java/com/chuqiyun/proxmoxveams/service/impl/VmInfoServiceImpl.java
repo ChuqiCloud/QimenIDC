@@ -2,11 +2,14 @@ package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.VmHostDto;
 import com.chuqiyun.proxmoxveams.entity.Area;
+import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
+import com.chuqiyun.proxmoxveams.entity.VpcIpBinding;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
@@ -18,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author mryunqi
@@ -26,6 +30,7 @@ import java.util.List;
 @Service("vmInfoService")
 public class VmInfoServiceImpl implements VmInfoService {
     private static final String[] VM_RRD_TIMEFRAMES = {"hour", "day", "week", "month"};
+    private static final String NETWORK_TYPE_VPC = "vpc";
 
     @Resource
     private MasterService masterService;
@@ -35,6 +40,10 @@ public class VmInfoServiceImpl implements VmInfoService {
     private OsService osService;
     @Resource
     private AreaService areaService;
+    @Resource
+    private IppoolService ippoolService;
+    @Resource
+    private VpcIpBindingService vpcIpBindingService;
 
     /**
     * @Author: mryunqi
@@ -160,6 +169,7 @@ public class VmInfoServiceImpl implements VmInfoService {
         // 将Map类型的ipConfig转换为HashMap
 
         vmhost.setIpData(VmUtil.splitIpAddress(new HashMap<>(vmhost.getIpConfig())));
+        applyVpcDisplayIp(vmhost);
         // 判断osName是否为空
         if (vmhost.getOsName() == null){
             Os vmOs = osService.isExistOs(vmhost.getOs());
@@ -292,6 +302,7 @@ public class VmInfoServiceImpl implements VmInfoService {
             Master node = masterService.getById(nodeId);
             // 判断node是否存在，或者是否可用
             if (node == null || node.getStatus() != 0){
+                applyVpcDisplayIp(vmhost);
                 vmHostDto.setVmhost(vmhost);
                 vmHostDto.setCurrent(null);
                 Os os = osService.isExistOs(vmhost.getOsName());
@@ -308,6 +319,7 @@ public class VmInfoServiceImpl implements VmInfoService {
             } catch (Exception e) {
                 vmInfo = null;
             }
+            applyVpcDisplayIp(vmhost);
             vmHostDto.setVmhost(vmhost);
             vmHostDto.setCurrent(vmInfo);
             vmHostDtoList.add(vmHostDto);
@@ -327,5 +339,64 @@ public class VmInfoServiceImpl implements VmInfoService {
         pageMap.put("current", vmhostPage.getCurrent());
         pageMap.put("pages", vmhostPage.getPages());
         pageMap.put("records", vmHostDtoList);
+    }
+
+    private void applyVpcDisplayIp(Vmhost vmhost) {
+        if (vmhost == null || !NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType())) {
+            return;
+        }
+        List<Ippool> publicIpList = getVpcPublicIpList(vmhost);
+        if (publicIpList.isEmpty()) {
+            return;
+        }
+        List<String> displayIpList = publicIpList.stream().map(Ippool::getIp).collect(Collectors.toList());
+        vmhost.setIpList(displayIpList);
+        HashMap<String, String> displayIpConfig = new HashMap<>();
+        int index = 1;
+        for (String ip : displayIpList) {
+            displayIpConfig.put(String.valueOf(index), "ip=" + ip + "/32");
+            index++;
+        }
+        vmhost.setIpData(VmUtil.splitIpAddress(displayIpConfig));
+    }
+
+    private List<Ippool> getVpcPublicIpList(Vmhost vmhost) {
+        if (vmhost == null || vmhost.getNodeid() == null || vmhost.getVmid() == null) {
+            return new ArrayList<>();
+        }
+        QueryWrapper<VpcIpBinding> bindingQueryWrapper = new QueryWrapper<>();
+        bindingQueryWrapper.eq("host_id", vmhost.getId());
+        bindingQueryWrapper.eq("status", 1);
+        bindingQueryWrapper.orderByAsc("id");
+        List<VpcIpBinding> bindingList = vpcIpBindingService.list(bindingQueryWrapper);
+        if (bindingList != null && !bindingList.isEmpty()) {
+            List<Ippool> bindingIppoolList = new ArrayList<>();
+            for (VpcIpBinding binding : bindingList) {
+                Ippool ippool = null;
+                if (binding.getIppoolId() != null) {
+                    ippool = ippoolService.getById(binding.getIppoolId());
+                }
+                if (ippool == null) {
+                    QueryWrapper<Ippool> ippoolQueryWrapper = new QueryWrapper<>();
+                    ippoolQueryWrapper.eq("node_id", vmhost.getNodeid());
+                    ippoolQueryWrapper.eq("ip", binding.getPublicIp());
+                    ippoolQueryWrapper.last("limit 1");
+                    ippool = ippoolService.getOne(ippoolQueryWrapper);
+                }
+                if (ippool != null) {
+                    bindingIppoolList.add(ippool);
+                }
+            }
+            return bindingIppoolList;
+        }
+        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("node_id", vmhost.getNodeid());
+        queryWrapper.eq("vm_id", vmhost.getVmid());
+        queryWrapper.eq("status", 1);
+        if (vmhost.getIpList() != null && !vmhost.getIpList().isEmpty()) {
+            queryWrapper.notIn("ip", vmhost.getIpList());
+        }
+        queryWrapper.orderByAsc("id");
+        return ippoolService.list(queryWrapper);
     }
 }

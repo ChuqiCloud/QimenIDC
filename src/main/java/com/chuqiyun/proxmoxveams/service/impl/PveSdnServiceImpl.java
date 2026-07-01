@@ -100,7 +100,9 @@ public class PveSdnServiceImpl implements PveSdnService {
         }
 
         if (zonesService.addZone(zones)){
-
+            if (!applySdnConfig(node, proxmoxApiUtil, authentications)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
+            }
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_ZONE_ADD_FAILED, null);
@@ -251,9 +253,87 @@ public class PveSdnServiceImpl implements PveSdnService {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_ADD_FAILED, null);
         }
         if (vnetsService.addVnet(vnets)){
+            if (!applySdnConfig(node, proxmoxApiUtil, authentications)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
+            }
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_ZONE_ADD_FAILED, null);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据id删除vnet区域
+    * @DateTime: 2024/1/24 21:59
+    * @Params: Integer id vnet区域id
+    * @Return UnifiedResultDto<Object> 删除结果
+    */
+    @Override
+    public UnifiedResultDto<Object> deleteVnetById(Integer id) {
+        if (id == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Vnets vnets = vnetsService.getVnetById(id);
+        if (ModUtil.isNull(vnets)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_NOT_EXIST, null);
+        }
+        return deleteVnet(vnets);
+    }
+
+    /**
+    * @Author: mryunqi
+    * @Description: 根据vnet名称删除vnet区域
+    * @DateTime: 2024/1/24 21:59
+    * @Params: String vnet vnet名称
+    * @Return UnifiedResultDto<Object> 删除结果
+    */
+    @Override
+    public UnifiedResultDto<Object> deleteVnetByName(String vnet) {
+        if (vnet == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Vnets vnets = vnetsService.getVnetByName(vnet);
+        if (ModUtil.isNull(vnets)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_NOT_EXIST, null);
+        }
+        return deleteVnet(vnets);
+    }
+
+    private UnifiedResultDto<Object> deleteVnet(Vnets vnets) {
+        if (vnets == null || vnets.getVnet() == null || vnets.getZone() == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        Zones zones = zonesService.selectZoneByZone(vnets.getZone());
+        if (ModUtil.isNull(zones)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_ZONE_NOT_EXIST, null);
+        }
+        Master node = masterService.getById(zones.getNodeId());
+        if (ModUtil.isNull(node)){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        if (node.getStatus() >= 1) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
+        }
+
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+        JSONObject response;
+        try{
+            response = proxmoxApiUtil.deleteNodeApi(node, authentications, "/cluster/sdn/vnets/" + vnets.getVnet(), null);
+        }catch (Exception e){
+            e.printStackTrace();
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_DELETE_FAILED, e);
+        }
+        if (response == null){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_DELETE_FAILED, null);
+        }
+        if (!vnetsService.deleteVnetById(vnets.getId())){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_VNET_DELETE_FAILED, null);
+        }
+        if (!applySdnConfig(node, proxmoxApiUtil, authentications)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
+        }
+        return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
     }
 
     /**
@@ -298,6 +378,9 @@ public class PveSdnServiceImpl implements PveSdnService {
         }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+        if (!applySdnConfig(node, proxmoxApiUtil, authentications)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
+        }
         JSONObject response;
         HashMap<String, Object> params = new HashMap<>();
         params.put("vnet", subnet.getVnet());
@@ -308,11 +391,23 @@ public class PveSdnServiceImpl implements PveSdnService {
         try{
             response = proxmoxApiUtil.postNodeApiForm(node, authentications, "/cluster/sdn/vnets/"+subnet.getVnet()+"/subnets", params);
         }catch (Exception e){
-            e.printStackTrace();
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_SUBNET_ADD_FAILED, e);
+            if (applySdnConfig(node, proxmoxApiUtil, authentications)) {
+                try {
+                    response = proxmoxApiUtil.postNodeApiForm(node, authentications, "/cluster/sdn/vnets/"+subnet.getVnet()+"/subnets", params);
+                } catch (Exception retryException) {
+                    retryException.printStackTrace();
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_SUBNET_ADD_FAILED, retryException);
+                }
+            } else {
+                e.printStackTrace();
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_SUBNET_ADD_FAILED, e);
+            }
         }
         if (response == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_SUBNET_ADD_FAILED, null);
+        }
+        if (subnet.getNodeid() == null) {
+            subnet.setNodeid(node.getId());
         }
         if (subnetService.addSubnet(subnet)){
             IpParams ipParams = new IpParams();
@@ -329,6 +424,9 @@ public class PveSdnServiceImpl implements PveSdnService {
             List<Subnetpool> subnetpools = IpUtil.getNatIpList(ipParams);
             // 批量插入natip
             if (subnetpoolService.addSubnetpools(subnetpools)){
+                if (!applySdnConfig(node, proxmoxApiUtil, authentications)) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
+                }
                 return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
             }
             else {
@@ -370,18 +468,29 @@ public class PveSdnServiceImpl implements PveSdnService {
         }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-        JSONObject response;
-        try{
-            response = proxmoxApiUtil.putNodeApi(node, authentications, "/cluster/sdn", null);
-        }catch (Exception e){
-            e.printStackTrace();
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, e);
-        }
-        if (response == null){
+        if (!applySdnConfig(node, proxmoxApiUtil, authentications)){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_SDN_APPLY_CONFIG_FAILED, null);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
     }
 
+    private boolean applySdnConfig(Master node, ProxmoxApiUtil proxmoxApiUtil, HashMap<String, String> authentications) {
+        try {
+            JSONObject response = proxmoxApiUtil.putNodeApi(node, authentications, "/cluster/sdn", new HashMap<>());
+            waitSdnApply();
+            return response != null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void waitSdnApply() {
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
 }

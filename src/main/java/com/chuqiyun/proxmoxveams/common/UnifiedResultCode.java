@@ -100,6 +100,8 @@ public enum UnifiedResultCode {
     ERROR_HOSTNAME_IS_EXIST(1043, "Virtual hostname is exist"),
     // 虚拟机存在快照，无法重装系统
     ERROR_VM_HAS_SNAPSHOT(1044, "请删除快照后再重装系统"),
+    // sdn vnet删除失败
+    ERROR_SDN_VNET_DELETE_FAILED(1045, "Failed to delete SDN vnet"),
 
     /*pve错误码范围：2xxx*/
 

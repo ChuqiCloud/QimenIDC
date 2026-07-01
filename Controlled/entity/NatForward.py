@@ -7,3 +7,8 @@ class ForwardRule(BaseModel):
     destination_port: int
     protocol: str
     vm: str
+
+class IpForwardRule(BaseModel):
+    source_ip: str
+    destination_ip: str
+    vm: str

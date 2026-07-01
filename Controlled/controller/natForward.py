@@ -4,7 +4,7 @@ from common.CodeEnum import CodeEnum
 from common.ResponseResult import common_response
 
 import service.Nat as Nat
-from entity.NatForward import ForwardRule
+from entity.NatForward import ForwardRule, IpForwardRule
 
 nat_router = APIRouter()
 
@@ -61,5 +61,29 @@ async def nat_addBridge(nataddr: str = Body(...), bridge: str = Body(...)):
     message = result['message']
     if (code == 0):
         return common_response(CodeEnum.SUCCESS, message, result['data'])
+    else:
+        return common_response(CodeEnum.FAIL, message, {})
+
+@nat_router.post('/nat/addIpForward')
+@nat_router.post('/nat/add-ip-forward')
+async def nat_add_ip_forward(item: IpForwardRule):
+    nat = Nat.IpForwardManager(item.source_ip, item.destination_ip, item.vm)
+    result = nat.add_ip_forward_rule()
+    code = result['code']
+    message = result['message']
+    if (code == 0):
+        return common_response(CodeEnum.SUCCESS, message, {})
+    else:
+        return common_response(CodeEnum.FAIL, message, {})
+
+@nat_router.post('/nat/deleteIpForward')
+@nat_router.post('/nat/delete-ip-forward')
+async def nat_delete_ip_forward(item: IpForwardRule):
+    nat = Nat.IpForwardManager(item.source_ip, item.destination_ip, item.vm)
+    result = nat.delete_ip_forward_rule()
+    code = result['code']
+    message = result['message']
+    if (code == 0):
+        return common_response(CodeEnum.SUCCESS, message, {})
     else:
         return common_response(CodeEnum.FAIL, message, {})

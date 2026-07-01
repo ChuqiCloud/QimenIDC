@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
@@ -12,6 +13,7 @@ import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.SubnetpoolService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
@@ -25,6 +27,7 @@ import javax.annotation.Resource;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -36,6 +39,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class DeleteVmCron {
+    private static final String NETWORK_TYPE_VPC = "vpc";
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -44,12 +49,56 @@ public class DeleteVmCron {
     private TaskService taskService;
     @Resource
     private IppoolService ippoolService;
+    @Resource
+    private SubnetpoolService subnetpoolService;
 
     /**
     * @Author: mryunqi
     * @Description: 删除虚拟机
     * @DateTime: 2023/9/2 16:07
     */
+    private void deleteVpcIpForwards(Vmhost vmhost) {
+        if (!isVpcNetwork(vmhost) || vmhost.getIpList() == null || vmhost.getIpList().isEmpty()) {
+            return;
+        }
+        Object vmVpcForward = vmhostService.getVmhostVpcIpForward(vmhost.getId());
+        if (!(vmVpcForward instanceof ResponseResult)) {
+            return;
+        }
+        Object data = ((ResponseResult) vmVpcForward).getData();
+        if (!(data instanceof List)) {
+            return;
+        }
+        for (Object item : (List<?>) data) {
+            if (!(item instanceof Map)) {
+                continue;
+            }
+            Map<?, ?> forward = (Map<?, ?>) item;
+            Object publicIp = forward.get("publicIp");
+            Object privateIp = forward.get("privateIp");
+            if (publicIp == null || privateIp == null) {
+                continue;
+            }
+            vmhostService.delVmhostVpcIpForward(vmhost.getId(), String.valueOf(publicIp), String.valueOf(privateIp));
+        }
+    }
+
+    private void releaseSubnetpoolByVmhost(Vmhost vmhost) {
+        if (!isVpcNetwork(vmhost) || vmhost.getNodeid() == null || vmhost.getVmid() == null) {
+            return;
+        }
+        UpdateWrapper<com.chuqiyun.proxmoxveams.entity.Subnetpool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("node_id", vmhost.getNodeid());
+        updateWrapper.eq("vm_id", vmhost.getVmid());
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        subnetpoolService.update(updateWrapper);
+    }
+
+    private boolean isVpcNetwork(Vmhost vmhost) {
+        return vmhost != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType());
+    }
+
     @Async
     @Scheduled(fixedDelay = 2000)
     public void deleteVm() {
@@ -116,7 +165,10 @@ public class DeleteVmCron {
 
             }
             else {
+                deleteVpcIpForwards(vmhost);
                 ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
+                releaseSubnetpoolByVmhost(vmhost);
+                vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
                 // 标记为已删除，保留记录供统计使用
                 vmhost.setDeleteState(2);
                 vmhost.setExpirationTime(System.currentTimeMillis());
@@ -132,7 +184,10 @@ public class DeleteVmCron {
 
             proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
 
+            deleteVpcIpForwards(vmhost);
             ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
+            releaseSubnetpoolByVmhost(vmhost);
+            vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
             // 标记为已删除，保留记录供统计使用
             vmhost.setDeleteState(2);
             vmhost.setExpirationTime(System.currentTimeMillis());

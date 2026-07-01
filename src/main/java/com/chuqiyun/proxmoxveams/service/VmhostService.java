@@ -99,8 +99,13 @@ public interface VmhostService extends IService<Vmhost> {
     Boolean addVmHostFlow(int hostId, Long flow);
     Object getVmhostNatByVmid(int page, int size, int hostId);
     Object getVmhostNatAddrByVmid(int hostId);
+    Object getVmhostVpcIpForward(int hostId);
+    Boolean syncVmhostVpcIpForward(int hostId);
     Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
+    Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
+    Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
+    Boolean clearVmhostVpcIpBinding(int hostId);
     Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth);
 
     Page<Vmhost> selectPageByDelete(Integer page, Integer limit, QueryWrapper<Vmhost> queryWrapper);
