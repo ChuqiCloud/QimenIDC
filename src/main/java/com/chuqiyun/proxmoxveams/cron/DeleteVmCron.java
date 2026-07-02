@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.SecurityGroupBusinessService;
 import com.chuqiyun.proxmoxveams.service.SubnetpoolService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -51,6 +52,8 @@ public class DeleteVmCron {
     private IppoolService ippoolService;
     @Resource
     private SubnetpoolService subnetpoolService;
+    @Resource
+    private SecurityGroupBusinessService securityGroupBusinessService;
 
     /**
     * @Author: mryunqi
@@ -93,6 +96,23 @@ public class DeleteVmCron {
         updateWrapper.set("status", 0);
         updateWrapper.set("vm_id", 0);
         subnetpoolService.update(updateWrapper);
+    }
+
+    private void deleteSecurityGroups(Vmhost vmhost) {
+        try {
+            if (vmhost == null || vmhost.getId() == null) {
+                return;
+            }
+            Boolean result = securityGroupBusinessService.deleteVmSecurityGroups(vmhost.getId());
+            if (!Boolean.TRUE.equals(result)) {
+                log.warn("[DeleteVmCron] 删除安全组失败: HostId={}, VmId={}", vmhost.getId(), vmhost.getVmid());
+            }
+        } catch (Exception e) {
+            log.warn("[DeleteVmCron] 删除安全组异常: HostId={}, VmId={}, Error={}",
+                    vmhost == null ? null : vmhost.getId(),
+                    vmhost == null ? null : vmhost.getVmid(),
+                    e.getMessage());
+        }
     }
 
     private boolean isVpcNetwork(Vmhost vmhost) {
@@ -165,6 +185,7 @@ public class DeleteVmCron {
 
             }
             else {
+                deleteSecurityGroups(vmhost);
                 deleteVpcIpForwards(vmhost);
                 ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
                 releaseSubnetpoolByVmhost(vmhost);
@@ -184,6 +205,7 @@ public class DeleteVmCron {
 
             proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
 
+            deleteSecurityGroups(vmhost);
             deleteVpcIpForwards(vmhost);
             ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
             releaseSubnetpoolByVmhost(vmhost);

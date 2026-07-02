@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.dto.SecurityGroupApplyDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import io.swagger.models.auth.In;
@@ -429,6 +430,48 @@ public class ClientApiUtil {
             System.out.println("[VPC-IP-FORWARD] delete failed url=" + url + ", publicIp=" + publicIp + ", privateIp=" + privateIp + ", result=" + result);
         }
         return result != null && result.getInteger("code") == 200;
+    }
+
+    public static Boolean applySecurityGroup(String ip, String token, Integer controllerPort, SecurityGroupApplyDto applyDto) {
+        String url = "http://" + ip + ":" + controllerPort + "/security-group/apply";
+        JSONObject result;
+        try {
+            result = postControllerApi(url, JSONObject.parseObject(JSONObject.toJSONString(applyDto)), token);
+        } catch (RestClientException e) {
+            System.out.println("[SECURITY-GROUP] apply request failed url=" + url + ", hostId="
+                    + (applyDto == null ? null : applyDto.getHostId()) + ", error=" + e.getMessage());
+            return false;
+        }
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    public static Boolean deleteSecurityGroup(String ip, String token, Integer controllerPort, Integer hostId) {
+        String url = "http://" + ip + ":" + controllerPort + "/security-group/delete";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("hostId", hostId);
+        JSONObject result;
+        try {
+            result = postControllerApi(url, paramMap, token);
+        } catch (RestClientException e) {
+            System.out.println("[SECURITY-GROUP] delete request failed url=" + url + ", hostId=" + hostId
+                    + ", error=" + e.getMessage());
+            return false;
+        }
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    public static JSONObject checkSecurityGroup(String ip, String token, Integer controllerPort, Integer hostId) {
+        String url = "http://" + ip + ":" + controllerPort + "/security-group/check";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("hostId", hostId);
+        try {
+            JSONObject result = postControllerApi(url, paramMap, token);
+            return result != null && result.getInteger("code") == 200 ? result.getJSONObject("data") : null;
+        } catch (RestClientException e) {
+            System.out.println("[SECURITY-GROUP] check request failed url=" + url + ", hostId=" + hostId
+                    + ", error=" + e.getMessage());
+            return null;
+        }
     }
 
     /**

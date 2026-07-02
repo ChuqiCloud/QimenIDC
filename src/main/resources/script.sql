@@ -231,7 +231,8 @@ create table subnetpool
     gateway   varchar(15)   null,
     mac       varchar(255)  null,
     dns       varchar(15)   null,
-    status    int default 0 not null
+    status    int default 0 not null,
+    unique index uk_subnetpool_node_subnet_ip (node_id, subnat_id, ip)
 );
 
 create table sysapi
@@ -365,6 +366,77 @@ create table vpc_ip_binding
     index idx_vpc_ip_binding_public_ip (public_ip),
     index idx_vpc_ip_binding_private_ip (private_ip)
 ) comment 'VPC公网IP与私网IP绑定关系';
+
+create table security_group
+(
+    id                     int auto_increment
+        primary key,
+    host_id                int                      null comment '虚拟机主机ID',
+    name                   varchar(100)             not null comment '安全组名称',
+    description            varchar(255)             null comment '描述',
+    default_ingress_action varchar(20) default 'drop' not null comment '默认入站动作 accept/drop',
+    default_egress_action  varchar(20) default 'accept' not null comment '默认出站动作 accept/drop',
+    is_template            int         default 0    not null comment '是否模板 0否 1是',
+    is_default             int         default 0    not null comment '是否默认安全组 0否 1是',
+    status                 int         default 1    not null comment '状态 0已删除 1有效',
+    create_time            bigint                   null,
+    update_time            bigint                   null,
+    index idx_security_group_host_status (host_id, status),
+    index idx_security_group_status (status),
+    index idx_security_group_template_default (is_template, is_default)
+) comment '安全组';
+
+create table security_group_rule
+(
+    id              int auto_increment
+        primary key,
+    group_id        int                         not null comment '安全组ID',
+    direction       varchar(20) default 'ingress' not null comment '方向 ingress/egress',
+    protocol        varchar(20) default 'all'   not null comment '协议 tcp/udp/icmp/all',
+    port_start      int                         null comment '起始端口或ICMP类型',
+    port_end        int                         null comment '结束端口',
+    remote_cidr     varchar(64) default '0.0.0.0/0' not null comment '远端CIDR',
+    remote_group_id int                         null comment '引用安全组ID',
+    action          varchar(20) default 'accept' not null comment '动作 accept/drop',
+    priority        int         default 100     not null comment '优先级，数字越小越优先',
+    remark          varchar(255)                null comment '备注',
+    status          int         default 1       not null comment '状态 0已删除 1有效',
+    create_time     bigint                      null,
+    update_time     bigint                      null,
+    index idx_security_group_rule_group (group_id, status, priority),
+    index idx_security_group_rule_remote_group (remote_group_id)
+) comment '安全组规则';
+
+create table security_group_binding
+(
+    id           int auto_increment
+        primary key,
+    group_id     int                         not null comment '安全组ID',
+    host_id      int                         not null comment '虚拟机主机ID',
+    vm_id        int                         null comment 'Proxmox VMID',
+    node_id      int                         not null comment '节点ID',
+    network_type varchar(20) default 'classic' not null comment '网络类型 classic/vpc',
+    status       int         default 1       not null comment '状态 0已删除 1有效',
+    create_time  bigint                      null,
+    update_time  bigint                      null,
+    index idx_security_group_binding_host (host_id, status),
+    index idx_security_group_binding_group (group_id, status)
+) comment '安全组绑定';
+
+create table security_group_sync
+(
+    id             int auto_increment
+        primary key,
+    host_id        int          not null comment '虚拟机主机ID',
+    vm_id          int          null comment 'Proxmox VMID',
+    node_id        int          not null comment '节点ID',
+    rule_hash      varchar(128) null comment '规则哈希',
+    in_sync        int default 0 not null comment '是否一致 0否 1是',
+    last_message   varchar(255) null comment '最后同步消息',
+    last_sync_time bigint       null comment '最后同步时间',
+    index idx_security_group_sync_host (host_id),
+    index idx_security_group_sync_node (node_id)
+) comment '安全组同步状态';
 
 create table vm_resource_rank
 (

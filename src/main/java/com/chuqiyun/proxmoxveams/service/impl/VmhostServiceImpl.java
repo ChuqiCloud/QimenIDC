@@ -90,6 +90,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private SubnetpoolService subnetpoolService;
     @Resource
     private VpcIpBindingService vpcIpBindingService;
+    @Resource
+    private SecurityGroupBusinessService securityGroupBusinessService;
     @Resource(name = "vmFirewallSyncExecutor")
     private TaskExecutor vmFirewallSyncExecutor;
 
@@ -1367,6 +1369,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         updateVmhostIpFields(vmhost, ipConfig, newIpList, "更新虚拟机IP失败");
         log.info("[VmIpChange] 修改IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, IpList={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), newIpList);
+        syncSecurityGroupAfterIpChange(vmhost);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, Collections.singletonList(newIppool)));
         restartVmAfterIpChange(vmhost, node);
@@ -1439,6 +1442,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         log.info("[VmIpChange] 新增IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, AddedIps={}, IpList={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(),
                 boundIppoolList.stream().map(Ippool::getIp).collect(Collectors.toList()), newIpList);
+        syncSecurityGroupAfterIpChange(vmhost);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), ipConfig, boundIppoolList));
         restartVmAfterIpChange(vmhost, node);
@@ -1488,6 +1492,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         updateVmhostIpFields(vmhost, newIpConfig, newIpList, "删除虚拟机IP失败");
         log.info("[VmIpChange] 删除IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, RemovedIps={}, IpList={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), removedIpSet, newIpList);
+        syncSecurityGroupAfterIpChange(vmhost);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getNameserversByIpConfig(vmhost.getNodeid(), newIpConfig, null));
         restartVmAfterIpChange(vmhost, node);
@@ -2063,6 +2068,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         log.info("[VmIpChange] 新增VPC IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, AddedPrivateIps={}, AddedPublicIps={}, IpList={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedPrivateIps,
                 publicIpList.stream().map(Ippool::getIp).collect(Collectors.toList()), newIpList);
+        syncSecurityGroupAfterIpChange(vmhost);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getVpcNameserversByIpConfig(ipConfig, privateIpList));
         restartVmAfterIpChange(vmhost, node);
@@ -2155,10 +2161,30 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         updateVmhostIpFields(vmhost, newIpConfig, newIpList, "删除VPC虚拟机IP失败");
         log.info("[VmIpChange] 删除VPC IP后数据库同步成功: NodeId={}, HostId={}, VmId={}, RemovedPrivateIps={}, IpList={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), deletePrivateIpSet, newIpList);
+        syncSecurityGroupAfterIpChange(vmhost);
 
         syncSingleNicCloudInitNetwork(vmhost, node, getVpcNameserversByIpConfig(newIpConfig, null));
         restartVmAfterIpChange(vmhost, node);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, "删除VPC IP成功，已创建异步强制重启任务，请稍后查看任务状态");
+    }
+
+    private void syncSecurityGroupAfterIpChange(Vmhost vmhost) {
+        try {
+            if (vmhost == null || vmhost.getId() == null || securityGroupBusinessService.getBoundGroupIds(vmhost.getId()).isEmpty()) {
+                return;
+            }
+            Boolean synced = securityGroupBusinessService.syncVm(vmhost.getId());
+            if (!Boolean.TRUE.equals(synced)) {
+                log.warn("[VmIpChange] 安全组同步失败: NodeId={}, HostId={}, VmId={}",
+                        vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid());
+            }
+        } catch (Exception e) {
+            log.warn("[VmIpChange] 安全组同步异常: NodeId={}, HostId={}, VmId={}, Error={}",
+                    vmhost == null ? null : vmhost.getNodeid(),
+                    vmhost == null ? null : vmhost.getId(),
+                    vmhost == null ? null : vmhost.getVmid(),
+                    e.getMessage());
+        }
     }
 
     private List<Subnetpool> getAddVpcSubnetpoolList(Vmhost vmhost, Set<String> usedPrivateIpSet, int count) {

@@ -75,9 +75,9 @@ info:
   application:
     name: "QimenIDC Community Edition"
     description: "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system."
-    version: "1.2.0"
+    version: "1.2.1"
     build:
-      version: "1.2.0_8"
+      version: "1.2.1_1"
 
 management:
   server: # 指定监听端口，不指定则与server端口一直

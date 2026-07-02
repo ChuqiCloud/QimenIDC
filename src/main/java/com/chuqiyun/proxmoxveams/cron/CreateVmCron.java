@@ -571,7 +571,7 @@ public class CreateVmCron {
         rollbackVpcIpForwards(vmParams.getHostid(), vmParams, vmParams.getPublicIpList() == null ? 0 : vmParams.getPublicIpList().size());
         for (String ip : vmParams.getIpList()) {
             Subnetpool subnetpool = getSubnetpoolByIpAndNodeId(ip, vmParams.getNodeid(), vmParams.getVpcSubnetId());
-            if (subnetpool == null || !Objects.equals(subnetpool.getVmId(), vmId)) {
+            if (subnetpool == null || (!Objects.equals(subnetpool.getVmId(), vmId) && !Objects.equals(subnetpool.getVmId(), 0))) {
                 continue;
             }
             subnetpool.setStatus(0);
