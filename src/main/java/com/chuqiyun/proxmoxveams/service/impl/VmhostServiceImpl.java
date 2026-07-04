@@ -2944,20 +2944,20 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     continue;
                 }
                 String normalizedIp = ip.trim();
-                desiredCidrSet.add(normalizedIp.contains("/") ? normalizedIp : normalizedIp + "/32");
+                desiredCidrSet.add(normalizeFirewallCidr(normalizedIp));
             }
         } else if (vmhost != null) {
             if (vmhost.getIpList() != null) {
                 for (String ip : vmhost.getIpList()) {
                     if (StringUtils.isNotBlank(ip)) {
-                        desiredCidrSet.add(ip.trim() + "/32");
+                        desiredCidrSet.add(normalizeFirewallCidr(ip.trim()));
                     }
                 }
             }
             if (vmhost.getIpConfig() != null) {
                 for (String ip : CloudInitNetworkUtil.getIpList(vmhost.getIpConfig())) {
                     if (StringUtils.isNotBlank(ip)) {
-                        desiredCidrSet.add(ip.trim() + "/32");
+                        desiredCidrSet.add(normalizeFirewallCidr(ip.trim()));
                     }
                 }
             }
@@ -2992,6 +2992,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
             }
         }
+    }
+
+    private String normalizeFirewallCidr(String ip) {
+        if (StringUtils.isBlank(ip) || ip.contains("/")) {
+            return ip;
+        }
+        return ip.contains(":") ? ip + "/128" : ip + "/32";
     }
 
     private String resolveNet0Bridge(Vmhost vmhost, String net0Config) {

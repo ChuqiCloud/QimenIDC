@@ -11,6 +11,7 @@ import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
+import com.chuqiyun.proxmoxveams.utils.IpUtil;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -39,6 +40,7 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
         Ipstatus ipstatus = new Ipstatus();
         ipstatus.setName(ipParams.getPoolName());
         ipstatus.setGateway(ipParams.getGateway());
+        ipstatus.setIpVersion(IpUtil.getIpVersion(ipParams.getIpVersion()));
         ipstatus.setMask(ipParams.getMask());
         ipstatus.setDns1(ipParams.getDns1());
         ipstatus.setDns2(ipParams.getDns2());

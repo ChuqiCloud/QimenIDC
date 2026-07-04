@@ -165,7 +165,7 @@ public class ModUtil {
     * @Return String ip
     */
     public static String ipReplace(String ip){
-        return ip.replace(".","-");
+        return ip.replace(".","-").replace(":","-");
     }
 
     /**

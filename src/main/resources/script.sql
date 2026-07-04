@@ -87,12 +87,13 @@ create table ippool
     node_id     int           not null,
     vm_id       int           null,
     pool_id     int           null,
-    ip          varchar(15)   not null,
-    subnet_mask varchar(15)   not null,
-    gateway     varchar(15)   not null,
+    ip          varchar(64)   not null,
+    ip_version  int default 4 not null comment 'IP版本 4/6',
+    subnet_mask varchar(64)   not null,
+    gateway     varchar(64)   not null,
     mac         varchar(255)  null,
-    dns1        varchar(15)   null,
-    dns2        varchar(15)   null,
+    dns1        varchar(64)   null,
+    dns2        varchar(64)   null,
     status      int default 0 not null
 );
 
@@ -101,10 +102,11 @@ create table ipstatus
     id        int auto_increment
         primary key,
     name      varchar(255) not null,
-    gateway   varchar(15)  null,
+    gateway   varchar(64)  null,
+    ip_version int default 4 not null comment 'IP版本 4/6',
     mask      int          null,
-    dns1      varchar(15)  null,
-    dns2      varchar(15)  null,
+    dns1      varchar(64)  null,
+    dns2      varchar(64)  null,
     available int          null comment '可用',
     used      int          null comment '已用',
     disable   int          null comment '禁用',

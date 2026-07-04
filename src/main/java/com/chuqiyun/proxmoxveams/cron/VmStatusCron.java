@@ -930,8 +930,10 @@ public class VmStatusCron {
 
     private String buildWindowsMultiIpScript(Vmhost vmhost) {
         Map<String, String> ipAddressMap = CloudInitNetworkUtil.getIpAddressMap(vmhost.getIpConfig());
-        List<String> desiredIpItems = new ArrayList<>();
-        List<String> desiredPrefixItems = new ArrayList<>();
+        List<String> desiredIpv4Items = new ArrayList<>();
+        List<String> desiredIpv4PrefixItems = new ArrayList<>();
+        List<String> desiredIpv6Items = new ArrayList<>();
+        List<String> desiredIpv6PrefixItems = new ArrayList<>();
         String primaryIp = null;
         for (Map.Entry<String, String> entry : ipAddressMap.entrySet()) {
             if (primaryIp == null) {
@@ -942,32 +944,56 @@ public class VmStatusCron {
             if (prefixLength == null) {
                 continue;
             }
-            desiredIpItems.add("'" + escapePowerShellString(entry.getKey()) + "'");
-            desiredPrefixItems.add("'" + escapePowerShellString(entry.getKey()) + "'=" + prefixLength);
+            String escapedIp = escapePowerShellString(entry.getKey());
+            if (entry.getKey().contains(":")) {
+                desiredIpv6Items.add("'" + escapedIp + "'");
+                desiredIpv6PrefixItems.add("'" + escapedIp + "'=" + prefixLength);
+            } else {
+                desiredIpv4Items.add("'" + escapedIp + "'");
+                desiredIpv4PrefixItems.add("'" + escapedIp + "'=" + prefixLength);
+            }
         }
         if (StringUtils.isBlank(primaryIp)) {
             return "";
         }
-        String desiredIps = "@(" + String.join(",", desiredIpItems) + ")";
-        String desiredPrefixes = "@{" + String.join(";", desiredPrefixItems) + "}";
+        String desiredIpv4s = "@(" + String.join(",", desiredIpv4Items) + ")";
+        String desiredIpv4Prefixes = "@{" + String.join(";", desiredIpv4PrefixItems) + "}";
+        String desiredIpv6s = "@(" + String.join(",", desiredIpv6Items) + ")";
+        String desiredIpv6Prefixes = "@{" + String.join(";", desiredIpv6PrefixItems) + "}";
         String escapedPrimaryIp = escapePowerShellString(primaryIp);
+        String primaryAddressFamily = primaryIp.contains(":") ? "IPv6" : "IPv4";
         return "$ErrorActionPreference = 'Stop'\n"
                 + "$primaryIp = '" + escapedPrimaryIp + "'\n"
-                + "$desiredIps = " + desiredIps + "\n"
-                + "$prefixMap = " + desiredPrefixes + "\n"
-                + "$adapter = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -eq $primaryIp } | Select-Object -First 1\n"
+                + "$primaryAddressFamily = '" + primaryAddressFamily + "'\n"
+                + "$desiredIpv4s = " + desiredIpv4s + "\n"
+                + "$ipv4PrefixMap = " + desiredIpv4Prefixes + "\n"
+                + "$desiredIpv6s = " + desiredIpv6s + "\n"
+                + "$ipv6PrefixMap = " + desiredIpv6Prefixes + "\n"
+                + "$adapter = Get-NetIPAddress -AddressFamily $primaryAddressFamily | Where-Object { $_.IPAddress -eq $primaryIp } | Select-Object -First 1\n"
                 + "if ($null -eq $adapter) { throw \"Primary IP $primaryIp not found\" }\n"
                 + "$index = $adapter.InterfaceIndex\n"
-                + "$currentIps = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
-                + "foreach ($ip in $currentIps) {\n"
-                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIps -notcontains $ip.IPAddress) {\n"
+                + "$currentIpv4s = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
+                + "foreach ($ip in $currentIpv4s) {\n"
+                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIpv4s -notcontains $ip.IPAddress) {\n"
                 + "        Remove-NetIPAddress -InterfaceIndex $index -IPAddress $ip.IPAddress -Confirm:$false\n"
                 + "    }\n"
                 + "}\n"
-                + "foreach ($ip in $desiredIps) {\n"
+                + "foreach ($ip in $desiredIpv4s) {\n"
                 + "    $exists = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index -IPAddress $ip -ErrorAction SilentlyContinue\n"
                 + "    if ($null -eq $exists) {\n"
-                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$prefixMap[$ip]) | Out-Null\n"
+                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$ipv4PrefixMap[$ip]) | Out-Null\n"
+                + "    }\n"
+                + "}\n"
+                + "$currentIpv6s = Get-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
+                + "foreach ($ip in $currentIpv6s) {\n"
+                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIpv6s -notcontains $ip.IPAddress) {\n"
+                + "        Remove-NetIPAddress -InterfaceIndex $index -IPAddress $ip.IPAddress -Confirm:$false\n"
+                + "    }\n"
+                + "}\n"
+                + "foreach ($ip in $desiredIpv6s) {\n"
+                + "    $exists = Get-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index -IPAddress $ip -ErrorAction SilentlyContinue\n"
+                + "    if ($null -eq $exists) {\n"
+                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$ipv6PrefixMap[$ip]) | Out-Null\n"
                 + "    }\n"
                 + "}\n";
     }

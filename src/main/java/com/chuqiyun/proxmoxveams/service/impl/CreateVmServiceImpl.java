@@ -37,6 +37,8 @@ public class CreateVmServiceImpl implements CreateVmService {
     private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
     private static final String NETWORK_TYPE_CLASSIC = "classic";
     private static final String NETWORK_TYPE_VPC = "vpc";
+    private static final int IP_VERSION_4 = 4;
+    private static final int IP_VERSION_6 = 6;
 
     @Resource
     private MasterService masterService;
@@ -67,7 +69,7 @@ public class CreateVmServiceImpl implements CreateVmService {
     @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
     /**
-     * 创建PVE虚拟机
+     * 鍒涘缓PVE铏氭嫙鏈?
      *
      */
     @Override
@@ -79,20 +81,20 @@ public class CreateVmServiceImpl implements CreateVmService {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_HOSTNAME_IS_EXIST, null);
             }
         }
-        // 判断nodeId是否为空
+        // 鍒ゆ柇nodeId鏄惁涓虹┖
         if (vmParams.getNodeid() == null) {
-            return invalidParam("nodeid不能为空");
+            return invalidParam("nodeid涓嶈兘涓虹┖");
         }
         int nodeId = vmParams.getNodeid();
         Master node = masterService.getById(nodeId);
         if (ModUtil.isNull(node)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
         }
-        // 判断节点是否可用
+        // 鍒ゆ柇鑺傜偣鏄惁鍙敤
         if (node.getStatus() >= 1) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
         }
-        // 如果configureTemplateId不为空且大于0
+        // 濡傛灉configureTemplateId涓嶄负绌轰笖澶т簬0
         if (vmParams.getConfigureTemplateId() != null && vmParams.getConfigureTemplateId() > 0) {
             Configuretemplate configuretemplate = configuretemplateService.selectConfiguretemplateById(vmParams.getConfigureTemplateId());
             if (ModUtil.isNull(configuretemplate)) {
@@ -103,19 +105,19 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setSockets(configuretemplate.getSockets());
             vmParams.setThreads(configuretemplate.getThreads());
             vmParams.setMemory(configuretemplate.getMemory());
-            // 判断nested是否为空
+            // 鍒ゆ柇nested鏄惁涓虹┖
             if (configuretemplate.getNested() == null) {
                 vmParams.setNested(false);
             } else {
                 vmParams.setNested(configuretemplate.getNested() == 1);
             }
-            // 判断Devirtualization是否为空
+            // 鍒ゆ柇Devirtualization鏄惁涓虹┖
             if (configuretemplate.getDevirtualization() == null) {
                 vmParams.setDevirtualization(false);
             } else {
                 vmParams.setDevirtualization(configuretemplate.getDevirtualization() == 1);
             }
-            // 判断Kvm是否为空
+            // 鍒ゆ柇Kvm鏄惁涓虹┖
             if (configuretemplate.getKvm() == null) {
                 vmParams.setKvm(true);
             } else {
@@ -129,7 +131,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setAcpi(configuretemplate.getAcpi());
             vmParams.setStorage(configuretemplate.getStorage());
             vmParams.setSystemDiskSize(configuretemplate.getSystemDiskSize());
-            // 将Map转换为HashMap
+            // 灏哅ap杞崲涓篐ashMap
             HashMap<Object, Object> map = new HashMap<>();
             if (configuretemplate.getDataDisk() != null) {
                 map.putAll(configuretemplate.getDataDisk());
@@ -138,59 +140,59 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setBandwidth(configuretemplate.getBandwidth());
             vmParams.setOnBoot(configuretemplate.getOnBoot());
         }
-        // 判断带宽是否为空
+        // 鍒ゆ柇甯﹀鏄惁涓虹┖
         if (vmParams.getBandwidth() == null) {
             vmParams.setBandwidth(1);
         }
-        // 判断nested是否为空
+        // 鍒ゆ柇nested鏄惁涓虹┖
         if (vmParams.getNested() == null) {
             vmParams.setNested(false);
         }
-        // 判断sockets是否为空
+        // 鍒ゆ柇sockets鏄惁涓虹┖
         if (vmParams.getSockets() == null) {
             vmParams.setSockets(1);
         }
-        // 小于1的时候默认为1
+        // 灏忎簬1鐨勬椂鍊欓粯璁や负1
         else if (vmParams.getSockets() < 1) {
             vmParams.setSockets(1);
         }
-        // 判断threads是否为空
+        // 鍒ゆ柇threads鏄惁涓虹┖
         if (vmParams.getThreads() == null) {
             vmParams.setThreads(1);
         }
-        // 小于1的时候默认为1
+        // 灏忎簬1鐨勬椂鍊欓粯璁や负1
         else if (vmParams.getThreads() < 1) {
             vmParams.setThreads(1);
         }
-        // 判断cores是否为空
+        // 鍒ゆ柇cores鏄惁涓虹┖
         if (vmParams.getCores() == null) {
             vmParams.setCores(1);
         }
-        // 小于1的时候默认为1
+        // 灏忎簬1鐨勬椂鍊欓粯璁や负1
         else if (vmParams.getCores() < 1) {
             vmParams.setCores(1);
         }
-        // 判断cpu是否为空
+        // 鍒ゆ柇cpu鏄惁涓虹┖
         if (vmParams.getCpu() == null) {
             vmParams.setCpu("kvm64");
         }
-        // 判断devirtualization是否为空
+        // 鍒ゆ柇devirtualization鏄惁涓虹┖
         if (vmParams.getDevirtualization() == null) {
             vmParams.setDevirtualization(false);
         }
-        // 判断kvm是否为空
+        // 鍒ゆ柇kvm鏄惁涓虹┖
         if (vmParams.getKvm() == null) {
             vmParams.setKvm(true);
         }
-        // 判断cpu是否支持
+        // 鍒ゆ柇cpu鏄惁鏀寔
         if (!VmUtil.isCpuTypeExist(vmParams.getCpu())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CPU_TYPE_NOT_EXIST, null);
         }
-        // 如果开启了nested，但是cpu必须为host或max
+        // 濡傛灉寮€鍚簡nested锛屼絾鏄痗pu蹇呴』涓篽ost鎴杕ax
         if (vmParams.getNested() && !"host".equals(vmParams.getCpu()) && !"max".equals(vmParams.getCpu())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CPU_TYPE_NOT_SUPPORT_NESTED, null);
         }
-        // 判断cpuUnits是否为空
+        // 鍒ゆ柇cpuUnits鏄惁涓虹┖
         if (vmParams.getCpuUnits() == null) {
             vmParams.setCpuUnits(1024);
         }
@@ -203,46 +205,46 @@ public class CreateVmServiceImpl implements CreateVmService {
         else {
             vmParams.setCpuUnits(vmParams.getCpuUnits()*1024);
         }
-        // 判断bwlimit是否为空
+        // 鍒ゆ柇bwlimit鏄惁涓虹┖
         if (vmParams.getBwlimit() == null) {
             vmParams.setBwlimit(configService.getBwlimit());
         }else {
-            // mb/s转换为kb/s
+            // mb/s杞崲涓簁b/s
             vmParams.setBwlimit(vmParams.getBwlimit()*1024);
         }
-        // 判断arch是否为空
+        // 鍒ゆ柇arch鏄惁涓虹┖
         if (vmParams.getArch() == null) {
             vmParams.setArch("x86_64");
         }
-        // 判断arch是否支持
+        // 鍒ゆ柇arch鏄惁鏀寔
         else if (!VmUtil.isArchExist(vmParams.getArch())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_ARCHITECTURE_NOT_EXIST, null);
         }
-        // 判断acpi是否为空 0:禁用 1:启用
+        // 鍒ゆ柇acpi鏄惁涓虹┖ 0:绂佺敤 1:鍚敤
         if (vmParams.getAcpi() == null) {
             vmParams.setAcpi(1);
         }
-        // 判断acpi是否为0或1
+        // 鍒ゆ柇acpi鏄惁涓?鎴?
         else if (vmParams.getAcpi() != 0 && vmParams.getAcpi() != 1) {
             vmParams.setAcpi(1);
         }
-        // 判断memory是否为空
+        // 鍒ゆ柇memory鏄惁涓虹┖
         if (vmParams.getMemory() == null) {
             vmParams.setMemory(512);
         }
-        // 如果storage为空或为auto，则使用节点自动选择的存储；节点未计算出存储时兜底local-lvm
+        // 濡傛灉storage涓虹┖鎴栦负auto锛屽垯浣跨敤鑺傜偣鑷姩閫夋嫨鐨勫瓨鍌紱鑺傜偣鏈绠楀嚭瀛樺偍鏃跺厹搴昹ocal-lvm
         vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), node));
 
-        // 判断onBoot是否为空
+        // 鍒ゆ柇onBoot鏄惁涓虹┖
         if (vmParams.getOnBoot() == null) {
             vmParams.setOnBoot(0);
         }
-        // 判断ifNat是否为空
+        // 鍒ゆ柇ifNat鏄惁涓虹┖
         if (vmParams.getIfnat() == null) {
             vmParams.setIfnat(0);
         }
         normalizeNetworkType(vmParams);
-        // 设置网络
+        // 璁剧疆缃戠粶
         if (isVpcNetwork(vmParams)) {
             Subnet subnet = resolveVpcSubnet(vmParams);
             if (subnet == null) {
@@ -252,7 +254,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setBridge(subnet.getVnet());
             vmParams.setIfnat(0);
         } else if (vmParams.getBridge() == null) {
-            if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat网口
+            if(vmParams.getIfnat() == 1 && node.getNaton() == 1) //nat缃戝彛
             {
                 vmParams.setBridge(node.getNatbridge());
             } else {
@@ -260,33 +262,33 @@ public class CreateVmServiceImpl implements CreateVmService {
             }
         }
 
-        // 判断os与template、iso是否为空，至少有一个不为空
+        // 鍒ゆ柇os涓巘emplate銆乮so鏄惁涓虹┖锛岃嚦灏戞湁涓€涓笉涓虹┖
         if (vmParams.getOs() == null && vmParams.getTemplate() == null && vmParams.getIso() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IMAGE_NOT_NULL, null);
         }
         Os os = osService.isExistOs(vmParams.getOs());
-        // 判断镜像是否存在
+        // 鍒ゆ柇闀滃儚鏄惁瀛樺湪
         if (os == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_EXIST, null);
         }
         if (!osService.isNodeOsDownloaded(os, nodeId)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
         }
-        vmParams.setOsName(os.getName()); // osName统一保存镜像名称
+        vmParams.setOsName(os.getName()); // osName缁熶竴淇濆瓨闀滃儚鍚嶇О
         vmParams.setOs(os.getFileName());
-        // 判断osType是否为空
+        // 鍒ゆ柇osType鏄惁涓虹┖
         if (vmParams.getOsType() == null) {
             vmParams.setOsType(os.getType());
         }
-        // 临时修复 debian
+        // 涓存椂淇 debian
         if(Objects.equals(vmParams.getOsType(), "debian") || Objects.equals(vmParams.getOsType(), "ubuntu")){
             vmParams.setOsType("linux");
         }
-        // 判断osType是否支持
+        // 鍒ゆ柇osType鏄惁鏀寔
         if (!VmUtil.isOsTypeExist(vmParams.getOsType())) {
             vmParams.setOsType("other");
         }
-        // 判断username是否为空
+        // 鍒ゆ柇username鏄惁涓虹┖
         if (vmParams.getUsername() == null) {
             if (os.getOsType().equals("windows")){
                 vmParams.setUsername("administrator");
@@ -295,7 +297,7 @@ public class CreateVmServiceImpl implements CreateVmService {
                 vmParams.setUsername("root");
             }
         }
-        // 判断系统盘大小是否为空
+        // 鍒ゆ柇绯荤粺鐩樺ぇ灏忔槸鍚︿负绌?
         if (vmParams.getSystemDiskSize() == null) {
             if (os.getType().equals("windows")){
                 vmParams.setSystemDiskSize(configService.getWinSystemDiskSize());
@@ -304,9 +306,9 @@ public class CreateVmServiceImpl implements CreateVmService {
                 vmParams.setSystemDiskSize(configService.getLinuxSystemDiskSize());
             }
         }
-        // 判断password是否为空
+        // 鍒ゆ柇password鏄惁涓虹┖
         if (vmParams.getPassword() == null) {
-            // 生成随机密码
+            // 鐢熸垚闅忔満瀵嗙爜
             vmParams.setPassword(VmUtil.generatePassword());
         }
         List<Integer> initScriptIds = vmInitScriptBusinessService.normalizeScriptIds(vmParams.getInitScriptId(), vmParams.getInitScriptIds());
@@ -316,25 +318,88 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         vmParams.setInitScriptIds(initScriptIds);
         vmParams.setInitScriptId(initScriptIds.isEmpty() ? null : initScriptIds.get(0));
-        // 获取默认IP池，仅用于DNS默认值；实际分配以ippool实时空闲状态为准
-        Ipstatus ipPool = getDefaultCreateVmIpPool(nodeId, node, vmParams.getIfnat());
-
+        // 获取默认IPv4地址池，仅用于DNS默认值；实际分配以ippool实时空闲状态为准
         HashMap<String, String> ipConfigMap = vmParams.getIpConfig() == null ? new HashMap<>() : vmParams.getIpConfig();
-        int ipCount = getIpConfigCount(ipConfigMap);
         List<Subnetpool> reservedVpcSubnetpools = new ArrayList<>();
-        List<String> selectedIpList = CloudInitNetworkUtil.getIpList(ipConfigMap);
+        List<String> selectedIpList = isVpcNetwork(vmParams) ? CloudInitNetworkUtil.getIpList(ipConfigMap) : CloudInitNetworkUtil.getIpv4List(ipConfigMap);
+        List<String> selectedIpv6List = CloudInitNetworkUtil.getIpv6List(ipConfigMap);
         Set<String> selectedIpSet = new LinkedHashSet<>(selectedIpList);
+        Set<String> selectedIpv6Set = new LinkedHashSet<>(selectedIpv6List);
+        Integer requestedIpv4Count = getRequestedIpCount(vmParams.getIpv4num(), selectedIpSet.size(), getIpConfigCount(ipConfigMap), true);
+        Integer requestedIpv6Count = getRequestedIpCount(vmParams.getIpv6num(), selectedIpv6Set.size(), 0, false);
+        if (requestedIpv4Count == null || requestedIpv6Count == null) {
+            return invalidParam("ipv4num/ipv6num不能小于0");
+        }
+        if (selectedIpSet.size() > requestedIpv4Count) {
+            return invalidParam("ipConfig中IPv4数量不能大于ipv4num");
+        }
+        if (selectedIpv6Set.size() > requestedIpv6Count) {
+            return invalidParam("ipConfig中IPv6数量不能大于ipv6num");
+        }
+        if (requestedIpv4Count + requestedIpv6Count <= 0) {
+            return invalidParam("ipv4num和ipv6num不能同时为0");
+        }
+        if (isVpcNetwork(vmParams) && (requestedIpv6Count > 0 || !selectedIpv6Set.isEmpty())) {
+            return invalidParam("VPC网络暂不支持IPv6，请使用经典网络");
+        }
+        if (!isVpcNetwork(vmParams) && requestedIpv4Count == 0 && Objects.equals(vmParams.getIfnat(), 1)) {
+            return invalidParam("纯IPv6虚拟机不支持NAT");
+        }
+        Ipstatus ipPool = requestedIpv4Count > 0
+                ? getDefaultCreateVmIpPool(nodeId, node, vmParams.getIfnat(), IP_VERSION_4)
+                : getDefaultCreateVmIpPool(nodeId, node, vmParams.getIfnat(), IP_VERSION_6);
         if (isVpcNetwork(vmParams) && selectedIpList.size() != selectedIpSet.size()) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
-                    "VPC子网中存在重复私网IP: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+                    "VPC瀛愮綉涓瓨鍦ㄩ噸澶嶇缃慖P: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
         }
         if (isVpcNetwork(vmParams) && !reserveSelectedVpcIpsForCreateVm(nodeId, vmParams.getVpcSubnetId(), selectedIpSet, reservedVpcSubnetpools)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
-                    "VPC子网中指定的私网IP不可用: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+                    "VPC瀛愮綉涓寚瀹氱殑绉佺綉IP涓嶅彲鐢? nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
         }
+        if (isVpcNetwork(vmParams)) {
+            while (selectedIpSet.size() < requestedIpv4Count) {
+                int configIndex = findIpConfigSlot(ipConfigMap, false);
+                Subnetpool subnetpool = reserveOneFreeVpcIpForCreateVm(nodeId, vmParams.getVpcSubnetId(), selectedIpSet, reservedVpcSubnetpools);
+                if (subnetpool == null) {
+                    releaseReservedVpcIpsForCreateVm(reservedVpcSubnetpools);
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                            "VPC没有可用私网IP: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+                }
+                appendIpConfigItem(ipConfigMap, configIndex, "ip=" + subnetpool.getIp() + "/" + subnetpool.getMask() + ",gw=" + subnetpool.getGateway());
+                selectedIpSet.add(subnetpool.getIp());
+                if (vmParams.getDns1() == null) {
+                    vmParams.setDns1(subnetpool.getDns());
+                }
+            }
+        } else {
+            while (selectedIpSet.size() < requestedIpv4Count) {
+                Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet, IP_VERSION_4);
+                Ipstatus currentIpPool = appendClassicIpConfig(ipConfigMap, ipEntity, selectedIpSet, false);
+                if (currentIpPool == null) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
+                }
+                if (ipPool == null) {
+                    ipPool = currentIpPool;
+                }
+            }
+            while (selectedIpv6Set.size() < requestedIpv6Count) {
+                Ippool ipv6Entity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpv6Set, IP_VERSION_6);
+                Ipstatus currentIpv6Pool = appendClassicIpConfig(ipConfigMap, ipv6Entity, selectedIpv6Set, true);
+                if (currentIpv6Pool == null) {
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV6, null);
+                }
+                if (ipPool == null) {
+                    ipPool = currentIpv6Pool;
+                }
+            }
+        }
+        int ipCount = 0;
         for (int i = 1; i <= ipCount; i++) {
             String ipConfig = ipConfigMap.get(String.valueOf(i));
             if (CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig) != null) {
+                if (!isVpcNetwork(vmParams)) {
+                    ipConfigMap.put(String.valueOf(i), ensureClassicIpv6Config(ipConfig, nodeId, vmParams, node, selectedIpv6Set));
+                }
                 continue;
             }
             if (isVpcNetwork(vmParams)) {
@@ -342,7 +407,7 @@ public class CreateVmServiceImpl implements CreateVmService {
                 if (subnetpool == null) {
                     releaseReservedVpcIpsForCreateVm(reservedVpcSubnetpools);
                     return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
-                            "VPC子网没有可用私网IP: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
+                            "VPC瀛愮綉娌℃湁鍙敤绉佺綉IP: nodeid=" + nodeId + ", vpcSubnetId=" + vmParams.getVpcSubnetId());
                 }
                 ipConfigMap.put(String.valueOf(i), "ip=" + subnetpool.getIp() + "/" + subnetpool.getMask() + ",gw=" + subnetpool.getGateway());
                 selectedIpSet.add(subnetpool.getIp());
@@ -350,7 +415,7 @@ public class CreateVmServiceImpl implements CreateVmService {
                     vmParams.setDns1(subnetpool.getDns());
                 }
             } else {
-                Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet);
+                Ippool ipEntity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node.getNatippool(), selectedIpSet, IP_VERSION_4);
                 if (ipEntity == null) {
                     return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
                 }
@@ -358,7 +423,9 @@ public class CreateVmServiceImpl implements CreateVmService {
                 if (currentIpPool == null) {
                     return new UnifiedResultDto<>(UnifiedResultCode.ERROR_IP_POOL_NOT_EXIST, null);
                 }
-                ipConfigMap.put(String.valueOf(i), "ip=" + ipEntity.getIp() + "/" + currentIpPool.getMask() + ",gw=" + ipEntity.getGateway());
+                String configValue = "ip=" + ipEntity.getIp() + "/" + currentIpPool.getMask() + ",gw=" + ipEntity.getGateway();
+                configValue = ensureClassicIpv6Config(configValue, nodeId, vmParams, node, selectedIpv6Set);
+                ipConfigMap.put(String.valueOf(i), configValue);
                 selectedIpSet.add(ipEntity.getIp());
                 if (ipPool == null) {
                     ipPool = currentIpPool;
@@ -383,15 +450,15 @@ public class CreateVmServiceImpl implements CreateVmService {
             if (publicIpList == null || publicIpList.size() < ipList.size()) {
                 releaseReservedVpcIpsForCreateVm(reservedVpcSubnetpools);
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
-                        "公网IP池没有足够可用IP: nodeid=" + nodeId + ", publicIpPoolId=" + vmParams.getPublicIpPoolId());
+                        "鍏綉IP姹犳病鏈夎冻澶熷彲鐢↖P: nodeid=" + nodeId + ", publicIpPoolId=" + vmParams.getPublicIpPoolId());
             }
             vmParams.setPublicIpList(publicIpList);
         }
-        // 设置dns
+        // 璁剧疆dns
         if (vmParams.getDns1() == null && ipPool != null) {
             vmParams.setDns1(ipPool.getDns1());
         }
-        // 判断natnum是否为空
+        // 鍒ゆ柇natnum鏄惁涓虹┖
         if (vmParams.getNatnum() == null) {
             vmParams.setNatnum(0);
         }
@@ -407,7 +474,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         {
             vmParams.setOutFlow(0);
         }
-        // 将vmParams转换为HashMap
+        // 灏唙mParams杞崲涓篐ashMap
         HashMap<Object, Object> vmParamsMap;
         try {
             vmParamsMap = EntityHashMapConverterUtil.convertToHashMap(vmParams);
@@ -417,7 +484,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             e.printStackTrace();
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
         }
-        // 创建虚拟机任务
+        // 鍒涘缓铏氭嫙鏈轰换鍔?
         Task task = new Task();
         task.setStatus(0);
         task.setType(CREATE_VM);
@@ -425,13 +492,13 @@ public class CreateVmServiceImpl implements CreateVmService {
         task.setCreateDate(System.currentTimeMillis());
         //
         if (taskService.insertTask(task)){
-            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务: NodeID="+nodeId+",OsType="+vmParams.getOsType()+
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "鍒涘缓铏氭嫙鏈轰换鍔? NodeID="+nodeId+",OsType="+vmParams.getOsType()+
                     ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory());
-            // 如果isApi为true，则循环等待任务完成
+            // 濡傛灉isApi涓簍rue锛屽垯寰幆绛夊緟浠诲姟瀹屾垚
             if (isApi) {
                 int count = 0;
                 while (true) {
-                    // 如果超过30秒还没有完成，则返回失败
+                    // 濡傛灉瓒呰繃30绉掕繕娌℃湁瀹屾垚锛屽垯杩斿洖澶辫触
                     if (count >= 300) {
                         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
                     }
@@ -441,36 +508,36 @@ public class CreateVmServiceImpl implements CreateVmService {
                         e.printStackTrace();
                     }
                     Task task1 = taskService.getById(task.getId());
-                    // 等于0表示任务还未开始
+                    // 绛変簬0琛ㄧず浠诲姟杩樻湭寮€濮?
                     if (task1.getStatus() == 0) {
                         count++;
                         continue;
                     }
-                    // 等于1表示任务正在进行
+                    // 绛変簬1琛ㄧず浠诲姟姝ｅ湪杩涜
                     else if (task1.getStatus() == 1) {
                         count++;
                         continue;
                     }
-                    // 等于4表示任务成功
+                    // 绛変簬4琛ㄧず浠诲姟鎴愬姛
                     else if (task1.getStatus() == 4) {
-                        // 设置虚拟机ID
+                        // 璁剧疆铏氭嫙鏈篒D
                         vmParams.setVmid(task1.getVmid());
-                        // 设置虚拟机hostId
+                        // 璁剧疆铏氭嫙鏈篽ostId
                         vmParams.setHostid(task1.getHostid());
                         vmParams.setIpData(VmUtil.splitIpAddress(vmParams.getIpConfig()));
                         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
                     }
-                    // 等于2表示任务完成
+                    // 绛変簬2琛ㄧず浠诲姟瀹屾垚
                     else if (task1.getStatus() == 2) {
-                        // 设置虚拟机ID
+                        // 璁剧疆铏氭嫙鏈篒D
                         vmParams.setVmid(task1.getVmid());
-                        // 设置虚拟机hostId
+                        // 璁剧疆铏氭嫙鏈篽ostId
                         vmParams.setHostid(task1.getHostid());
                         /*HashMap<Object, Object> vmParamsMapResult;
                         try {
                             vmParamsMapResult = EntityHashMapConverterUtil.convertToHashMap(vmParams);
                         } catch (IllegalAccessException e) {
-                            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "返回参数转换失败");
+                            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "杩斿洖鍙傛暟杞崲澶辫触");
                             e.printStackTrace();
                             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
                         }*/
@@ -479,7 +546,7 @@ public class CreateVmServiceImpl implements CreateVmService {
                         vmParams.setIpData(VmUtil.splitIpAddress(vmParams.getIpConfig()));
                         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vmParams);
                     }
-                    // 等于3表示任务失败
+                    // 绛変簬3琛ㄧず浠诲姟澶辫触
                     else if (task1.getStatus() == 3) {
                         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
                     }
@@ -497,7 +564,7 @@ public class CreateVmServiceImpl implements CreateVmService {
 
     /**
      * @Author: mryunqi
-     * @Description: 创建虚拟机
+     * @Description: 鍒涘缓铏氭嫙鏈?
      * @DateTime: 2023/6/21 23:41
      */
     @Override
@@ -505,23 +572,23 @@ public class CreateVmServiceImpl implements CreateVmService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = masterService.getById(vmParams.getNodeid());
         if (node == null) {
-            UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建基础虚拟机失败，节点不存在: NodeID={}", vmParams.getNodeid());
+            UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "鍒涘缓鍩虹铏氭嫙鏈哄け璐ワ紝鑺傜偣涓嶅瓨鍦? NodeID={}", vmParams.getNodeid());
             return 0;
         }
         vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), node));
-        // 创建虚拟机可选参数
+        // 鍒涘缓铏氭嫙鏈哄彲閫夊弬鏁?
         HashMap<String, Object> param = new HashMap<>();
         int vmId = vmid;
         param.put("vmid", vmId);
         param.put("name", vmParams.getHostname());
-        // 设置CPU
+        // 璁剧疆CPU
         param.put("cpu", vmParams.getCpu());
-        // 设置CPU插槽
+        // 璁剧疆CPU鎻掓Ы
         param.put("sockets", vmParams.getSockets());
-        // 设置CPU
+        // 璁剧疆CPU
         param.put("cores", vmParams.getCores());
 
-        // 如果modelGroup为空
+        // 濡傛灉modelGroup涓虹┖
         if (vmParams.getModelGroup() == null) {
             if (vmParams.getCpuModel() != null) {
                 Cpuinfo cpuinfo = cpuinfoService.getById(vmParams.getCpuModel());
@@ -534,7 +601,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setArgs(modelgroup.getArgs());
             VmUtil.getArgsByModelGroup(vmParams, param);
         }
-        // 设置kvm
+        // 璁剧疆kvm
         param.put("kvm", vmParams.getKvm());
 
         String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig());
@@ -542,36 +609,36 @@ public class CreateVmServiceImpl implements CreateVmService {
             param.put("ipconfig0", primaryIpConfig);
         }
         //param.put("ipconfig0", "ip=23.94.247.39/28,gw=23.94.247.33");
-        // 设置DNS
+        // 璁剧疆DNS
         param.put("nameserver", vmParams.getDns1());
-        // 设置虚拟机osType
+        // 璁剧疆铏氭嫙鏈簅sType
         param.put("ostype", OsTypeUtil.getOsType(vmParams.getOs(),vmParams.getOsType()));
-        // 开机启动
+        // 寮€鏈哄惎鍔?
         param.put("onboot", vmParams.getOnBoot());
-        // 设置bwlimit
+        // 璁剧疆bwlimit
         param.put("bwlimit", vmParams.getBwlimit());
-        // 设置内存
+        // 璁剧疆鍐呭瓨
         param.put("memory", vmParams.getMemory());
-        // 设置arch
+        // 璁剧疆arch
         param.put("arch", vmParams.getArch());
-        // 设置acpi
+        // 璁剧疆acpi
         param.put("acpi", vmParams.getAcpi());
-        // 开启QEMU Agent
+        // 寮€鍚疩EMU Agent
         param.put("agent", 1);
-        // 设置虚拟机citype
+        // 璁剧疆铏氭嫙鏈篶itype
         if ("windows".equals(vmParams.getOsType())){
             param.put("citype","configdrive2");
         }
         if ("linux".equals(vmParams.getOsType())){
             param.put("citype","nocloud");
         }
-        // 设置虚拟机账号
+        // 璁剧疆铏氭嫙鏈鸿处鍙?
         param.put("ciuser",vmParams.getUsername());
-        // 设置虚拟机密码
+        // 璁剧疆铏氭嫙鏈哄瘑鐮?
         param.put("cipassword",vmParams.getPassword());
-        // 设置cloud-init
+        // 璁剧疆cloud-init
         param.put("ide2", vmParams.getStorage() + ":cloudinit");
-        // 设置网络
+        // 璁剧疆缃戠粶
         double bandWidthValue = vmParams.getBandwidth() / 8.0;
         String bandWidth = String.format(Locale.US, "%.2f", bandWidthValue);
         boolean multiIp = CloudInitNetworkUtil.getIpAddressCount(vmParams.getIpConfig()) > 1;
@@ -582,14 +649,14 @@ public class CreateVmServiceImpl implements CreateVmService {
             try {
                 CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmId, vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
             } catch (Exception e) {
-                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "写入单网卡多IP cloud-init 配置失败: vmid=" + vmId);
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "鍐欏叆鍗曠綉鍗″IP cloud-init 閰嶇疆澶辫触: vmid=" + vmId);
                 e.printStackTrace();
                 return 0;
             }
             param.put("cicustom", "network=" + CloudInitNetworkUtil.getNetworkSnippetVolume(vmId));
         }
 
-        // 获取cookie
+        // 鑾峰彇cookie
         HashMap<String, String> authentications = masterService.getMasterCookieMap(vmParams.getNodeid());
         JSONObject jsonObject =  proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu", param);
         if (jsonObject.containsKey("data")){
@@ -601,8 +668,8 @@ public class CreateVmServiceImpl implements CreateVmService {
     }
 
     /**
-     * @Author: 星禾
-     * @Description: 获取创建虚拟机时可用的存储名称
+     * @Author: 鏄熺
+     * @Description: 鑾峰彇鍒涘缓铏氭嫙鏈烘椂鍙敤鐨勫瓨鍌ㄥ悕绉?
      * @DateTime: 2026/6/6 20:24
      */
     private String getCreateVmStorage(String storage, Master node) {
@@ -639,20 +706,47 @@ public class CreateVmServiceImpl implements CreateVmService {
         return count;
     }
 
-    private Ipstatus getDefaultCreateVmIpPool(Integer nodeId, Master node, Integer ifnat) {
-        if (Objects.equals(ifnat, 1)) {
-            return ipstatusService.getIpStatusMaxByNodeId(nodeId, node.getNatippool(), null);
+    private Integer getRequestedIpCount(Integer requestedCount, int selectedCount, int defaultCount, boolean useDefaultCount) {
+        if (requestedCount != null) {
+            return requestedCount < 0 ? null : requestedCount;
         }
-        return ipstatusService.getIpStatusMaxByNodeId(nodeId, null, node.getNatippool());
+        return Math.max(selectedCount, useDefaultCount ? defaultCount : 0);
+    }
+
+    private Ipstatus getDefaultCreateVmIpPool(Integer nodeId, Master node, Integer ifnat) {
+        return getDefaultCreateVmIpPool(nodeId, node, ifnat, IP_VERSION_4);
+    }
+
+    private Ipstatus getDefaultCreateVmIpPool(Integer nodeId, Master node, Integer ifnat, Integer ipVersion) {
+        QueryWrapper<Ipstatus> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("nodeid", nodeId);
+        queryWrapper.eq("ip_version", ipVersion);
+        if (Objects.equals(ifnat, 1) && Objects.equals(ipVersion, IP_VERSION_4)) {
+            if (node != null && node.getNatippool() != null) {
+                queryWrapper.eq("id", node.getNatippool());
+            }
+        } else if (node != null && node.getNatippool() != null) {
+            queryWrapper.ne("id", node.getNatippool());
+        }
+        queryWrapper.orderByDesc("available");
+        queryWrapper.last("limit 1");
+        return ipstatusService.getOne(queryWrapper);
     }
 
     private Ippool getOneFreeIpForCreateVm(Integer nodeId, Integer ifnat, Integer natippool, Set<String> excludeIpSet) {
+        return getOneFreeIpForCreateVm(nodeId, ifnat, natippool, excludeIpSet, IP_VERSION_4);
+    }
+
+    private Ippool getOneFreeIpForCreateVm(Integer nodeId, Integer ifnat, Integer natippool, Set<String> excludeIpSet, Integer ipVersion) {
         QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("node_id", nodeId);
         queryWrapper.eq("status", 0);
-        if (Objects.equals(ifnat, 1) && natippool != null) {
+        queryWrapper.eq("ip_version", ipVersion);
+        if (Objects.equals(ifnat, 1) && Objects.equals(ipVersion, IP_VERSION_4) && natippool != null) {
             queryWrapper.eq("pool_id", natippool);
         } else if (!Objects.equals(ifnat, 1) && natippool != null) {
+            queryWrapper.ne("pool_id", natippool);
+        } else if (Objects.equals(ipVersion, IP_VERSION_6) && natippool != null) {
             queryWrapper.ne("pool_id", natippool);
         }
         if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
@@ -661,6 +755,72 @@ public class CreateVmServiceImpl implements CreateVmService {
         queryWrapper.orderByAsc("id");
         queryWrapper.last("limit 1");
         return ippoolService.getOne(queryWrapper);
+    }
+
+    private Ipstatus appendClassicIpConfig(HashMap<String, String> ipConfigMap, Ippool ipEntity, Set<String> selectedIpSet, boolean ipv6) {
+        if (ipEntity == null) {
+            return null;
+        }
+        Ipstatus currentIpPool = ipstatusService.getById(ipEntity.getPoolId());
+        if (currentIpPool == null || currentIpPool.getMask() == null) {
+            return null;
+        }
+        int configIndex = findIpConfigSlot(ipConfigMap, ipv6);
+        String configValue = (ipv6 ? "ip6=" : "ip=") + ipEntity.getIp() + "/" + currentIpPool.getMask()
+                + (ipv6 ? ",gw6=" : ",gw=") + ipEntity.getGateway();
+        appendIpConfigItem(ipConfigMap, configIndex, configValue);
+        selectedIpSet.add(ipEntity.getIp());
+        return currentIpPool;
+    }
+
+    private int findIpConfigSlot(HashMap<String, String> ipConfigMap, boolean ipv6) {
+        int count = getIpConfigCount(ipConfigMap);
+        for (int i = 1; i <= count; i++) {
+            if (!hasIpConfigAddress(ipConfigMap.get(String.valueOf(i)), ipv6)) {
+                return i;
+            }
+        }
+        return count + 1;
+    }
+
+    private boolean hasIpConfigAddress(String ipConfig, boolean ipv6) {
+        if (ipConfig == null || ipConfig.trim().isEmpty()) {
+            return false;
+        }
+        String key = ipv6 ? "ip6" : "ip";
+        for (String item : ipConfig.split(",")) {
+            String[] parts = item.trim().split("=", 2);
+            if (parts.length == 2 && key.equals(parts[0].trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void appendIpConfigItem(HashMap<String, String> ipConfigMap, int configIndex, String configValue) {
+        String key = String.valueOf(configIndex);
+        String oldConfig = ipConfigMap.get(key);
+        if (oldConfig == null || oldConfig.trim().isEmpty()) {
+            ipConfigMap.put(key, configValue);
+            return;
+        }
+        ipConfigMap.put(key, oldConfig + "," + configValue);
+    }
+
+    private String ensureClassicIpv6Config(String ipConfig, Integer nodeId, VmParams vmParams, Master node, Set<String> selectedIpv6Set) {
+        if (isVpcNetwork(vmParams) || ipConfig == null || ipConfig.contains("ip6=")) {
+            return ipConfig;
+        }
+        Ippool ipv6Entity = getOneFreeIpForCreateVm(nodeId, vmParams.getIfnat(), node == null ? null : node.getNatippool(), selectedIpv6Set, IP_VERSION_6);
+        if (ipv6Entity == null) {
+            return ipConfig;
+        }
+        Ipstatus currentIpv6Pool = ipstatusService.getById(ipv6Entity.getPoolId());
+        if (currentIpv6Pool == null || currentIpv6Pool.getMask() == null) {
+            return ipConfig;
+        }
+        selectedIpv6Set.add(ipv6Entity.getIp());
+        return ipConfig + ",ip6=" + ipv6Entity.getIp() + "/" + currentIpv6Pool.getMask() + ",gw6=" + ipv6Entity.getGateway();
     }
 
     private List<String> getVpcPublicIpListForCreateVm(Integer nodeId, Master node, VmParams vmParams, int count) {
@@ -846,27 +1006,27 @@ public class CreateVmServiceImpl implements CreateVmService {
 
     private String buildVpcSubnetInvalidMessage(VmParams vmParams) {
         if (vmParams == null) {
-            return "VPC子网参数无效: vmParams为空";
+            return "VPC瀛愮綉鍙傛暟鏃犳晥: vmParams涓虹┖";
         }
         Integer subnetId = vmParams.getVpcSubnetId();
         if (subnetId != null && subnetId > 0) {
             Subnet subnet = subnetService.getById(subnetId);
             if (subnet == null) {
-                return "VPC子网不存在: vpcSubnetId=" + subnetId;
+                return "VPC瀛愮綉涓嶅瓨鍦? vpcSubnetId=" + subnetId;
             }
             if (subnet.getNodeid() == null) {
-                return "VPC子网未记录节点，且子网IP池未找到当前节点记录: nodeid=" + vmParams.getNodeid()
+                return "VPC瀛愮綉鏈褰曡妭鐐癸紝涓斿瓙缃慖P姹犳湭鎵惧埌褰撳墠鑺傜偣璁板綍: nodeid=" + vmParams.getNodeid()
                         + ", vpcSubnetId=" + subnetId + ", subnetNodeid=null";
             }
             if (!isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
-                return "VPC子网不属于当前节点: nodeid=" + vmParams.getNodeid()
+                return "VPC瀛愮綉涓嶅睘浜庡綋鍓嶈妭鐐? nodeid=" + vmParams.getNodeid()
                         + ", vpcSubnetId=" + subnetId + ", subnetNodeid=" + subnet.getNodeid();
             }
         }
         if (vmParams.getBridge() == null || vmParams.getBridge().trim().isEmpty()) {
-            return "VPC网络需要传vpcSubnetId，或传bridge/vnet用于反查子网: nodeid=" + vmParams.getNodeid();
+            return "VPC缃戠粶闇€瑕佷紶vpcSubnetId锛屾垨浼燽ridge/vnet鐢ㄤ簬鍙嶆煡瀛愮綉: nodeid=" + vmParams.getNodeid();
         }
-        return "未找到匹配的VPC子网: nodeid=" + vmParams.getNodeid()
+        return "鏈壘鍒板尮閰嶇殑VPC瀛愮綉: nodeid=" + vmParams.getNodeid()
                 + ", vpcSubnetId=" + vmParams.getVpcSubnetId()
                 + ", bridge=" + vmParams.getBridge();
     }
@@ -976,7 +1136,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmId);
             updateCreatedIppoolMac(vmParams, vmId, macAddress);
         } catch (Exception e) {
-            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "初始化虚拟机防IP伪造配置失败: vmid=" + vmId + ", err=" + e.getMessage());
+            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "鍒濆鍖栬櫄鎷熸満闃睮P浼€犻厤缃け璐? vmid=" + vmId + ", err=" + e.getMessage());
         }
     }
 
@@ -987,7 +1147,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmId, "ipfilter-net0");
         for (String ip : allowedIps) {
-            proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmId, "ipfilter-net0", ip + "/32");
+            String cidr = ip.contains(":") ? ip + "/128" : ip + "/32";
+            proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmId, "ipfilter-net0", cidr);
         }
     }
 

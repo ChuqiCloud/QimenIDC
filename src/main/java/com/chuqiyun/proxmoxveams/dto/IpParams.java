@@ -20,6 +20,8 @@ public class IpParams {
     private String endIp;
     // 网关
     private String gateway;
+    // IP版本 4/6
+    private Integer ipVersion;
     // 掩码位
     private Integer mask;
     // 节点id

@@ -3741,6 +3741,8 @@ POST /{adminPath}/createVm
   "os": "CentOS-8-Stream-x64.qcow2",
   "osType": "linux",
   "bandwidth": 100,
+  "ipv4num": 1,
+  "ipv6num": 1,
   "ipConfig": {
     "1": ""
   },
@@ -9817,10 +9819,10 @@ GET /api/common/version
   "code": 20000,
   "message": "请求成功",
   "data": {
-    "buildVersion": "1.2.0_1",
+    "buildVersion": "1.2.3_0",
     "name": "QimenIDC Community Edition",
     "description": "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system.",
-    "version": "1.2.0"
+    "version": "1.2.3"
   }
 }
 ```
@@ -10469,6 +10471,8 @@ POST /vnc/import
 |systemDiskSize|integer¦null|false|none||系统盘大小，单位Gb|
 |dataDisk|string|false|none||none|
 |bandwidth|integer¦null|false|none||带宽，单位Mbps|
+|ipv4num|integer¦null|false|none||IPv4分配数量，传0表示不分配IPv4；不传兼容旧逻辑|
+|ipv6num|integer¦null|false|none||IPv6分配数量，传0表示不分配IPv6；仅经典网络支持|
 |onBoot|integer¦null|false|none||是否开机自启 0:否 1:是，默认0关闭|
 |name|string|true|none||none|
 
@@ -10688,6 +10692,8 @@ POST /vnc/import
   "os": "string",
   "osType": "string",
   "bandwidth": 0,
+  "ipv4num": 1,
+  "ipv6num": 0,
   "onBoot": 0,
   "username": "string",
   "password": "string",

@@ -426,3 +426,18 @@ build: # 内部构建版本信息
              add linux_content mediumtext null comment 'Linux脚本内容' after content;"
       - "alter table vm_init_script
              add windows_content mediumtext null comment 'Windows脚本内容' after linux_content;"
+    4:
+      - "alter table ipstatus
+                   add ip_version int default 4 not null comment 'IP版本 4/6' after gateway;"
+      - "alter table ipstatus
+                   modify gateway varchar(64) null,
+                   modify dns1 varchar(64) null,
+                   modify dns2 varchar(64) null;"
+      - "alter table ippool
+                   add ip_version int default 4 not null comment 'IP版本 4/6' after ip;"
+      - "alter table ippool
+                   modify ip varchar(64) not null,
+                   modify subnet_mask varchar(64) not null,
+                   modify gateway varchar(64) not null,
+                   modify dns1 varchar(64) null,
+                   modify dns2 varchar(64) null;"

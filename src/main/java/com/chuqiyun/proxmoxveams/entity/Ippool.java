@@ -29,7 +29,9 @@ public class Ippool extends Model<Ippool> {
     private Integer poolId;
     
     private String ip;
-    
+
+    private Integer ipVersion;
+
     private String subnetMask;
     private String gateway;
     private String mac;

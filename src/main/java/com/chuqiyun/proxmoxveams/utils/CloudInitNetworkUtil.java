@@ -186,6 +186,26 @@ public class CloudInitNetworkUtil {
         return ipList;
     }
 
+    public static List<String> getIpv4List(Map<String, String> ipConfig) {
+        List<String> ipList = new ArrayList<>();
+        for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
+            if (!item.ipv6) {
+                ipList.add(item.ip);
+            }
+        }
+        return ipList;
+    }
+
+    public static List<String> getIpv6List(Map<String, String> ipConfig) {
+        List<String> ipList = new ArrayList<>();
+        for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
+            if (item.ipv6) {
+                ipList.add(item.ip);
+            }
+        }
+        return ipList;
+    }
+
     public static Map<String, String> getIpAddressMap(Map<String, String> ipConfig) {
         Map<String, String> ipAddressMap = new LinkedHashMap<>();
         for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
@@ -229,7 +249,8 @@ public class CloudInitNetworkUtil {
         if (ipConfigs.isEmpty()) {
             throw new IllegalArgumentException("cloud-init网络配置不能为空");
         }
-        String gateway = getPrimaryGateway(ipConfigs);
+        String gateway4 = getPrimaryGateway(ipConfigs, false);
+        String gateway6 = getPrimaryGateway(ipConfigs, true);
         StringBuilder builder = new StringBuilder();
         builder.append("version: 2\n");
         builder.append("ethernets:\n");
@@ -240,12 +261,16 @@ public class CloudInitNetworkUtil {
             builder.append("    set-name: ").append(INTERFACE_NAME).append("\n");
         }
         builder.append("    dhcp4: false\n");
+        builder.append("    dhcp6: false\n");
         builder.append("    addresses:\n");
         for (CloudInitIpConfig item : ipConfigs) {
             builder.append("      - ").append(item.address).append("\n");
         }
-        if (StringUtils.isNotBlank(gateway)) {
-            builder.append("    gateway4: ").append(gateway).append("\n");
+        if (StringUtils.isNotBlank(gateway4)) {
+            builder.append("    gateway4: ").append(gateway4).append("\n");
+        }
+        if (StringUtils.isNotBlank(gateway6)) {
+            builder.append("    gateway6: ").append(gateway6).append("\n");
         }
         if (nameservers != null && !nameservers.isEmpty()) {
             builder.append("    nameservers:\n");
@@ -279,9 +304,9 @@ public class CloudInitNetworkUtil {
         }
     }
 
-    private static String getPrimaryGateway(List<CloudInitIpConfig> ipConfigs) {
+    private static String getPrimaryGateway(List<CloudInitIpConfig> ipConfigs, boolean ipv6) {
         for (CloudInitIpConfig item : ipConfigs) {
-            if (StringUtils.isNotBlank(item.gateway)) {
+            if (item.ipv6 == ipv6 && StringUtils.isNotBlank(item.gateway)) {
                 return item.gateway;
             }
         }
@@ -291,10 +316,7 @@ public class CloudInitNetworkUtil {
     private static List<CloudInitIpConfig> parseIpConfigs(Map<String, String> ipConfig) {
         List<CloudInitIpConfig> ipConfigs = new ArrayList<>();
         for (Map.Entry<String, String> entry : getSortedIpConfigEntries(ipConfig)) {
-            CloudInitIpConfig item = parseIpConfig(entry.getValue());
-            if (item != null) {
-                ipConfigs.add(item);
-            }
+            ipConfigs.addAll(parseIpConfigList(entry.getValue()));
         }
         return ipConfigs;
     }
@@ -318,20 +340,44 @@ public class CloudInitNetworkUtil {
     }
 
     private static CloudInitIpConfig parseIpConfig(String ipConfig) {
+        List<CloudInitIpConfig> ipConfigs = parseIpConfigList(ipConfig);
+        return ipConfigs.isEmpty() ? null : ipConfigs.get(0);
+    }
+
+    private static List<CloudInitIpConfig> parseIpConfigList(String ipConfig) {
+        List<CloudInitIpConfig> ipConfigs = new ArrayList<>();
         if (StringUtils.isBlank(ipConfig)) {
-            return null;
+            return ipConfigs;
         }
-        String address = null;
-        String gateway = null;
+        String address4 = null;
+        String gateway4 = null;
+        String address6 = null;
+        String gateway6 = null;
         String[] configItems = ipConfig.split(",");
         for (String configItem : configItems) {
             String item = configItem.trim();
             if (item.startsWith("ip=")) {
-                address = item.substring(3);
+                address4 = item.substring(3);
+            } else if (item.startsWith("ip6=")) {
+                address6 = item.substring(4);
             } else if (item.startsWith("gw=")) {
-                gateway = item.substring(3);
+                gateway4 = item.substring(3);
+            } else if (item.startsWith("gw6=")) {
+                gateway6 = item.substring(4);
             }
         }
+        CloudInitIpConfig ipv4Config = buildCloudInitIpConfig(address4, gateway4, false);
+        if (ipv4Config != null) {
+            ipConfigs.add(ipv4Config);
+        }
+        CloudInitIpConfig ipv6Config = buildCloudInitIpConfig(address6, gateway6, true);
+        if (ipv6Config != null) {
+            ipConfigs.add(ipv6Config);
+        }
+        return ipConfigs;
+    }
+
+    private static CloudInitIpConfig buildCloudInitIpConfig(String address, String gateway, boolean ipv6) {
         if (StringUtils.isBlank(address) || "dhcp".equalsIgnoreCase(address)) {
             return null;
         }
@@ -340,7 +386,7 @@ public class CloudInitNetworkUtil {
         if (maskIndex > 0) {
             ip = address.substring(0, maskIndex);
         }
-        return new CloudInitIpConfig(ip, address, gateway);
+        return new CloudInitIpConfig(ip, address, gateway, ipv6);
     }
 
     public static List<String> distinctNameservers(List<String> nameservers) {
@@ -359,11 +405,13 @@ public class CloudInitNetworkUtil {
         private final String ip;
         private final String address;
         private final String gateway;
+        private final boolean ipv6;
 
-        private CloudInitIpConfig(String ip, String address, String gateway) {
+        private CloudInitIpConfig(String ip, String address, String gateway, boolean ipv6) {
             this.ip = ip;
             this.address = address;
             this.gateway = gateway;
+            this.ipv6 = ipv6;
         }
     }
 }

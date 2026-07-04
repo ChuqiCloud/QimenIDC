@@ -494,30 +494,10 @@ public class VmUtil {
     * @Return List<IpDto> 分离后的实体
     */
     public static List<IpDto> splitIpAddress(HashMap<String,String> ipConfig){
-        List<IpDto> ipList = new ArrayList<>();
-        // count为key,ip地址为value,如1=ip=192.168.1.2/28,gw=192.168.1.1
-        for (String s : ipConfig.keySet()) {
-            IpDto ipAddressEntity = new IpDto();
-            String[] split = ipConfig.get(s).split(",");
-            for (String s1 : split) {
-                // 再以等号分割
-                String[] split1 = s1.split("=");
-                // ip地址
-                if ("ip".equals(split1[0])) {
-                    // ip为/28之前的字符串
-                    ipAddressEntity.setIp(split1[1].split("/")[0]);
-                    // 子网掩码
-                    ipAddressEntity.setSubnetMask(Integer.valueOf(split1[1].split("/")[1]));
-                }
-                // 网关
-                if ("gw".equals(split1[0])) {
-                    ipAddressEntity.setGateway(split1[1]);
-                }
-            }
-            // 存入list
-            ipList.add(ipAddressEntity);
+        if (ipConfig == null) {
+            return new ArrayList<>();
         }
-        return ipList;
+        return splitIpAddressWithVersion(ipConfig);
     }
 
     /**
@@ -603,6 +583,56 @@ public class VmUtil {
         // 追加discard参数
         systemDiskParams = systemDiskParams + ",discard=on";
         return systemDiskParams;
+    }
+
+    private static List<IpDto> splitIpAddressWithVersion(HashMap<String,String> ipConfig) {
+        List<IpDto> ipList = new ArrayList<>();
+        for (String key : ipConfig.keySet()) {
+            String gateway4 = null;
+            String gateway6 = null;
+            List<IpDto> entryIpList = new ArrayList<>();
+            String[] split = ipConfig.get(key).split(",");
+            for (String item : split) {
+                String[] splitItem = item.split("=", 2);
+                if (splitItem.length != 2) {
+                    continue;
+                }
+                if ("ip".equals(splitItem[0])) {
+                    entryIpList.add(buildIpDto(splitItem[1], 4));
+                }
+                if ("ip6".equals(splitItem[0])) {
+                    entryIpList.add(buildIpDto(splitItem[1], 6));
+                }
+                if ("gw".equals(splitItem[0])) {
+                    gateway4 = splitItem[1];
+                }
+                if ("gw6".equals(splitItem[0])) {
+                    gateway6 = splitItem[1];
+                }
+            }
+            for (IpDto ipAddressEntity : entryIpList) {
+                if (ipAddressEntity.getIpVersion() != null && ipAddressEntity.getIpVersion() == 6) {
+                    ipAddressEntity.setGateway(gateway6);
+                } else {
+                    ipAddressEntity.setGateway(gateway4);
+                }
+                ipList.add(ipAddressEntity);
+            }
+        }
+        return ipList;
+    }
+
+    private static IpDto buildIpDto(String address, Integer ipVersion) {
+        IpDto ipAddressEntity = new IpDto();
+        ipAddressEntity.setIpVersion(ipVersion);
+        if (address != null && address.contains("/")) {
+            String[] addressParts = address.split("/", 2);
+            ipAddressEntity.setIp(addressParts[0]);
+            ipAddressEntity.setSubnetMask(Integer.valueOf(addressParts[1]));
+        } else {
+            ipAddressEntity.setIp(address);
+        }
+        return ipAddressEntity;
     }
 
     /**

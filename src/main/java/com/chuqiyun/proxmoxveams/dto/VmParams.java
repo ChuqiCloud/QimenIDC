@@ -214,6 +214,8 @@ public class VmParams {
     private Integer ifnat;
     // nat数量
     private Integer natnum;
+    private Integer ipv4num;
+    private Integer ipv6num;
     // 额外流量包
     private Long extraFlowLimit;
     private Integer resetFlowTime;

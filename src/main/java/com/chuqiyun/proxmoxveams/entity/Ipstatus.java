@@ -25,7 +25,9 @@ public class Ipstatus extends Model<Ipstatus> {
     private String name;
     
     private String gateway;
-    
+
+    private Integer ipVersion;
+
     private Integer mask;
     
     private String dns1;

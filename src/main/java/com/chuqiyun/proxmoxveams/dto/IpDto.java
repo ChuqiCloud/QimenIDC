@@ -9,6 +9,7 @@ import lombok.Data;
 @Data
 public class IpDto {
     private String ip;
+    private Integer ipVersion;
     private Integer subnetMask;
     /*网关*/
     private String gateway;

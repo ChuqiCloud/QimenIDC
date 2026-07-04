@@ -110,11 +110,19 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
      */
     @Override
     public Page<Ippool> getFreeIppoolListByNodeId(Integer nodeId, Integer page, Integer limit, Integer poolId) {
+        return getFreeIppoolListByNodeId(nodeId, page, limit, poolId, null);
+    }
+
+    @Override
+    public Page<Ippool> getFreeIppoolListByNodeId(Integer nodeId, Integer page, Integer limit, Integer poolId, Integer ipVersion) {
         QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("node_id", nodeId);
         queryWrapper.eq("status", 0);
         if (poolId != null) {
             queryWrapper.eq("pool_id", poolId);
+        }
+        if (ipVersion != null) {
+            queryWrapper.eq("ip_version", ipVersion);
         }
         queryWrapper.orderByAsc("id");
         return this.page(new Page<>(page, limit), queryWrapper);
@@ -181,11 +189,19 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
      */
     @Override
     public Ippool getOneFreeIpByNodeId(Integer nodeId, Integer poolId) {
+        return getOneFreeIpByNodeId(nodeId, poolId, null);
+    }
+
+    @Override
+    public Ippool getOneFreeIpByNodeId(Integer nodeId, Integer poolId, Integer ipVersion) {
         QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("node_id", nodeId);
         queryWrapper.eq("status", 0);
         if (poolId != null) {
             queryWrapper.eq("pool_id", poolId);
+        }
+        if (ipVersion != null) {
+            queryWrapper.eq("ip_version", ipVersion);
         }
         queryWrapper.orderByAsc("id");
         queryWrapper.last("limit 1");
