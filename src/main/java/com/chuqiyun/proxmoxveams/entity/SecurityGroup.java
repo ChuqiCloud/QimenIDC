@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
@@ -30,6 +31,8 @@ public class SecurityGroup extends Model<SecurityGroup> {
     private Integer status;
     private Long createTime;
     private Long updateTime;
+    @TableField(exist = false)
+    private Integer applyStatus;
 
     @Override
     public Serializable pkVal() {

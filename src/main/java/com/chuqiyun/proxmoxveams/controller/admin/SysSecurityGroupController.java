@@ -123,6 +123,7 @@ public class SysSecurityGroupController {
     public Object getSecurityGroup(@RequestParam("hostId") Integer hostId,
                                    @RequestParam("id") Integer id) throws UnauthorizedException {
         SecurityGroup securityGroup = getHostSecurityGroup(hostId, id);
+        fillApplyStatus(hostId, securityGroup);
         return securityGroup == null ? ResponseResult.fail("安全组不存在") : ResponseResult.ok(securityGroup);
     }
 
@@ -297,6 +298,14 @@ public class SysSecurityGroupController {
         queryWrapper.eq("status", STATUS_ACTIVE);
         queryWrapper.last("limit 1");
         return securityGroupService.getOne(queryWrapper);
+    }
+
+    private void fillApplyStatus(Integer hostId, SecurityGroup securityGroup) {
+        if (securityGroup == null || securityGroup.getId() == null) {
+            return;
+        }
+        List<Integer> boundGroupIds = securityGroupBusinessService.getBoundGroupIds(hostId);
+        securityGroup.setApplyStatus(boundGroupIds.contains(securityGroup.getId()) ? 1 : 0);
     }
 
     private SecurityGroupRule getHostSecurityGroupRule(Integer hostId, Integer ruleId) {
