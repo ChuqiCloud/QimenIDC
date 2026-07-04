@@ -139,7 +139,9 @@ public class SysSecurityGroupController {
         queryWrapper.eq("host_id", hostId);
         queryWrapper.eq("status", STATUS_ACTIVE);
         queryWrapper.orderByDesc("id");
-        return ResponseResult.ok(securityGroupService.page(new Page<>(page, size), queryWrapper));
+        Page<SecurityGroup> securityGroupPage = securityGroupService.page(new Page<>(page, size), queryWrapper);
+        fillApplyStatus(hostId, securityGroupPage.getRecords());
+        return ResponseResult.ok(securityGroupPage);
     }
 
     @AdminApiCheck
@@ -306,6 +308,18 @@ public class SysSecurityGroupController {
         }
         List<Integer> boundGroupIds = securityGroupBusinessService.getBoundGroupIds(hostId);
         securityGroup.setApplyStatus(boundGroupIds.contains(securityGroup.getId()) ? 1 : 0);
+    }
+
+    private void fillApplyStatus(Integer hostId, List<SecurityGroup> securityGroups) {
+        if (securityGroups == null || securityGroups.isEmpty()) {
+            return;
+        }
+        List<Integer> boundGroupIds = securityGroupBusinessService.getBoundGroupIds(hostId);
+        for (SecurityGroup securityGroup : securityGroups) {
+            if (securityGroup != null && securityGroup.getId() != null) {
+                securityGroup.setApplyStatus(boundGroupIds.contains(securityGroup.getId()) ? 1 : 0);
+            }
+        }
     }
 
     private SecurityGroupRule getHostSecurityGroupRule(Integer hostId, Integer ruleId) {
