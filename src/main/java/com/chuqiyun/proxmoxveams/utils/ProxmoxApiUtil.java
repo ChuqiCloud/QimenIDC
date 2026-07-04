@@ -22,6 +22,7 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -467,9 +468,76 @@ public class ProxmoxApiUtil {
 
     public JSONObject guestExec(Master node, HashMap<String,String> cookie, Integer vmid, String command,
                                 List<String> args) throws UnauthorizedException {
+        HashMap<String,Object> structuredParams = new HashMap<>();
+        List<String> commandList = new ArrayList<>();
+        commandList.add(command);
+        if (args != null) {
+            commandList.addAll(args);
+        }
+        structuredParams.put("command", commandList);
+        try {
+            return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/exec", structuredParams);
+        } catch (RestClientResponseException e) {
+            if (!shouldTryNextGuestExecFormat(e)) {
+                throw e;
+            }
+        }
+
+        HashMap<String,Object> paramsWithArgs = new HashMap<>();
+        paramsWithArgs.put("command", command);
+        if (args != null && !args.isEmpty()) {
+            paramsWithArgs.put("args", args);
+        }
+        try {
+            return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/exec", paramsWithArgs);
+        } catch (RestClientResponseException e) {
+            if (!shouldTryNextGuestExecFormat(e)) {
+                throw e;
+            }
+        }
+
         HashMap<String,Object> params = new HashMap<>();
         params.put("command", buildGuestExecCommand(command, args));
         return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/exec", params);
+    }
+
+    public JSONObject guestExecShell(Master node, HashMap<String,String> cookie, Integer vmid, String script) throws UnauthorizedException {
+        List<String> args = new ArrayList<>();
+        args.add("-c");
+        args.add(script);
+        return guestExec(node, cookie, vmid, "/bin/sh", args);
+    }
+
+    public JSONObject guestExecBash(Master node, HashMap<String,String> cookie, Integer vmid, String script) throws UnauthorizedException {
+        List<String> args = new ArrayList<>();
+        args.add("-lc");
+        args.add(script);
+        return guestExec(node, cookie, vmid, "/bin/bash", args);
+    }
+
+    public JSONObject guestExecPowerShell(Master node, HashMap<String,String> cookie, Integer vmid, String script) throws UnauthorizedException {
+        List<String> args = new ArrayList<>();
+        args.add("-ExecutionPolicy");
+        args.add("Bypass");
+        args.add("-NoProfile");
+        args.add("-EncodedCommand");
+        args.add(Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE)));
+        return guestExec(node, cookie, vmid, "powershell.exe", args);
+    }
+
+    public JSONObject guestExecCmd(Master node, HashMap<String,String> cookie, Integer vmid, String script) throws UnauthorizedException {
+        List<String> args = new ArrayList<>();
+        args.add("/c");
+        args.add(script);
+        return guestExec(node, cookie, vmid, "cmd.exe", args);
+    }
+
+    public JSONObject guestExecStatus(Master node, HashMap<String,String> cookie, Integer vmid, Integer pid) throws UnauthorizedException {
+        return getNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/exec-status?pid=" + pid, new HashMap<>());
+    }
+
+    public JSONObject guestPing(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        return postNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/agent/ping", new HashMap<>());
     }
 
     private String buildGuestExecCommand(String command, List<String> args) {
@@ -925,6 +993,15 @@ public class ProxmoxApiUtil {
                 || containsResponseBody(e, "already exists")
                 || containsResponseBody(e, "file exists")
                 || containsResponseBody(e, "exists");
+    }
+
+    private boolean shouldTryNextGuestExecFormat(RestClientResponseException e) {
+        return e.getRawStatusCode() == HttpStatus.BAD_REQUEST.value()
+                || e.getRawStatusCode() == 596
+                || containsResponseBody(e, "Parameter verification failed")
+                || containsResponseBody(e, "property is not defined")
+                || containsResponseBody(e, "invalid format")
+                || containsResponseBody(e, "Broken pipe");
     }
 
     private boolean containsResponseBody(RestClientResponseException e, String keyword) {

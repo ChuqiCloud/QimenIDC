@@ -14,6 +14,7 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * (Vmhost)表服务接口
@@ -52,6 +53,8 @@ public interface VmhostService extends IService<Vmhost> {
     void syncVmStatus(JSONArray vmHosts, Integer nodeId);
 
     UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk);
+
+    UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk, List<Integer> initScriptIds);
 
     UnifiedResultDto<Object> deleteVm(Long vmHostId);
     UnifiedResultDto<Object> deleteVmToRecycle(Long vmHostId);

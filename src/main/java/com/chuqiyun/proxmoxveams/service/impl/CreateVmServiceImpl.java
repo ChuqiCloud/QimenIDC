@@ -64,6 +64,8 @@ public class CreateVmServiceImpl implements CreateVmService {
     private SubnetpoolService subnetpoolService;
     @Resource
     private SubnetService subnetService;
+    @Resource
+    private VmInitScriptBusinessService vmInitScriptBusinessService;
     /**
      * 创建PVE虚拟机
      *
@@ -307,6 +309,13 @@ public class CreateVmServiceImpl implements CreateVmService {
             // 生成随机密码
             vmParams.setPassword(VmUtil.generatePassword());
         }
+        List<Integer> initScriptIds = vmInitScriptBusinessService.normalizeScriptIds(vmParams.getInitScriptId(), vmParams.getInitScriptIds());
+        UnifiedResultDto<Object> initScriptCheck = vmInitScriptBusinessService.validateScripts(initScriptIds);
+        if (initScriptCheck.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return initScriptCheck;
+        }
+        vmParams.setInitScriptIds(initScriptIds);
+        vmParams.setInitScriptId(initScriptIds.isEmpty() ? null : initScriptIds.get(0));
         // 获取默认IP池，仅用于DNS默认值；实际分配以ippool实时空闲状态为准
         Ipstatus ipPool = getDefaultCreateVmIpPool(nodeId, node, vmParams.getIfnat());
 

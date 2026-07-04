@@ -66,11 +66,26 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/reinstall",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object reinstall(@RequestBody JSONObject params) throws UnauthorizedException {
-        UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("hostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"));
+        UnifiedResultDto<Object> resultDto = vmhostService.resetVmOs(params.getLong("hostId"), params.getString("os"), params.getString("newPassword") , params.getBoolean("resetDataDisk"), getInitScriptIds(params));
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    private List<Integer> getInitScriptIds(JSONObject params) {
+        List<Integer> initScriptIds = new java.util.ArrayList<>();
+        if (params == null) {
+            return initScriptIds;
+        }
+        if (params.getJSONArray("initScriptIds") != null) {
+            initScriptIds.addAll(params.getJSONArray("initScriptIds").toJavaList(Integer.class));
+        }
+        Integer initScriptId = params.getInteger("initScriptId");
+        if (initScriptId != null && !initScriptIds.contains(initScriptId)) {
+            initScriptIds.add(initScriptId);
+        }
+        return initScriptIds;
     }
 
     /**

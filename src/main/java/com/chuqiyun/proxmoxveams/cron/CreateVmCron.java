@@ -52,6 +52,8 @@ public class CreateVmCron {
     private SubnetpoolService subnetpoolService;
     @Resource
     private MasterService masterService;
+    @Resource
+    private VmInitScriptBusinessService vmInitScriptBusinessService;
 
     /**
      * 创建虚拟机
@@ -459,6 +461,12 @@ public class CreateVmCron {
             vmhost.setStatus(0);
             vmhostService.updateById(vmhost);
             vmhostService.addVmHostTask(vmhostId, startTask.getId());
+            vmInitScriptBusinessService.createRunTasks(
+                    vmhostId,
+                    vmId,
+                    vmParams.getNodeid(),
+                    vmParams.getInitScriptIds(),
+                    "create");
             // 更新主线程任务task状态为2
             task.setStatus(2);
             taskService.updateById(task);

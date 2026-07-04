@@ -157,5 +157,9 @@ public class TaskType {
      * Windows铏氭嫙鏈哄簲鐢ㄩ檮鍔燛P
      */
     public static Integer APPLY_WINDOWS_VM_IP = 38;
+    /**
+     * QEMU Guest Agent执行初始化脚本
+     */
+    public static Integer RUN_QEMU_INIT_SCRIPT = 39;
 
 }

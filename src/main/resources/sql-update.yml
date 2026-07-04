@@ -379,3 +379,50 @@ build: # 内部构建版本信息
     1:
       - "alter table subnetpool
                    add unique index uk_subnetpool_node_subnet_ip (node_id, subnat_id, ip);"
+    2:
+      - "create table if not exists vm_init_script
+         (
+             id              int auto_increment
+                 primary key,
+             name            varchar(100)             not null comment '初始化脚本名称',
+             script_type     varchar(20) default 'shell' not null comment '脚本类型 shell',
+             run_mode        varchar(20) default 'qemu_agent' not null comment '运行模式 qemu_agent',
+             content         mediumtext               not null comment '脚本内容',
+             timeout_seconds int         default 300   not null comment '执行超时时间秒',
+             status          int         default 1     not null comment '状态 0删除 1启用 2停用',
+             remark          varchar(255)             null comment '备注',
+             create_time     bigint                   null,
+             update_time     bigint                   null,
+             index idx_vm_init_script_status (status)
+         ) comment '虚拟机初始化脚本模板';"
+      - "create table if not exists vm_init_script_record
+         (
+             id           int auto_increment
+                 primary key,
+             script_id    int          not null comment '初始化脚本ID',
+             host_id      int          not null comment '虚拟机主机ID',
+             vmid         int          null comment 'Proxmox VMID',
+             node_id      int          not null comment '节点ID',
+             trigger_type varchar(20)  not null comment '触发类型 create/reinstall/manual',
+             status       varchar(20)  default 'pending' not null comment '执行状态 pending/running/success/failed',
+             pid          int          null comment 'QEMU Guest Agent进程ID',
+             exit_code    int          null comment '退出码',
+             stdout       mediumtext   null comment '标准输出',
+             stderr       mediumtext   null comment '标准错误',
+             error        text         null comment '错误信息',
+             run_count    int          default 0 not null comment '执行次数',
+             create_time  bigint       null,
+             update_time  bigint       null,
+             start_time   bigint       null,
+             finish_time  bigint       null,
+             index idx_vm_init_script_record_host (host_id, status),
+             index idx_vm_init_script_record_script (script_id),
+             index idx_vm_init_script_record_node (node_id)
+         ) comment '虚拟机初始化脚本执行记录';"
+    3:
+      - "alter table vm_init_script
+             add target_os varchar(20) default 'auto' not null comment '目标系统 auto/linux/windows' after run_mode;"
+      - "alter table vm_init_script
+             add linux_content mediumtext null comment 'Linux脚本内容' after content;"
+      - "alter table vm_init_script
+             add windows_content mediumtext null comment 'Windows脚本内容' after linux_content;"

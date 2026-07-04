@@ -206,6 +206,10 @@ public class VmParams {
     private List<String> ipList;
     private Integer publicIpPoolId;
     private List<String> publicIpList;
+    // 初始化脚本ID，兼容单脚本传参
+    private Integer initScriptId;
+    // 初始化脚本ID列表，按顺序投递执行任务
+    private List<Integer> initScriptIds;
     // 是否开启Nat 0关闭 1开启
     private Integer ifnat;
     // nat数量

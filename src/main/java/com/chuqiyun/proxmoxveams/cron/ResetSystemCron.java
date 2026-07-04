@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
+import com.chuqiyun.proxmoxveams.service.VmInitScriptBusinessService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
@@ -48,6 +49,8 @@ public class ResetSystemCron {
     private TaskService taskService;
     @Resource
     private OsService osService;
+    @Resource
+    private VmInitScriptBusinessService vmInitScriptBusinessService;
 
     /**
      * 重装系统
@@ -410,9 +413,45 @@ public class ResetSystemCron {
         }
         vmhost.setStatus(0);
         vmhostService.updateById(vmhost);
+        vmInitScriptBusinessService.createRunTasks(
+                vmhost.getId(),
+                vmhost.getVmid(),
+                vmhost.getNodeid(),
+                getInitScriptIds(systemMap),
+                "reinstall");
         // 更新主线程任务task状态为2
         task.setStatus(2);
         taskService.updateById(task);
+    }
+
+    private List<Integer> getInitScriptIds(Map<Object, Object> params) {
+        List<Integer> initScriptIds = new ArrayList<>();
+        if (params == null || params.get("initScriptIds") == null) {
+            return initScriptIds;
+        }
+        Object value = params.get("initScriptIds");
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                Integer scriptId = toInteger(item);
+                if (scriptId != null && !initScriptIds.contains(scriptId)) {
+                    initScriptIds.add(scriptId);
+                }
+            }
+        }
+        return initScriptIds;
+    }
+
+    private Integer toInteger(Object value) {
+        if (value instanceof Integer integer) {
+            return integer;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null || StringUtils.isBlank(value.toString())) {
+            return null;
+        }
+        return Integer.parseInt(value.toString());
     }
 
     private void syncReinstallCloudInitNetwork(ProxmoxApiUtil proxmoxApiUtil, Master node,

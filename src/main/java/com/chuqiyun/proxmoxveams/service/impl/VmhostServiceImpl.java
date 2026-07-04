@@ -92,6 +92,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private VpcIpBindingService vpcIpBindingService;
     @Resource
     private SecurityGroupBusinessService securityGroupBusinessService;
+    @Resource
+    private VmInitScriptBusinessService vmInitScriptBusinessService;
     @Resource(name = "vmFirewallSyncExecutor")
     private TaskExecutor vmFirewallSyncExecutor;
 
@@ -870,7 +872,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return UnifiedResultDto<Object> 统一返回结果
     */
     @Override
-    public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk){
+    public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk) {
+        return resetVmOs(vmHostId, osName, newPassword, resetDataDisk, Collections.emptyList());
+    }
+
+    @Override
+    public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk, List<Integer> initScriptIds){
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
@@ -901,6 +908,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         if (!osService.isNodeOsDownloaded(os, vmhost.getNodeid())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
+        }
+        UnifiedResultDto<Object> initScriptCheck = vmInitScriptBusinessService.validateScripts(initScriptIds);
+        if (initScriptCheck.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return initScriptCheck;
         }
         // 判断虚拟机是否存在快照
         if (hasVmSnapshot(node, vmhost)){
@@ -987,6 +998,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmParamsMap.put("osName",osName);
         vmParamsMap.put("newPassword",newPassword);
         vmParamsMap.put("resetDataDisk",resetDataDisk);
+        vmParamsMap.put("initScriptIds", initScriptIds);
         Task task = new Task();
         task.setHostid(vmhost.getId());
         task.setVmid(vmhost.getVmid());

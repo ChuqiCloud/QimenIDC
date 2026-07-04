@@ -79,6 +79,8 @@ public class TaskTypeIdToName {
             return "超流暂停";
         } else if (taskTypeId.equals(TaskType.UPDATE_IO_SYSTEM_DISK)) {
             return "配置系统盘IO限制";
+        } else if (taskTypeId.equals(TaskType.RUN_QEMU_INIT_SCRIPT)) {
+            return "执行QEMU初始化脚本";
         } else if (taskTypeId.equals(TaskType.IP_CHANGE_RESTART_VM)) {
             return "IP变更异步重启虚拟机";
         } else {
