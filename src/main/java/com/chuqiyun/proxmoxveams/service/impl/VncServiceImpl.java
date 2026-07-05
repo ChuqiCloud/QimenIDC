@@ -18,7 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -147,8 +149,10 @@ public class VncServiceImpl implements VncService {
     */
     @Override
     public HashMap<String,String> getVncUrlMap(Vncinfo vncinfo, Page<Vncnode> vncnodePage) {
-        HashMap<String,String> map = new HashMap<>();
-        for (Vncnode vncnode : vncnodePage.getRecords()) {
+        HashMap<String,String> map = new LinkedHashMap<>();
+        List<Vncnode> records = new ArrayList<>(vncnodePage.getRecords());
+        records.sort(Comparator.comparing(this::hasVncDomain).reversed());
+        for (Vncnode vncnode : records) {
             String pageHost = getVncPageHost(vncnode);
             String websocketHost = trimUrlHost(vncinfo.getHost());
             Integer websocketPort = vncinfo.getPort();
@@ -161,6 +165,36 @@ public class VncServiceImpl implements VncService {
             map.put(vncnode.getName(),url);
         }
         return map;
+    }
+
+    private boolean hasVncDomain(Vncnode vncnode) {
+        String domain = trimUrlHost(vncnode.getDomain());
+        return isDomainName(domain);
+    }
+
+    private boolean isDomainName(String value) {
+        if (value == null) {
+            return false;
+        }
+        String host = value;
+        int slashIndex = host.indexOf("/");
+        if (slashIndex >= 0) {
+            host = host.substring(0, slashIndex);
+        }
+        int colonIndex = host.indexOf(":");
+        if (colonIndex >= 0) {
+            host = host.substring(0, colonIndex);
+        }
+        if (host.startsWith("[") && host.endsWith("]")) {
+            return false;
+        }
+        if (!host.contains(".")) {
+            return false;
+        }
+        if (host.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")) {
+            return false;
+        }
+        return host.matches("(?i).*[a-z].*");
     }
 
     private String getVncPageHost(Vncnode vncnode) {
