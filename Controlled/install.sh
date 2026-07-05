@@ -15,7 +15,7 @@ sleep 8
 function update_source(){
     apt-get update
     apt-get upgrade -y
-    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev
+    apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
 }
 # 初始化系统软件目录
 function init_system_dir(){
@@ -174,19 +174,8 @@ function install_websockify(){
 
 # 配置noVNC开机自启动以及systemd服务
 function config_noVNC_service(){
-    echo "[Unit]
-Description=noVNC Service
-After=network.target
-[Service]
-Type=simple
-ExecStart=/home/software/noVNC/utils/websockify/run --web /home/software/noVNC --target-config /home/software/vnc 6080
-Restart=on-failure
-User=root
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/noVNC.service
-    systemctl daemon-reload
-    systemctl enable noVNC.service
-    systemctl start noVNC.service
+    chmod +x /home/software/QAgent/vnc_https.sh
+    bash /home/software/QAgent/vnc_https.sh
 }
 
 # 执行cloudbase.sh脚本

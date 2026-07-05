@@ -1,4 +1,5 @@
 import os
+import shlex
 import threading
 import time
 import subprocess
@@ -20,6 +21,13 @@ class Vnc:
         process = subprocess.Popen(command, shell=True)
         # 等待进程完成
         process.wait()
+
+    def get_websocketd_ssl_args(self):
+        cert_file = "/home/software/noVNC/certs/qimenidc-vnc.crt"
+        key_file = "/home/software/noVNC/certs/qimenidc-vnc.key"
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            return f" --ssl --sslcert={shlex.quote(cert_file)} --sslkey={shlex.quote(key_file)}"
+        return ""
         
     def stop_command(process):
         # 停止进程
@@ -32,7 +40,14 @@ class Vnc:
             # 直接停止vnc服务
             self.kill_vnc_process()
         # 启动vnc服务 /home/software/websocketd/websocketd --address=127.0.0.1 --port=9001 --binary=true /home/software/QAgent/vnc.sh 100 123456
-        command = f"/home/software/websocketd/websocketd --address={self.host} --port={self.port} --binary=true /home/software/QAgent/vnc.sh {self.vmid} {self.password}"
+        ssl_args = self.get_websocketd_ssl_args()
+        command = (
+            f"/home/software/websocketd/websocketd{ssl_args}"
+            f" --address={shlex.quote(str(self.host))}"
+            f" --port {int(self.port)}"
+            " --binary=true"
+            f" /home/software/QAgent/vnc.sh {shlex.quote(str(self.vmid))} {shlex.quote(str(self.password))}"
+        )
         # 创建线程并运行指令
         process_thread = threading.Thread(target=self.run_command, args=(command,))
         process_thread.start()

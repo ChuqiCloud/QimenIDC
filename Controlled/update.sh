@@ -1,52 +1,98 @@
 #!/bin/bash
 
-# 先获取 https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/update.txt 中文件下载链接
-# 然后下载到 /home/software/ 中
-function get_url(){
-    local url=$(curl -s https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/update.txt)
-    # 下载
-    wget -P /home/software/ $url --no-check-certificate
+set -e
 
+UPDATE_INDEX_URL="https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/update.txt"
+SOFTWARE_DIR="/home/software"
+QAGENT_DIR="${SOFTWARE_DIR}/QAgent"
+PACKAGE_PATH="${SOFTWARE_DIR}/QAgent.tar.gz"
+BACKUP_DIR="${SOFTWARE_DIR}/QAgent_update_backup"
+
+function fail(){
+    echo -e "\033[31m--->QAgent update failed: $1\033[0m" >&2
+    exit 1
 }
 
-get_url
+function get_download_url(){
+    local content
+    local url
+    content=$(curl -fsSL "${UPDATE_INDEX_URL}" | tr -d '\r')
+    url=$(echo "${content}" | sed -n '/^https\?:\/\//p' | head -n 1)
+    if [ -z "${url}" ]; then
+        url=$(echo "${content}" | sed -n 's/.*href="\([^"]*https\?:\/\/[^"]*\)".*/\1/p' | head -n 1)
+        url=$(echo "${url}" | sed 's/&amp;/\&/g')
+    fi
+    if [ -z "${url}" ]; then
+        fail "cannot get package url from ${UPDATE_INDEX_URL}"
+    fi
+    echo "${url}"
+}
 
-# 删除 /home/software/QAgent 文件夹
-if [ -d /home/software/QAgent ]; then
-    # 删除 /home/software/QAgent 文件夹中除了 token.key和port 文件的所有文件
-    #find /home/software/QAgent -mindepth 1 ! \( -name "token.key" -o -name "port" \) -exec rm -rf {} \;
-    #find /home/software/QAgent -mindepth 1 ! -name "token.key" -exec rm -rf {} \;
+function download_package(){
+    local url="$1"
+    rm -f "${PACKAGE_PATH}"
+    wget -O "${PACKAGE_PATH}" "${url}" --no-check-certificate || fail "download package error"
+    if [ ! -s "${PACKAGE_PATH}" ]; then
+        fail "downloaded package is empty"
+    fi
+}
 
-    # 将token.key和port文件移动到 /home/software/ 目录下
-    mv /home/software/QAgent/token.key /home/software/
-    mv /home/software/QAgent/port /home/software/
-    mv /home/software/QAgent/forward_rules.db /home/software/
-    # 删除 /home/software/QAgent 文件夹
-    rm -rf /home/software/QAgent
+function backup_old_config(){
+    rm -rf "${BACKUP_DIR}"
+    mkdir -p "${BACKUP_DIR}"
 
-fi
+    if [ -f "${QAGENT_DIR}/token.key" ]; then
+        cp -f "${QAGENT_DIR}/token.key" "${BACKUP_DIR}/token.key"
+    fi
+    if [ -f "${QAGENT_DIR}/port" ]; then
+        cp -f "${QAGENT_DIR}/port" "${BACKUP_DIR}/port"
+    fi
+    if [ -f "${QAGENT_DIR}/forward_rules.db" ]; then
+        cp -f "${QAGENT_DIR}/forward_rules.db" "${BACKUP_DIR}/forward_rules.db"
+    fi
+}
 
-# 解压文件
-if [ -e /home/software/QAgent.tar.gz ]; then
-    mkdir -p /home/software/QAgent
+function restore_old_config(){
+    if [ -f "${BACKUP_DIR}/token.key" ]; then
+        cp -f "${BACKUP_DIR}/token.key" "${QAGENT_DIR}/token.key"
+    fi
+    if [ -f "${BACKUP_DIR}/port" ]; then
+        cp -f "${BACKUP_DIR}/port" "${QAGENT_DIR}/port"
+    fi
+    if [ -f "${BACKUP_DIR}/forward_rules.db" ]; then
+        cp -f "${BACKUP_DIR}/forward_rules.db" "${QAGENT_DIR}/forward_rules.db"
+    fi
+}
 
-    tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
+function normalize_shell_scripts(){
+    find "${QAGENT_DIR}" -type f -name "*.sh" -exec sed -i 's/\r$//' {} \;
+}
 
-    # 将token.key和port文件移动到 /home/software/QAgent/ 目录下
-    mv /home/software/token.key /home/software/QAgent/
-    mv /home/software/port /home/software/QAgent/
-    mv /home/software/forward_rules.db /home/software/QAgent/
-    # 运行 /home/software/QAgent 中的 lib.sh 文件
-    chmod +x /home/software/QAgent/lib.sh
-    /home/software/QAgent/lib.sh
-    # 将qa.sh文件移动到/usr/local/bin/目录下
-    mv /home/software/QAgent/qa.sh /usr/local/bin/qa
-    # 给qa文件添加可执行权限
+function install_package(){
+    backup_old_config
+    rm -rf "${QAGENT_DIR}"
+    mkdir -p "${QAGENT_DIR}"
+    tar -zxvf "${PACKAGE_PATH}" -C "${QAGENT_DIR}/" || fail "extract package error"
+    restore_old_config
+    normalize_shell_scripts
+
+    chmod +x "${QAGENT_DIR}/lib.sh"
+    bash "${QAGENT_DIR}/lib.sh"
+
+    mv "${QAGENT_DIR}/qa.sh" /usr/local/bin/qa
     chmod +x /usr/local/bin/qa
 
-    # 删除 /home/software/QAgent.tar.gz 文件
-    rm -rf /home/software/QAgent.tar.gz
-    
-    # 重启系统
+    rm -f "${PACKAGE_PATH}"
+    rm -rf "${BACKUP_DIR}"
     systemctl restart qagent.service
-fi
+}
+
+function main(){
+    local download_url
+    download_url=$(get_download_url)
+    download_package "${download_url}"
+    install_package
+    echo -e "\033[32m--->QAgent update success!\033[0m"
+}
+
+main

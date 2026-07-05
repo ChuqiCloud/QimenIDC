@@ -10,11 +10,13 @@ import com.chuqiyun.proxmoxveams.dto.VncInfoDto;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
-import org.apache.tomcat.util.codec.binary.Base64;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -96,6 +98,8 @@ public class VncServiceImpl implements VncService {
             vncinfo.setUsername(vmhost.getHostname());
             vncinfo.setPassword(vmhost.getPassword());
             vncinfoService.addVncinfo(vncinfo);
+        } else {
+            refreshVncInfoIfNodeChanged(vncinfo, vmhost, node);
         }
 
         // 获取虚拟机VNC连接数据
@@ -145,34 +149,105 @@ public class VncServiceImpl implements VncService {
     public HashMap<String,String> getVncUrlMap(Vncinfo vncinfo, Page<Vncnode> vncnodePage) {
         HashMap<String,String> map = new HashMap<>();
         for (Vncnode vncnode : vncnodePage.getRecords()) {
-            // http://192.168.36.155:6080/vnc.html?path=websockify/?token=vm100
-            String http = "http://";
-            if (vncnode.getProtocol() == 1){
-                http = "https://";
-            }
-            String domain = vncnode.getDomain();
-            // 判空
-            if (domain == null || domain.equals("")){
-                domain = vncnode.getHost();
-            }
+            String pageHost = getVncPageHost(vncnode);
+            String websocketHost = trimUrlHost(vncinfo.getHost());
+            Integer websocketPort = vncinfo.getPort();
 
-            JSONObject tokenJson = new JSONObject();
-            tokenJson.put("host",vncinfo.getHost());
-            tokenJson.put("port",vncinfo.getPort());
-            // 将token信息转为base64编码
-            String token = Base64.encodeBase64String(tokenJson.toJSONString().getBytes());
-            String url = "";
-            // 判断是开启代理
-            if (vncnode.getProxy() == 1) {
-                // 不带端口
-                url = http + domain + "/vnc.html?token=" + token;
-            }else {
-                // 带端口
-                url = http + domain + ":6080" + "/vnc.html?token=" + token;
-            }
+            String token = buildLegacyVncToken(websocketHost, websocketPort);
+            String url = "https://" + pageHost + "/vnc.html"
+                    + "?token=" + encodeUrlParam(token)
+                    + "&encrypt=1"
+                    + "&path=" + encodeUrlParam("websockify");
             map.put(vncnode.getName(),url);
         }
         return map;
+    }
+
+    private String getVncPageHost(Vncnode vncnode) {
+        String host = trimUrlHost(vncnode.getHost());
+        String domain = trimUrlHost(vncnode.getDomain());
+        if (domain != null && !domain.equals(host)) {
+            return domain;
+        }
+        return formatHostWithPort(host, 6080);
+    }
+
+    private String formatHostWithPort(String host, int port) {
+        if (host == null) {
+            return ":" + port;
+        }
+        if (host.contains(":") && !host.startsWith("[")) {
+            return "[" + host + "]:" + port;
+        }
+        return host + ":" + port;
+    }
+
+    private String trimUrlHost(String value) {
+        if (value == null) {
+            return null;
+        }
+        String result = value.trim();
+        if (result.startsWith("http://")) {
+            result = result.substring("http://".length());
+        } else if (result.startsWith("https://")) {
+            result = result.substring("https://".length());
+        }
+        while (result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+        return result.isEmpty() ? null : result;
+    }
+
+    private String encodeUrlParam(String value) {
+        if (value == null) {
+            return "";
+        }
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String buildLegacyVncToken(String host, Integer port) {
+        JSONObject tokenJson = new JSONObject();
+        tokenJson.put("host", host);
+        tokenJson.put("port", port);
+        return Base64.getEncoder().encodeToString(tokenJson.toJSONString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void refreshVncInfoIfNodeChanged(Vncinfo vncinfo, Vmhost vmhost, Master node) {
+        String currentHost = trimUrlHost(node.getHost());
+        String vncHost = trimUrlHost(vncinfo.getHost());
+        if (currentHost == null || currentHost.equals(vncHost)) {
+            return;
+        }
+
+        invalidateCurrentVncData(vncinfo, node);
+
+        vncinfo.setHost(currentHost);
+        vncinfo.setPort(this.calculateVncPort(currentHost));
+        vncinfo.setVmid(Long.valueOf(vmhost.getVmid()));
+        vncinfo.setUsername(vmhost.getHostname());
+        vncinfo.setPassword(vmhost.getPassword());
+        vncinfoService.updateVncinfo(vncinfo);
+    }
+
+    private void invalidateCurrentVncData(Vncinfo vncinfo, Master node) {
+        Vncdata currentVncdata = vncdataService.selectVncdataByVncinfoIdAndStatusOk(Long.valueOf(vncinfo.getId()));
+        if (currentVncdata == null) {
+            return;
+        }
+
+        try {
+            String token = configService.getToken();
+            String oldHost = trimUrlHost(vncinfo.getHost());
+            Integer oldPort = currentVncdata.getPort() == null ? vncinfo.getPort() : currentVncdata.getPort();
+            if (oldHost != null && oldPort != null) {
+                ClientApiUtil.stopVncService(oldHost, token, oldPort, node.getControllerPort());
+            }
+        } catch (Exception e) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "Stop old VNC service failed when node host changed: " + e.getMessage());
+        }
+
+        currentVncdata.setStatus(1);
+        vncdataService.updateVncdata(currentVncdata);
     }
 
     /**
@@ -199,13 +274,20 @@ public class VncServiceImpl implements VncService {
             }
             // 遍历同步VNC连接信息
             for (Vncnode vncnode : vncnodePage.getRecords()) {
+                String vncNodeHost = trimUrlHost(vncnode.getHost());
+                String vncInfoHost = trimUrlHost(vncinfo.getHost());
                 // 判断是否为同一节点
-                if (vncnode.getHost().equals(vncinfo.getHost())){
+                if (vncNodeHost == null || vncNodeHost.equals(vncInfoHost) || vncnode.getPort() == null){
                     continue;
                 }
                 // 与被控通讯同步VNC连接信息
-                Boolean consoleResult = ClientApiUtil.importVncService(vncinfo.getHost(),token, Math.toIntExact(vncinfo.getVmid()),vncinfo.getPort(),vncinfo.getUsername(),vncinfo.getPassword(),vncinfo.getPort(),vncinfo.getHost(),vncExpiryTime);
-                if (!consoleResult){
+                try {
+                    Boolean consoleResult = ClientApiUtil.importVncService(vncNodeHost,token, Math.toIntExact(vncinfo.getVmid()),vncinfo.getPort(),vncinfo.getUsername(),vncinfo.getPassword(),vncnode.getPort(),vncinfo.getHost(),vncExpiryTime);
+                    if (!consoleResult){
+                        continue;
+                    }
+                } catch (Exception e) {
+                    UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "Sync VNC info to node failed: " + vncNodeHost + ":" + vncnode.getPort() + ", " + e.getMessage());
                     continue;
                 }
             }

@@ -1,6 +1,8 @@
 #!/bin/bash
 
-apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev
+find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+
+apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
 pip3.10 install -r /home/software/QAgent/requirements.txt
 rm -rf /usr/share/qemu-server/bootsplash.jpg
 mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
@@ -72,19 +74,8 @@ function install_websockify(){
 
 # 配置noVNC开机自启动以及systemd服务
 function config_noVNC_service(){
-    echo "[Unit]
-Description=noVNC Service
-After=network.target
-[Service]
-Type=simple
-ExecStart=/home/software/noVNC/utils/websockify/run --web /home/software/noVNC --target-config /home/software/vnc 6080
-Restart=on-failure
-User=root
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/noVNC.service
-    systemctl daemon-reload
-    systemctl enable noVNC.service
-    systemctl start noVNC.service
+    chmod +x /home/software/QAgent/vnc_https.sh
+    bash /home/software/QAgent/vnc_https.sh
 }
 
 # 判断/home/software/目录下是否存在noVNC文件夹，不存在则创建
@@ -92,8 +83,9 @@ if [ ! -d /home/software/noVNC ]; then
     mkdir -p /home/software/noVNC
     download_noVNC
     install_websockify
-    config_noVNC_service
 fi
+
+config_noVNC_service
 
 # 判断/home/software/QAgent/目录下是否存在port文件，不存在则创建
 if [ ! -f /home/software/QAgent/port ]; then
@@ -104,4 +96,4 @@ fi
 # 重启pve 服务
 systemctl restart pvedaemon.service
 
-/home/software/QAgent/update_forward_rules.sh
+bash /home/software/QAgent/update_forward_rules.sh

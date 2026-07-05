@@ -72,8 +72,7 @@ public class SysVncController {
     * @DateTime: 2023/11/23 16:41
     */
     @AdminApiCheck
-    @PostMapping(value = "/updateVncNode")
-    @PutMapping(value = "/updateVncNode")
+    @RequestMapping(value = "/updateVncNode", method = {RequestMethod.POST, RequestMethod.PUT})
     public ResponseResult<Object> updateVncNode(@RequestBody Vncnode vncnode) throws UnauthorizedException {
         if (vncnodeService.updateVncnode(vncnode)) {
             return ResponseResult.ok("修改成功");

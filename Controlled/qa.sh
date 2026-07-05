@@ -104,9 +104,13 @@ while true; do
             # 运行/home/software/QAgent中的update.sh文件
             chmod +x /home/software/QAgent/update.sh
             # 执行update.sh文件
-            /home/software/QAgent/update.sh
-            echo -e "\033[33m--->QAgent update success!\033[0m"
-            exit 0 && qa
+            if /home/software/QAgent/update.sh; then
+                exit 0
+            else
+                echo -e "\033[31m--->QAgent update failed!\033[0m"
+                sudo systemctl start qagent.service
+                exit 1
+            fi
             ;;
         q)
             echo "退出菜单"

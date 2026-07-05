@@ -93,7 +93,8 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
         vncnode.setName(master.getName());
         vncnode.setHost(master.getHost());
         vncnode.setPort(master.getControllerPort());
-        vncnode.setDomain(master.getHost());
+        vncnode.setProtocol(1);
+        vncnode.setProxy(0);
         vncnode.setStatus(0);
         vncnode.setCreateDate(System.currentTimeMillis());
         return this.save(vncnode);
