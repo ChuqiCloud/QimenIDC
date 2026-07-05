@@ -309,6 +309,47 @@ public class ClientApiUtil {
         return result != null && result.getInteger("code") == 200;
     }
 
+    public static JSONObject startMigrationBackup(String ip, String token, Integer controllerPort, String taskId, Integer vmid, String backupDir) {
+        String url = "http://" + ip + ":" + controllerPort + "/migration/backup";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("task_id", taskId);
+        paramMap.put("vmid", vmid);
+        if (backupDir != null && !backupDir.trim().isEmpty()) {
+            paramMap.put("backup_dir", backupDir);
+        }
+        return postControllerApi(url, paramMap, token);
+    }
+
+    public static JSONObject startMigrationRestore(String ip, String token, Integer controllerPort, String taskId, String sourceUrl,
+                                                   String sourceToken, Integer targetVmid, String targetStorage, String backupDir) {
+        String url = "http://" + ip + ":" + controllerPort + "/migration/restore";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("task_id", taskId);
+        paramMap.put("source_url", sourceUrl);
+        paramMap.put("source_token", sourceToken);
+        paramMap.put("target_vmid", targetVmid);
+        paramMap.put("target_storage", targetStorage);
+        if (backupDir != null && !backupDir.trim().isEmpty()) {
+            paramMap.put("backup_dir", backupDir);
+        }
+        return postControllerApi(url, paramMap, token);
+    }
+
+    public static JSONObject getMigrationStatus(String ip, String token, Integer controllerPort, String taskId) {
+        String url = "http://" + ip + ":" + controllerPort + "/migration/status/" + taskId;
+        Map<String, Object> paramMap = new HashMap<>();
+        return getControllerApi(url, paramMap, token);
+    }
+
+    public static JSONObject cleanupMigrationSource(String ip, String token, Integer controllerPort, String taskId, Integer vmid) {
+        String url = "http://" + ip + ":" + controllerPort + "/migration/cleanup-source";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("task_id", taskId);
+        paramMap.put("vmid", vmid);
+        paramMap.put("purge", true);
+        return postControllerApi(url, paramMap, token);
+    }
+
     /**
     * @Author: mryunqi
     * @Description: 重启宿主机网络

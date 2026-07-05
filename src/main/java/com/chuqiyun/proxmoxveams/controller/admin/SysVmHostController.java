@@ -6,10 +6,16 @@ import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.VmMigrationParams;
 import com.chuqiyun.proxmoxveams.dto.VmIpParams;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
+import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author mryunqi
@@ -25,8 +32,14 @@ import java.util.List;
 @RestController
 @RequestMapping("/{adminPath}")
 public class SysVmHostController {
+    private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
+
     @Resource
     private VmhostService vmhostService;
+    @Resource
+    private TaskService taskService;
+    @Resource
+    private MasterService masterService;
 
     /**
     * @Author: mryunqi
@@ -71,6 +84,91 @@ public class SysVmHostController {
             return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
+    }
+
+    @AdminApiCheck
+    @RequestMapping(value = "/migrateVm", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object migrateVm(@RequestBody VmMigrationParams params) throws UnauthorizedException {
+        if (params == null || params.getHostId() == null || params.getTargetNodeId() == null) {
+            return ResponseResult.fail("hostId和targetNodeId不能为空");
+        }
+        Vmhost vmhost = vmhostService.getById(params.getHostId());
+        if (vmhost == null) {
+            return ResponseResult.fail("虚拟机不存在");
+        }
+        Master sourceNode = masterService.getById(vmhost.getNodeid());
+        Master targetNode = masterService.getById(params.getTargetNodeId());
+        if (sourceNode == null || targetNode == null) {
+            return ResponseResult.fail("源宿主机或目标宿主机不存在");
+        }
+        if (targetNode.getStatus() == null || targetNode.getStatus() != 0) {
+            return ResponseResult.fail("目标宿主机状态异常");
+        }
+        if (vmhost.getIfnat() != null && vmhost.getIfnat() == 1 && (targetNode.getNaton() == null || targetNode.getNaton() != 1)) {
+            return ResponseResult.fail("NAT机器迁移要求目标宿主机已开启NAT");
+        }
+        String targetStorage = resolveTargetStorage(params.getTargetStorage(), targetNode);
+
+        Integer targetVmid = params.getTargetVmid();
+        if (targetVmid == null) {
+            targetVmid = vmhostService.getNewVmid(params.getTargetNodeId());
+        }
+        if (targetVmid == null || targetVmid <= 0) {
+            return ResponseResult.fail("targetVmid自动分配失败");
+        }
+        Task task = new Task();
+        task.setNodeid(vmhost.getNodeid());
+        task.setHostid(vmhost.getId());
+        task.setVmid(vmhost.getVmid());
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(0);
+        task.setCreateDate(System.currentTimeMillis());
+        Map<Object, Object> taskParams = new HashMap<>();
+        taskParams.put("sourceNodeId", vmhost.getNodeid());
+        taskParams.put("targetNodeId", params.getTargetNodeId());
+        taskParams.put("sourceVmid", vmhost.getVmid());
+        taskParams.put("targetVmid", targetVmid);
+        taskParams.put("targetStorage", targetStorage);
+        taskParams.put("backupDir", params.getBackupDir());
+        taskParams.put("progress", 0);
+        taskParams.put("stage", "PENDING");
+        taskParams.put("startAfterMigration", Boolean.TRUE.equals(params.getStartAfterMigration()));
+        task.setParams(taskParams);
+        if (!taskService.insertTask(task)) {
+            return ResponseResult.fail("创建迁移任务失败");
+        }
+        vmhostService.addVmHostTask(vmhost.getId(), task.getId());
+        return ResponseResult.ok(task);
+    }
+
+    private String resolveTargetStorage(String targetStorage, Master targetNode) {
+        String normalizedStorage = normalizeStorageText(targetStorage);
+        if (normalizedStorage != null && !"auto".equalsIgnoreCase(normalizedStorage)) {
+            return normalizedStorage;
+        }
+        String nodeStorage = targetNode == null ? null : normalizeStorageText(targetNode.getAutoStorage());
+        if (nodeStorage != null && !"auto".equalsIgnoreCase(nodeStorage)) {
+            return nodeStorage;
+        }
+        return DEFAULT_CREATE_VM_STORAGE;
+    }
+
+    private String normalizeStorageText(String storage) {
+        if (storage == null) {
+            return null;
+        }
+        String result = storage.trim();
+        return result.isEmpty() ? null : result;
+    }
+
+    @AdminApiCheck
+    @GetMapping(value = "/migrateVm/{taskId}")
+    public Object getMigrateVmTask(@PathVariable("taskId") Integer taskId) throws UnauthorizedException {
+        Task task = taskService.getById(taskId);
+        if (task == null || !TaskType.MIGRATE_VM.equals(task.getType())) {
+            return ResponseResult.fail("迁移任务不存在");
+        }
+        return ResponseResult.ok(task);
     }
 
     private List<Integer> getInitScriptIds(JSONObject params) {

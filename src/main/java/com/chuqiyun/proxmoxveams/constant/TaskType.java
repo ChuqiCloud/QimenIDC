@@ -161,5 +161,9 @@ public class TaskType {
      * QEMU Guest Agent执行初始化脚本
      */
     public static Integer RUN_QEMU_INIT_SCRIPT = 39;
+    /**
+     * 离线迁移虚拟机
+     */
+    public static Integer MIGRATE_VM = 40;
 
 }

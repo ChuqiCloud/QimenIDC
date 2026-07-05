@@ -9819,10 +9819,10 @@ GET /api/common/version
   "code": 20000,
   "message": "请求成功",
   "data": {
-    "buildVersion": "1.2.3_0",
+    "buildVersion": "1.3.1_1",
     "name": "QimenIDC Community Edition",
     "description": "Open source, free, cloud-native multi-cloud management and hybrid cloud convergence system.",
-    "version": "1.2.3"
+    "version": "1.3.1"
   }
 }
 ```
