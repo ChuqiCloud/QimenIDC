@@ -151,17 +151,17 @@ public class VmMigrationCron {
         boolean targetCommitted = false;
 
         try {
-            updateProgress(task, "BACKUP_START", 10, null);
+            updateProgress(task, "BACKUP_START", 1, null);
             ClientApiUtil.startMigrationBackup(sourceNode.getHost(), token, sourceNode.getControllerPort(), taskId, sourceVmid, backupDir);
-            JSONObject backupData = waitAgentStage(task, sourceNode, token, taskId, "BACKUP_DONE", 15, 45);
+            JSONObject backupData = waitAgentStage(task, sourceNode, token, taskId, "BACKUP_DONE", 1, 35);
 
             String backupFileName = getFileName(backupData.getString("backup_file"));
             String sourceUrl = "http://" + sourceNode.getHost() + ":" + sourceNode.getControllerPort()
                     + "/migration/file/" + taskId + "/" + encodePath(backupFileName);
-            updateProgress(task, "RESTORE_START", 45, null);
+            updateProgress(task, "RESTORE_START", 35, null);
             ClientApiUtil.startMigrationRestore(targetNode.getHost(), token, targetNode.getControllerPort(), taskId,
                     sourceUrl, token, targetVmid, targetStorage, backupDir);
-            waitAgentStage(task, targetNode, token, taskId, "RESTORE_DONE", 50, 86);
+            waitAgentStage(task, targetNode, token, taskId, "RESTORE_DONE", 35, 88);
 
             updateProgress(task, "NETWORK_REBIND", 88, null);
             networkResult = allocateTargetNetwork(vmhost, sourceSnapshot, targetNode, targetNodeId, targetVmid);
@@ -1067,7 +1067,10 @@ public class VmMigrationCron {
 
     private JSONObject waitAgentStage(Task task, Master node, String token, String taskId, String successStage,
                                       int minProgress, int maxProgress) throws Exception {
-        for (int i = 0; i < 720; i++) {
+        int lastProgress = -1;
+        long lastProgressTime = System.currentTimeMillis();
+        long deadline = System.currentTimeMillis() + 24L * 60L * 60L * 1000L;
+        while (System.currentTimeMillis() < deadline) {
             JSONObject result = ClientApiUtil.getMigrationStatus(node.getHost(), token, node.getControllerPort(), taskId);
             JSONObject data = result == null ? null : result.getJSONObject("data");
             if (data == null) {
@@ -1081,13 +1084,19 @@ public class VmMigrationCron {
                 progress = minProgress + Math.max(0, Math.min(100, agentProgress)) * (maxProgress - minProgress) / 100;
             }
             updateProgress(task, stage, progress, null);
+            if (progress != lastProgress) {
+                lastProgress = progress;
+                lastProgressTime = System.currentTimeMillis();
+            } else if (System.currentTimeMillis() - lastProgressTime > 60L * 60L * 1000L) {
+                throw new IllegalStateException("migration stage timeout: progress did not change for 1 hour, stage=" + stage);
+            }
             if ("FAILED".equals(status)) {
                 throw new IllegalStateException(data.getString("error"));
             }
             if ("SUCCESS".equals(status) && successStage.equals(stage)) {
                 return data;
             }
-            Thread.sleep(5000);
+            Thread.sleep(2000);
         }
         throw new IllegalStateException("migration stage timeout: " + successStage);
     }
