@@ -101,11 +101,12 @@ public class VncServiceImpl implements VncService {
             vncinfo.setPassword(vmhost.getPassword());
             vncinfoService.addVncinfo(vncinfo);
         } else {
-            refreshVncInfoIfNodeChanged(vncinfo, vmhost, node);
+            refreshVncInfoIfChanged(vncinfo, vmhost, node);
         }
 
         // 获取虚拟机VNC连接数据
         Vncdata vncdata = vncdataService.selectVncdataByVncinfoIdAndStatusOk(Long.valueOf(vncinfo.getId()));
+        vncdata = expireInvalidVncData(vncinfo, vncdata);
         // 判空
         if (vncdata == null){
             int vncExpiryTime = configService.getVncExpire(); // 分钟
@@ -246,21 +247,54 @@ public class VncServiceImpl implements VncService {
         return Base64.getEncoder().encodeToString(tokenJson.toJSONString().getBytes(StandardCharsets.UTF_8));
     }
 
-    private void refreshVncInfoIfNodeChanged(Vncinfo vncinfo, Vmhost vmhost, Master node) {
+    private void refreshVncInfoIfChanged(Vncinfo vncinfo, Vmhost vmhost, Master node) {
         String currentHost = trimUrlHost(node.getHost());
         String vncHost = trimUrlHost(vncinfo.getHost());
-        if (currentHost == null || currentHost.equals(vncHost)) {
+        boolean changed = false;
+        if (currentHost != null && !currentHost.equals(vncHost)) {
+            changed = true;
+        }
+        if (vmhost.getVmid() != null && !Long.valueOf(vmhost.getVmid()).equals(vncinfo.getVmid())) {
+            changed = true;
+        }
+        if (vmhost.getHostname() != null && !vmhost.getHostname().equals(vncinfo.getUsername())) {
+            changed = true;
+        }
+        if (vmhost.getPassword() != null && !vmhost.getPassword().equals(vncinfo.getPassword())) {
+            changed = true;
+        }
+        if (!changed) {
             return;
         }
 
         invalidateCurrentVncData(vncinfo, node);
 
-        vncinfo.setHost(currentHost);
-        vncinfo.setPort(this.calculateVncPort(currentHost));
+        if (currentHost != null && !currentHost.equals(vncHost)) {
+            vncinfo.setHost(currentHost);
+            vncinfo.setPort(this.calculateVncPort(currentHost));
+        }
         vncinfo.setVmid(Long.valueOf(vmhost.getVmid()));
         vncinfo.setUsername(vmhost.getHostname());
         vncinfo.setPassword(vmhost.getPassword());
         vncinfoService.updateVncinfo(vncinfo);
+    }
+
+    private Vncdata expireInvalidVncData(Vncinfo vncinfo, Vncdata vncdata) {
+        if (vncdata == null) {
+            return null;
+        }
+        long nowTime = System.currentTimeMillis();
+        if (vncdata.getExpirationTime() == null || vncdata.getExpirationTime() <= nowTime) {
+            vncdata.setStatus(1);
+            vncdataService.updateVncdata(vncdata);
+            return null;
+        }
+        if (vncdata.getPort() == null || !vncdata.getPort().equals(vncinfo.getPort())) {
+            vncdata.setStatus(1);
+            vncdataService.updateVncdata(vncdata);
+            return null;
+        }
+        return vncdata;
     }
 
     private void invalidateCurrentVncData(Vncinfo vncinfo, Master node) {

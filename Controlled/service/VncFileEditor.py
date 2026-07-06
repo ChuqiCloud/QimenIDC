@@ -16,6 +16,7 @@ class VncFileEditor:
             with open(self.file_path, 'w') as file:
                 for line in data:
                     file.write(line + '\n')
+            return True
         except FileNotFoundError:
             return False
 
