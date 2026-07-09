@@ -484,7 +484,7 @@ public class CreateVmServiceImpl implements CreateVmService {
             e.printStackTrace();
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VM_FAILED, null);
         }
-        // 鍒涘缓铏氭嫙鏈轰换鍔?
+        // 创建虚拟机任务
         Task task = new Task();
         task.setStatus(0);
         task.setType(CREATE_VM);
@@ -492,7 +492,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         task.setCreateDate(System.currentTimeMillis());
         //
         if (taskService.insertTask(task)){
-            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "鍒涘缓铏氭嫙鏈轰换鍔? NodeID="+nodeId+",OsType="+vmParams.getOsType()+
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务 NodeID="+nodeId+",OsType="+vmParams.getOsType()+
                     ",Sockets="+vmParams.getSockets()+",Cores="+vmParams.getCores()+",Memory="+vmParams.getMemory());
             // 濡傛灉isApi涓簍rue锛屽垯寰幆绛夊緟浠诲姟瀹屾垚
             if (isApi) {

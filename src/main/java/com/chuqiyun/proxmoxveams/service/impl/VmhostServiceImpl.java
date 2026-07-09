@@ -104,7 +104,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     */
     @Override
     public Vmhost getVmhostByVmId(int vmId) {
-        return this.getOne(new QueryWrapper<Vmhost>().eq("vmid",vmId));
+        return this.getOne(new QueryWrapper<Vmhost>().eq("vmid",vmId).eq("delete_state",0));
     }
 
     /**
@@ -730,63 +730,35 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Integer getNewVmid(Integer id) {
-        // 获取master
         Master master = masterService.getById(id);
-        // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(id);
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-        // 查询vm列表 {"data":[{'vmid':100,'name':'test'},{'vmid':101,'name':'test2'}]}
         JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/qemu",new HashMap<>());
         JSONObject lxcJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/lxc",new HashMap<>());
         JSONArray VmJsonArray = vmJson.getJSONArray("data");
         JSONArray LxcJsonArray = lxcJson.getJSONArray("data");
-        // 提取出所有lxc的vmid
-        ArrayList<Integer> lxcVmidList = new ArrayList<>();
+        int maxVmid = 100;
         for (int i = 0; i < LxcJsonArray.size(); i++) {
             JSONObject tempJsonObject = LxcJsonArray.getJSONObject(i);
             int vmid = tempJsonObject.getIntValue("vmid");
-            lxcVmidList.add(vmid);
+            maxVmid = Math.max(maxVmid, vmid);
         }
-
-        ArrayList<Integer> vmidList = new ArrayList<>();
-
         for (int i = 0; i < VmJsonArray.size(); i++) {
             JSONObject tempJsonObject = VmJsonArray.getJSONObject(i);
             int vmid = tempJsonObject.getIntValue("vmid");
-            vmidList.add(vmid);
+            maxVmid = Math.max(maxVmid, vmid);
         }
-
-        // 合并两个list
-        vmidList.addAll(lxcVmidList);
-        // 去重
-        vmidList = (ArrayList<Integer>) vmidList.stream().distinct().collect(Collectors.toList());
-        // 排序
-        vmidList.sort(Comparator.naturalOrder());
-        int maxVmid;
-        // 如果vmidList为空，maxVmid为100
-        if (vmidList.size() == 0) {
-            maxVmid = 100;
-        }else{
-            maxVmid = vmidList.get(vmidList.size() - 1);
-        }
-        // 获取数据库中是否存在该vmid
         QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("vmid",maxVmid);
-        queryWrapper.eq("nodeid",id);
-        Vmhost vmhost;
-        vmhost = this.getOne(queryWrapper);
-        if (vmhost == null) {
-            return maxVmid+1;
+        queryWrapper.eq("nodeid", id);
+        queryWrapper.eq("delete_state", 0);
+        queryWrapper.select("vmid");
+        queryWrapper.orderByDesc("vmid");
+        queryWrapper.last("limit 1");
+        Vmhost dbMaxVmhost = this.getOne(queryWrapper);
+        if (dbMaxVmhost != null && dbMaxVmhost.getVmid() != null) {
+            maxVmid = Math.max(maxVmid, dbMaxVmhost.getVmid());
         }
-        // 循环+1，直到找到一个不存在的vmid
-        while (vmhost != null) {
-            maxVmid++;
-            queryWrapper.clear();
-            queryWrapper.eq("nodeid",id);
-            queryWrapper.eq("vmid",maxVmid);
-            vmhost = this.getOne(queryWrapper);
-        }
-        return maxVmid;
+        return maxVmid + 1;
     }
 
     /**
@@ -3376,6 +3348,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Long getVmhostCountByStatus(int status) {
         QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status",status);
+        queryWrapper.eq("delete_state",0);
         return this.selectCount(queryWrapper);
     }
     /**
@@ -3389,6 +3362,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(vm));
         Vmhost vmhost = this.getById(vm);
+        if (node == null || vmhost == null || !Objects.equals(vmhost.getDeleteState(), 0)) {
+            return false;
+        }
         if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
                 || source_port < 1000 || source_port > 60050 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
                 || source_port == 5404 || source_port == 5405 || (source_port >= 5900 && source_port < 6000)
@@ -3417,6 +3393,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(vm));
+        if (node == null) {
+            return false;
+        }
         return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
     }
 
@@ -3703,6 +3682,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Object getVmhostNatByVmid (int page, int size, int hostId) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        if (node == null) {
+            return ResponseResult.fail("虚拟机不存在或已删除");
+        }
         JSONObject data = ClientApiUtil.getPortForwardList(node.getHost(), token, node.getControllerPort(), hostId, page, size);
         if (data != null) {
             // 检查返回的代码，如果成功，则返回数据
@@ -3732,7 +3714,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Integer getVmhostNodeId(int hostId) {
         QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("id",hostId);
+        queryWrapper.eq("delete_state",0);
         Vmhost vmhost = this.getOne(queryWrapper);
+        if (vmhost == null) {
+            return null;
+        }
         return vmhost.getNodeid();
     }
     /**
@@ -3744,6 +3730,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Object getVmhostNatAddrByVmid (int hostId) {
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        if (node == null) {
+            return ResponseResult.fail("虚拟机不存在或已删除");
+        }
         String nataddr = node.getNataddr();
         Map<String, Object> resultData = new HashMap<>();
         resultData.put("natAddr", nataddr);

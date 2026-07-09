@@ -73,7 +73,8 @@ public class ErrorTaskCron {
         task.setStatus(3);
         task.setError("异常任务监控处理超时");
         taskService.updateById(task);
-        UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "异常任务状态监控处理完成: NodeID:{} VM-ID:{} TASK-TYPE:{}", node.getId(), task.getVmid(),task.getType());
+        Integer nodeId = node == null ? task.getNodeid() : node.getId();
+        UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "异常任务状态监控处理完成: NodeID:{} VM-ID:{} TASK-TYPE:{}", nodeId, task.getVmid(),task.getType());
     }
 
     private boolean failTimeoutApplyWindowsVmIpTask() {
