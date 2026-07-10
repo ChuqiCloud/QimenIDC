@@ -894,7 +894,10 @@ public class CreateVmServiceImpl implements CreateVmService {
     }
 
     private Subnetpool reserveOneFreeVpcIpForCreateVm(Integer nodeId, Integer subnetId, Set<String> excludeIpSet,
-                                                      List<Subnetpool> reservedSubnetpools) {
+                                                       List<Subnetpool> reservedSubnetpools) {
+        if (nodeId == null || subnetId == null || subnetId <= 0) {
+            return null;
+        }
         Set<String> retryExcludeIpSet = new LinkedHashSet<>();
         while (true) {
             QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
@@ -927,6 +930,9 @@ public class CreateVmServiceImpl implements CreateVmService {
                                                      List<Subnetpool> reservedSubnetpools) {
         if (selectedIpSet == null || selectedIpSet.isEmpty()) {
             return true;
+        }
+        if (nodeId == null || subnetId == null || subnetId <= 0) {
+            return false;
         }
         for (String ip : selectedIpSet) {
             if (ip == null || ip.trim().isEmpty()) {
@@ -1014,6 +1020,10 @@ public class CreateVmServiceImpl implements CreateVmService {
             if (subnet == null) {
                 return "VPC瀛愮綉涓嶅瓨鍦? vpcSubnetId=" + subnetId;
             }
+            if (isNatIpPoolSubnet(subnet, vmParams.getNodeid())) {
+                return "VPC子网不能选择NAT池对应的SDN子网: nodeid=" + vmParams.getNodeid()
+                        + ", vpcSubnetId=" + subnetId;
+            }
             if (subnet.getNodeid() == null) {
                 return "VPC瀛愮綉鏈褰曡妭鐐癸紝涓斿瓙缃慖P姹犳湭鎵惧埌褰撳墠鑺傜偣璁板綍: nodeid=" + vmParams.getNodeid()
                         + ", vpcSubnetId=" + subnetId + ", subnetNodeid=null";
@@ -1038,7 +1048,8 @@ public class CreateVmServiceImpl implements CreateVmService {
         Integer subnetId = vmParams.getVpcSubnetId();
         if (subnetId != null && subnetId > 0) {
             Subnet subnet = subnetService.getById(subnetId);
-            if (isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+            if (!isNatIpPoolSubnet(subnet, vmParams.getNodeid())
+                    && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
                 return subnet;
             }
         }
@@ -1053,17 +1064,67 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         if (subnetId != null && subnetId > 0) {
             for (Subnet subnet : subnets) {
-                if (Objects.equals(subnet.getId(), subnetId) && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+                if (Objects.equals(subnet.getId(), subnetId)
+                        && !isNatIpPoolSubnet(subnet, vmParams.getNodeid())
+                        && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
                     return subnet;
                 }
             }
         }
         for (Subnet subnet : subnets) {
-            if (isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
+            if (!isNatIpPoolSubnet(subnet, vmParams.getNodeid())
+                    && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
                 return subnet;
             }
         }
         return null;
+    }
+
+    private boolean isNatIpPoolSubnet(Subnet subnet, Integer nodeId) {
+        if (subnet == null || nodeId == null) {
+            return false;
+        }
+        Master node = masterService.getById(nodeId);
+        if (node == null || node.getNatippool() == null || node.getNatippool() <= 0) {
+            return false;
+        }
+        Ipstatus natPool = ipstatusService.getById(node.getNatippool());
+        if (natPool == null || !Objects.equals(natPool.getNodeid(), nodeId)) {
+            return false;
+        }
+        return Objects.equals(subnet.getMask(), natPool.getMask())
+                && isSameAddress(getSubnetGatewayOrAddress(subnet), natPool.getGateway());
+    }
+
+    private String getSubnetGatewayOrAddress(Subnet subnet) {
+        if (subnet == null) {
+            return null;
+        }
+        if (subnet.getGateway() != null && !subnet.getGateway().trim().isEmpty()) {
+            return subnet.getGateway();
+        }
+        return subnet.getSubnet();
+    }
+
+    private boolean isSameAddress(String left, String right) {
+        String normalizedLeft = normalizeAddress(left);
+        String normalizedRight = normalizeAddress(right);
+        return normalizedLeft != null && normalizedLeft.equals(normalizedRight);
+    }
+
+    private String normalizeAddress(String address) {
+        if (address == null) {
+            return null;
+        }
+        String value = address.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        int cidrIndex = value.indexOf('/');
+        if (cidrIndex >= 0) {
+            value = value.substring(0, cidrIndex).trim();
+        }
+        return value;
     }
 
     private boolean isSubnetBelongToNode(Subnet subnet, Integer nodeId) {

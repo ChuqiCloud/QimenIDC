@@ -332,6 +332,9 @@ public class VmMigrationCron {
     }
 
     private Subnetpool allocateOneVpcPrivateIp(Integer targetNodeId, Integer subnetId, Integer targetVmid, Set<String> excludeIpSet) {
+        if (targetNodeId == null || subnetId == null || subnetId <= 0) {
+            throw new IllegalStateException("target VPC subnet is invalid");
+        }
         Set<Integer> skippedIds = new LinkedHashSet<>();
         while (true) {
             QueryWrapper<Subnetpool> queryWrapper = new QueryWrapper<>();
@@ -510,7 +513,7 @@ public class VmMigrationCron {
     private Subnet resolveTargetVpcSubnet(VmhostSnapshot sourceSnapshot, Integer targetNodeId) {
         if (sourceSnapshot.vpcSubnetId != null) {
             Subnet subnet = subnetService.getById(sourceSnapshot.vpcSubnetId);
-            if (isSubnetBelongToNode(subnet, targetNodeId)) {
+            if (!isNatIpPoolSubnet(subnet, targetNodeId) && isSubnetBelongToNode(subnet, targetNodeId)) {
                 return subnet;
             }
         }
@@ -524,11 +527,55 @@ public class VmMigrationCron {
             return null;
         }
         for (Subnet subnet : subnetList) {
-            if (isSubnetBelongToNode(subnet, targetNodeId)) {
+            if (!isNatIpPoolSubnet(subnet, targetNodeId) && isSubnetBelongToNode(subnet, targetNodeId)) {
                 return subnet;
             }
         }
         return null;
+    }
+
+    private boolean isNatIpPoolSubnet(Subnet subnet, Integer nodeId) {
+        if (subnet == null || nodeId == null) {
+            return false;
+        }
+        Master node = masterService.getById(nodeId);
+        if (node == null || node.getNatippool() == null || node.getNatippool() <= 0) {
+            return false;
+        }
+        Ipstatus natPool = ipstatusService.getById(node.getNatippool());
+        if (natPool == null || !Objects.equals(natPool.getNodeid(), nodeId)) {
+            return false;
+        }
+        return Objects.equals(subnet.getMask(), natPool.getMask())
+                && isSameAddress(getSubnetGatewayOrAddress(subnet), natPool.getGateway());
+    }
+
+    private String getSubnetGatewayOrAddress(Subnet subnet) {
+        if (subnet == null) {
+            return null;
+        }
+        if (StringUtils.isNotBlank(subnet.getGateway())) {
+            return subnet.getGateway();
+        }
+        return subnet.getSubnet();
+    }
+
+    private boolean isSameAddress(String left, String right) {
+        String normalizedLeft = normalizeAddress(left);
+        String normalizedRight = normalizeAddress(right);
+        return normalizedLeft != null && normalizedLeft.equals(normalizedRight);
+    }
+
+    private String normalizeAddress(String address) {
+        if (StringUtils.isBlank(address)) {
+            return null;
+        }
+        String value = address.trim();
+        int cidrIndex = value.indexOf('/');
+        if (cidrIndex >= 0) {
+            value = value.substring(0, cidrIndex).trim();
+        }
+        return value;
     }
 
     private boolean isSubnetBelongToNode(Subnet subnet, Integer nodeId) {

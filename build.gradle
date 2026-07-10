@@ -37,7 +37,7 @@ sourceCompatibility = '17'
 
 bootJar {
     archiveFileName = 'QimenIDC-Server.jar'
-    version = '1.3.1_1'
+    version = '1.3.1_2'
 }
 
 configurations {
