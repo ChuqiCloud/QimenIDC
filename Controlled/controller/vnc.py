@@ -1,4 +1,3 @@
-import threading
 from fastapi import APIRouter
 
 from common.CodeEnum import CodeEnum
@@ -13,20 +12,15 @@ vnc_router = APIRouter()
 @vnc_router.post("/vnc")
 async def vnc(item: VncEntity):
     vnc = Vnc(item.vnc_file_path, item.host, item.port, item.username, item.password, item.time, item.vmid)
-    # vnc.main()
-    # 启动一个线程执行vnc服务
-    vnc_thread = threading.Thread(target=vnc.main, args=())
-    vnc_thread.start()
+    if not vnc.main(restart=True):
+        return common_response(CodeEnum.FAIL, 'vnc service start failed', {'running': False})
     
-    return common_response(CodeEnum.SUCCESS, 'success', {})
+    return common_response(CodeEnum.SUCCESS, 'success', {'running': True})
 
 @vnc_router.post("/vnc/stop")
 async def vnc_stop(item: VncEntity):
     vnc = Vnc(item.vnc_file_path, item.host, item.port, item.username, item.password, item.time, item.vmid)
-    # vnc.main()
-    # 启动一个线程执行vnc服务
-    vnc_thread = threading.Thread(target=vnc.kill_vnc_process, args=())
-    vnc_thread.start()
+    vnc.stop_vnc()
     
     return common_response(CodeEnum.SUCCESS, 'success', {})
 
@@ -34,9 +28,14 @@ async def vnc_stop(item: VncEntity):
 @vnc_router.post("/vnc/import")
 async def vnc_import(item: VncEntity):
     vnc = Vnc(item.vnc_file_path, item.host, item.port, item.username, item.password, item.time, item.vmid)
-    # vnc.main()
-    # 启动一个线程执行vnc服务
-    vnc_thread = threading.Thread(target=vnc.insert_vnc_token, args=())
-    vnc_thread.start()
+    vnc.insert_vnc_token()
     
     return common_response(CodeEnum.SUCCESS, 'success', {})
+
+@vnc_router.post("/vnc/ensure")
+async def vnc_ensure(item: VncEntity):
+    vnc = Vnc(item.vnc_file_path, item.host, item.port, item.username, item.password, item.time, item.vmid)
+    if not vnc.main(restart=False):
+        return common_response(CodeEnum.FAIL, 'vnc service start failed', {'running': False})
+
+    return common_response(CodeEnum.SUCCESS, 'success', {'running': True})

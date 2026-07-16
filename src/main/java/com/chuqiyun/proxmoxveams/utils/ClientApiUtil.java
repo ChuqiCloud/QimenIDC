@@ -286,6 +286,25 @@ public class ClientApiUtil {
     }
 
     /**
+    * @Author: 星禾
+    * @Description: 确保指定VNC服务存在，不存在时由被控端重新拉起
+    * @DateTime: 2026/7/16 21:45
+    */
+    public static Boolean ensureVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
+        String url = "http://"+ip+":"+controllerPort+"/vnc/ensure";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("vnc_file_path","/home/software/vnc");
+        paramMap.put("vmid",vmid);
+        paramMap.put("username",username);
+        paramMap.put("password",vncPassword);
+        paramMap.put("port",vncPort);
+        paramMap.put("host",vncHost);
+        paramMap.put("time",time);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
+    /**
     * @Author: mryunqi
     * @Description: 停止指定VNC服务
     * @DateTime: 2023/11/24 22:35

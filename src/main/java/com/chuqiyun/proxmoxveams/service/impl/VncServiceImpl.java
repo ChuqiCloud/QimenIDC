@@ -95,8 +95,9 @@ public class VncServiceImpl implements VncService {
             vncinfo = new Vncinfo();
             vncinfo.setHostId(Long.valueOf(vmhost.getId()));
             vncinfo.setVmid(Long.valueOf(vmhost.getVmid()));
-            vncinfo.setHost(node.getHost());
-            vncinfo.setPort(this.calculateVncPort(node.getHost()));
+            String nodeHost = trimUrlHost(node.getHost());
+            vncinfo.setHost(nodeHost == null ? node.getHost() : nodeHost);
+            vncinfo.setPort(this.calculateVncPort(vncinfo.getHost()));
             vncinfo.setUsername(vmhost.getHostname());
             vncinfo.setPassword(vmhost.getPassword());
             vncinfoService.addVncinfo(vncinfo);
@@ -108,9 +109,17 @@ public class VncServiceImpl implements VncService {
         Vncdata vncdata = vncdataService.selectVncdataByVncinfoIdAndStatusOk(Long.valueOf(vncinfo.getId()));
         vncdata = expireInvalidVncData(vncinfo, vncdata);
         // 判空
+        int vncExpiryTime = configService.getVncExpire(); // 分钟
+        String token = configService.getToken();
+        String vncHost = trimUrlHost(vncinfo.getHost());
+        if (vncHost == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VNC_CONNECTION, null);
+        }
+        if (!vncHost.equals(vncinfo.getHost())) {
+            vncinfo.setHost(vncHost);
+            vncinfoService.updateVncinfo(vncinfo);
+        }
         if (vncdata == null){
-            int vncExpiryTime = configService.getVncExpire(); // 分钟
-            String token = configService.getToken();
             long nowTime = System.currentTimeMillis();
             long expiryTime = nowTime + (long) vncExpiryTime * 60 * 1000;
             vncdata = new Vncdata();
@@ -123,12 +132,18 @@ public class VncServiceImpl implements VncService {
             vncdata.setExpirationTime(expiryTime);
             vncdataService.addVncdata(vncdata);
             // 与被控通讯创建VNC连接
-            Boolean consoleResult = ClientApiUtil.createVncService(node.getHost(),token,vmhost.getVmid(),vncinfo.getPort(),vncinfo.getUsername(),vncinfo.getPassword(),node.getControllerPort(),node.getHost(),vncExpiryTime);
+            Boolean consoleResult = ClientApiUtil.createVncService(vncHost,token,vmhost.getVmid(),vncinfo.getPort(),vncinfo.getUsername(),vncinfo.getPassword(),node.getControllerPort(),vncHost,vncExpiryTime);
             if (!consoleResult){
+                vncdata.setStatus(1);
+                vncdataService.updateVncdata(vncdata);
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VNC_CONNECTION, null);
             }
-            this.syncVncInfo(vncinfo);
+        } else if (!ensureVncProcess(vncinfo, node, token, vncExpiryTime)) {
+            vncdata.setStatus(1);
+            vncdataService.updateVncdata(vncdata);
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VNC_CONNECTION, null);
         }
+        this.syncVncInfo(vncinfo);
         List<Object> vncInfoList = new ArrayList<>();
         HashMap<String,String> vncUrlMap = this.getVncUrlMap(vncinfo,vncnodePage);
         vncInfoList.add(vncUrlMap);
@@ -139,6 +154,16 @@ public class VncServiceImpl implements VncService {
         vncInfoDto.setSize(vncnodePage.getSize());
         vncInfoDto.setRecords(vncInfoList);
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, vncInfoDto);
+    }
+
+    private boolean ensureVncProcess(Vncinfo vncinfo, Master node, String token, int vncExpiryTime) {
+        String vncHost = trimUrlHost(vncinfo.getHost());
+        String nodeHost = trimUrlHost(node.getHost());
+        if (vncHost == null || nodeHost == null || vncinfo.getPort() == null || vncinfo.getVmid() == null) {
+            return false;
+        }
+        return ClientApiUtil.ensureVncService(nodeHost, token, Math.toIntExact(vncinfo.getVmid()), vncinfo.getPort(),
+                vncinfo.getUsername(), vncinfo.getPassword(), node.getControllerPort(), vncHost, vncExpiryTime);
     }
 
     /**
@@ -155,14 +180,11 @@ public class VncServiceImpl implements VncService {
         records.sort(Comparator.comparing(this::hasVncDomain).reversed());
         for (Vncnode vncnode : records) {
             String pageHost = getVncPageHost(vncnode);
-            String websocketHost = trimUrlHost(vncinfo.getHost());
-            Integer websocketPort = vncinfo.getPort();
-
-            String token = buildLegacyVncToken(websocketHost, websocketPort);
+            String websocketToken = buildVncProxyToken(vncnode);
             String url = "https://" + pageHost + "/vnc.html"
-                    + "?token=" + encodeUrlParam(token)
+                    + "?token=" + encodeUrlParam(websocketToken)
                     + "&encrypt=1"
-                    + "&path=" + encodeUrlParam("websockify");
+                    + "&path=" + encodeUrlParam("websockify?token=" + vncinfo.getUsername());
             map.put(vncnode.getName(),url);
         }
         return map;
@@ -231,6 +253,15 @@ public class VncServiceImpl implements VncService {
             result = result.substring(0, result.length() - 1);
         }
         return result.isEmpty() ? null : result;
+    }
+
+    private String buildVncProxyToken(Vncnode vncnode) {
+        String host = trimUrlHost(vncnode.getHost());
+        String domain = trimUrlHost(vncnode.getDomain());
+        if (domain != null && !domain.equals(host)) {
+            return buildLegacyVncToken(domain, 443);
+        }
+        return buildLegacyVncToken(host, 6080);
     }
 
     private String encodeUrlParam(String value) {
