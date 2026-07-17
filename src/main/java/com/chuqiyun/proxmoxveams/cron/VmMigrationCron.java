@@ -22,6 +22,7 @@ import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.NatForwardSyncService;
 import com.chuqiyun.proxmoxveams.service.SecurityGroupBusinessService;
 import com.chuqiyun.proxmoxveams.service.SubnetService;
 import com.chuqiyun.proxmoxveams.service.SubnetpoolService;
@@ -83,6 +84,8 @@ public class VmMigrationCron {
     private SubnetService subnetService;
     @Resource
     private VpcIpBindingService vpcIpBindingService;
+    @Resource
+    private NatForwardSyncService natForwardSyncService;
     @Resource
     private SecurityGroupBusinessService securityGroupBusinessService;
     @Resource
@@ -832,7 +835,8 @@ public class VmMigrationCron {
     private void deleteSourceNatRules(VmhostSnapshot sourceSnapshot, Master sourceNode, List<NatRule> oldNatRules, String token) {
         for (NatRule rule : oldNatRules) {
             ClientApiUtil.deletePortForward(sourceNode.getHost(), token, sourceNode.getControllerPort(), sourceSnapshot.hostId,
-                    rule.sourcePort, rule.destinationIp, rule.destinationPort, rule.protocol);
+                    rule.sourceIp, rule.sourcePort, rule.destinationIp, rule.destinationPort, rule.protocol);
+            natForwardSyncService.deletePortRule(sourceNode.getId(), rule.sourceIp, rule.sourcePort, rule.protocol);
         }
     }
 
@@ -840,6 +844,7 @@ public class VmMigrationCron {
         for (VpcIpBinding binding : oldVpcBindings) {
             ClientApiUtil.deleteIpForward(sourceNode.getHost(), token, sourceNode.getControllerPort(), sourceSnapshot.hostId,
                     binding.getPublicIp(), binding.getPrivateIp());
+            natForwardSyncService.deleteIpForwardRule(sourceNode.getId(), binding.getPublicIp());
         }
     }
 

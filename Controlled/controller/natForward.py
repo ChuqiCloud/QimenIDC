@@ -4,7 +4,7 @@ from common.CodeEnum import CodeEnum
 from common.ResponseResult import common_response
 
 import service.Nat as Nat
-from entity.NatForward import ForwardRule, IpForwardRule
+from entity.NatForward import ForwardRule, IpForwardRule, NatSyncRequest
 
 nat_router = APIRouter()
 
@@ -87,3 +87,21 @@ async def nat_delete_ip_forward(item: IpForwardRule):
         return common_response(CodeEnum.SUCCESS, message, {})
     else:
         return common_response(CodeEnum.FAIL, message, {})
+
+
+@nat_router.get('/nat/export')
+async def nat_export():
+    result = Nat.Manager().export_rules()
+    if result['code'] == 0:
+        return common_response(CodeEnum.SUCCESS, result['message'], result['data'])
+    return common_response(CodeEnum.FAIL, result['message'], {})
+
+
+@nat_router.post('/nat/sync')
+async def nat_sync(item: NatSyncRequest):
+    port_rules = [rule.dict() for rule in item.port_rules]
+    ip_forward_rules = [rule.dict() for rule in item.ip_forward_rules]
+    result = Nat.Manager().sync_rules(port_rules, ip_forward_rules)
+    if result['code'] == 0:
+        return common_response(CodeEnum.SUCCESS, result['message'], result['data'])
+    return common_response(CodeEnum.FAIL, result['message'], result['data'])

@@ -385,6 +385,22 @@ public class ClientApiUtil {
         return result != null && result.getInteger("code") == 200;
     }
 
+    public static JSONObject exportNatRules(String ip, String token, Integer controllerPort) {
+        String url = "http://" + ip + ":" + controllerPort + "/nat/export";
+        JSONObject result = getControllerApi(url, new HashMap<>(), token);
+        return result != null && result.getInteger("code") == 200 ? result : null;
+    }
+
+    public static Boolean syncNatRules(String ip, String token, Integer controllerPort,
+                                       JSONArray portRules, JSONArray ipForwardRules) {
+        String url = "http://" + ip + ":" + controllerPort + "/nat/sync";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("port_rules", portRules);
+        paramMap.put("ip_forward_rules", ipForwardRules);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
+    }
+
     /**
     * @Author: mryunqi
     * @Description: 添加端口转发
@@ -400,10 +416,16 @@ public class ClientApiUtil {
     * @Return Boolean 是否添加成功
     */
     public static Boolean addPortForward(String ip, String token, Integer controllerPort, Integer hostId, Integer source_port, String destination_ip, Integer destination_port, String protocol){
+        return addPortForward(ip, token, controllerPort, hostId, ip, source_port, destination_ip, destination_port, protocol);
+    }
+
+    public static Boolean addPortForward(String ip, String token, Integer controllerPort, Integer hostId,
+                                         String sourceIp, Integer source_port, String destination_ip,
+                                         Integer destination_port, String protocol){
         String url = "http://"+ip+":"+controllerPort+"/nat/add";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
-        paramMap.put("source_ip",ip);
+        paramMap.put("source_ip",sourceIp);
         paramMap.put("source_port",source_port);
         paramMap.put("destination_ip",destination_ip);
         paramMap.put("destination_port",destination_port);
@@ -415,7 +437,12 @@ public class ClientApiUtil {
             if ( result != null && result.getInteger("code") == 200 ) {
                 paramMap.put("protocol","udp");
                 JSONObject result_udp = postControllerApi(url, paramMap, token);
-                return result_udp != null && result_udp.getInteger("code") == 200;
+                if (result_udp != null && result_udp.getInteger("code") == 200) {
+                    return true;
+                }
+                paramMap.put("protocol", "tcp");
+                postControllerApi("http://" + ip + ":" + controllerPort + "/nat/delete", paramMap, token);
+                return false;
             } else {
                 return result != null && result.getInteger("code") == 200;
             }
@@ -440,14 +467,28 @@ public class ClientApiUtil {
     * @Return  Boolean 是否删除成功
     */
     public static Boolean deletePortForward(String ip, String token, Integer controllerPort, Integer hostId, Integer source_port, String destination_ip, Integer destination_port, String protocol) {
+        return deletePortForward(ip, token, controllerPort, hostId, ip, source_port, destination_ip, destination_port, protocol);
+    }
+
+    public static Boolean deletePortForward(String ip, String token, Integer controllerPort, Integer hostId,
+                                            String sourceIp, Integer source_port, String destination_ip,
+                                            Integer destination_port, String protocol) {
         String url = "http://" + ip + ":" + controllerPort + "/nat/delete";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
-        paramMap.put("source_ip", ip);
+        paramMap.put("source_ip", sourceIp);
         paramMap.put("source_port", source_port);
         paramMap.put("destination_ip", destination_ip);
         paramMap.put("destination_port", destination_port);
         paramMap.put("protocol", protocol);
+        if (Objects.equals(protocol, "all")) {
+            paramMap.put("protocol", "tcp");
+            JSONObject tcpResult = postControllerApi(url, paramMap, token);
+            paramMap.put("protocol", "udp");
+            JSONObject udpResult = postControllerApi(url, paramMap, token);
+            return tcpResult != null && tcpResult.getInteger("code") == 200
+                    && udpResult != null && udpResult.getInteger("code") == 200;
+        }
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }

@@ -173,6 +173,37 @@ create table natcontroller
     status     int default 0 not null
 );
 
+create table nat_forward_rule
+(
+    id               int auto_increment primary key,
+    rule_key         varchar(255) not null comment '规则唯一键',
+    rule_type        varchar(20)  not null comment '规则类型 port/ip',
+    node_id          int          not null comment '宿主机节点ID',
+    host_id          int          not null comment '虚拟机主机ID',
+    source_ip        varchar(64)  not null,
+    source_port      int          null,
+    destination_ip   varchar(64)  not null,
+    destination_port int          null,
+    protocol         varchar(10)  null,
+    create_time      bigint       null,
+    update_time      bigint       null,
+    unique index uk_nat_forward_rule_key (rule_key),
+    index idx_nat_forward_rule_host (host_id, rule_type),
+    index idx_nat_forward_rule_node (node_id, rule_type)
+) comment '主控NAT转发规则';
+
+create table nat_sync_state
+(
+    id               int auto_increment primary key,
+    node_id          int           not null comment '宿主机节点ID',
+    initial_imported int default 0 not null comment '是否完成首次导入 0否 1是',
+    in_sync          int default 0 not null comment '是否同步正常 0否 1是',
+    last_message     varchar(255)  null,
+    last_import_time bigint        null,
+    last_sync_time   bigint        null,
+    unique index uk_nat_sync_state_node (node_id)
+) comment 'NAT规则同步状态';
+
 create table os
 (
     id          int auto_increment

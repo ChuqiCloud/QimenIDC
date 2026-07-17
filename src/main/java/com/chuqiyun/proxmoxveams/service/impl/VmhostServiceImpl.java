@@ -91,6 +91,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Resource
     private VpcIpBindingService vpcIpBindingService;
     @Resource
+    private NatForwardSyncService natForwardSyncService;
+    @Resource
     private SecurityGroupBusinessService securityGroupBusinessService;
     @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
@@ -3365,6 +3367,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (node == null || vmhost == null || !Objects.equals(vmhost.getDeleteState(), 0)) {
             return false;
         }
+        String effectiveSourceIp = StringUtils.isBlank(source_ip) ? node.getHost() : source_ip.trim();
         if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
                 || source_port < 1000 || source_port > 60050 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
                 || source_port == 5404 || source_port == 5405 || (source_port >= 5900 && source_port < 6000)
@@ -3372,16 +3375,28 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有写错误提示
         //上述禁用端口说明：禁止<1000与>65535端口，禁止web端口、控制端口、ssh端口、禁止未开启NAT的机器使用该功能
         //corosync集群流量 5404 5405 UDP、实时迁移：60000-60050 TCP、SPICE代理：3128 TCP、vnc：59000-59999，6080 TCP/WEBSOCKET
-        Object natForward = this.getVmhostNatByVmid(1, 10000, vm);
-        if (natForward instanceof ResponseResult) {
-            ResponseResult result = (ResponseResult) natForward;
-            List<?> dataList = (List<?>) result.getData();
-            int dataCount = dataList.size();
-            if (dataCount >= vmhost.getNatnum()) {
+        if (natForwardSyncService.countPortRules(vm) >= vmhost.getNatnum()) {
+            return false;
+        }
+        Boolean remoteResult = ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm,
+                effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+        if (!Boolean.TRUE.equals(remoteResult)) {
+            return false;
+        }
+        List<String> protocols = Objects.equals(protocol, "all")
+                ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
+        for (String itemProtocol : protocols) {
+            if (!natForwardSyncService.savePortRule(node.getId(), vm, effectiveSourceIp, source_port,
+                    destination_ip, destination_port, itemProtocol)) {
+                ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
+                        effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+                for (String savedProtocol : protocols) {
+                    natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, savedProtocol);
+                }
                 return false;
             }
         }
-        return ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
+        return true;
     }
     /**
      * @Author: 星禾
@@ -3396,7 +3411,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (node == null) {
             return false;
         }
-        return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm, source_port, destination_ip, destination_port, protocol);
+        String effectiveSourceIp = StringUtils.isBlank(source_ip) ? node.getHost() : source_ip.trim();
+        List<String> protocols = Objects.equals(protocol, "all")
+                ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
+        for (String itemProtocol : protocols) {
+            natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, itemProtocol);
+        }
+        return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
+                effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
     }
 
     @Override
@@ -3412,6 +3434,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         Boolean result = ClientApiUtil.addIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
         if (Boolean.TRUE.equals(result)) {
+            if (!natForwardSyncService.saveIpForwardRule(node.getId(), hostId, publicIp, privateIp)) {
+                ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
+                return false;
+            }
             saveOrActiveVpcIpBinding(hostId, publicIp, privateIp);
         }
         return result;
@@ -3426,6 +3452,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         Boolean result = ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
         if (Boolean.TRUE.equals(result)) {
+            if (!natForwardSyncService.deleteIpForwardRule(node.getId(), publicIp)) {
+                return false;
+            }
             deleteVpcIpBinding(hostId, publicIp, privateIp);
         }
         return result;
@@ -3680,29 +3709,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Object getVmhostNatByVmid (int page, int size, int hostId) {
-        String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
         if (node == null) {
             return ResponseResult.fail("虚拟机不存在或已删除");
         }
-        JSONObject data = ClientApiUtil.getPortForwardList(node.getHost(), token, node.getControllerPort(), hostId, page, size);
-        if (data != null) {
-            // 检查返回的代码，如果成功，则返回数据
-            int code = data.getIntValue("code");
-            if (code == 200) {
-                JSONArray dataArray = data.getJSONArray("data");
-                if (dataArray != null) {
-                    return ResponseResult.ok(dataArray);
-                } else {
-                    return ResponseResult.fail("Data array is null");
-                }
-            } else {
-                String message = data.getString("message");
-                return ResponseResult.fail(message != null ? message : "Unknown error");
-            }
-        } else {
-            return ResponseResult.fail("Failed to retrieve port forward list");
-        }
+        return ResponseResult.ok(natForwardSyncService.getPortRulesByHost(hostId, page, size));
     }
     /**
      * @Author: 星禾

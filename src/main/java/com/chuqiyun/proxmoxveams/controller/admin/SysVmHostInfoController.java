@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.service.VmInfoService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -86,13 +87,13 @@ public class SysVmHostInfoController {
     }
     /**
      * @Author: 星禾
-     * @Description: 添加虚拟机规则
+     * @Description: 添加虚拟机规则，source_ip可不传，默认使用虚拟机所属宿主机IP
      * @DateTime: 2024/12/30 16:55
      */
     @AdminApiCheck
     @RequestMapping(value = "/nat/add",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object addVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.addVmhostNat(params.getString("source_ip"), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.addVmhostNat(getOptionalSourceIp(params), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {
@@ -101,13 +102,13 @@ public class SysVmHostInfoController {
     }
     /**
      * @Author: 星禾
-     * @Description: 删除虚拟机规则
+     * @Description: 删除虚拟机规则，source_ip可不传，默认使用虚拟机所属宿主机IP
      * @DateTime: 2024/12/30 17:00
      */
     @AdminApiCheck
     @RequestMapping(value = "/nat/del",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object delVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.delVmhostNat(params.getString("source_ip"), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        Boolean result = vmhostService.delVmhostNat(getOptionalSourceIp(params), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
         if( result ) {
             return ResponseResult.ok();
         } else {
@@ -155,5 +156,9 @@ public class SysVmHostInfoController {
             return ResponseResult.ok();
         }
         return ResponseResult.fail();
+    }
+
+    private String getOptionalSourceIp(JSONObject params) {
+        return StringUtils.trimToNull(params.getString("source_ip"));
     }
 }

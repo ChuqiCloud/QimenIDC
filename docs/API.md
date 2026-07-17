@@ -9444,6 +9444,86 @@ GET /api/v1/{node}/getVnc
 |»» records|[object]|true|none||none|
 |»»» 本地测试|string|false|none||none|
 
+## POST 添加虚拟机NAT规则
+
+POST /api/v1/pve/nat/add
+
+添加虚拟机NAT端口转发规则，source_ip不传或为空时，后端默认使用虚拟机所属宿主机IP。
+
+> Body 请求参数
+
+```json
+{
+  "vm": 1,
+  "source_port": 20000,
+  "destination_ip": "172.16.0.10",
+  "destination_port": 22,
+  "protocol": "tcp"
+}
+```
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|body|body|object| 是 |none|
+|» vm|body|integer| 是 |虚拟机数据库ID|
+|» source_ip|body|string| 否 |源IP，不传或为空默认使用虚拟机所属宿主机IP|
+|» source_port|body|integer| 是 |宿主机端口|
+|» destination_ip|body|string| 是 |虚拟机IP|
+|» destination_port|body|integer| 是 |虚拟机端口|
+|» protocol|body|string| 是 |协议，支持tcp、udp、all|
+
+> 返回示例
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": null
+}
+```
+
+## PUT 删除虚拟机NAT规则
+
+PUT /api/v1/pve/nat/del
+
+删除虚拟机NAT端口转发规则，source_ip不传或为空时，后端默认使用虚拟机所属宿主机IP。
+
+> Body 请求参数
+
+```json
+{
+  "vm": 1,
+  "source_port": 20000,
+  "destination_ip": "172.16.0.10",
+  "destination_port": 22,
+  "protocol": "tcp"
+}
+```
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|body|body|object| 是 |none|
+|» vm|body|integer| 是 |虚拟机数据库ID|
+|» source_ip|body|string| 否 |源IP，不传或为空默认使用虚拟机所属宿主机IP|
+|» source_port|body|integer| 是 |宿主机端口|
+|» destination_ip|body|string| 是 |虚拟机IP|
+|» destination_port|body|integer| 是 |虚拟机端口|
+|» protocol|body|string| 是 |协议，支持tcp、udp、all|
+
+> 返回示例
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": null
+}
+```
+
 ## GET 通讯测试
 
 GET /api/v1/status

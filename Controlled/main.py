@@ -1,5 +1,4 @@
 import uvicorn
-import threading
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -78,7 +77,6 @@ async def add_process_time_header(request: Request, call_next):
 
 
 if __name__ == '__main__':
-    # thread = threading.Thread(target=nat.Manager().active_forward_rules_scheduler())
-    # thread.start()
-    nat.Manager().active_forward_rules_scheduler()
+    nat_manager = nat.Manager()
+    nat_manager.active_forward_rules_scheduler()
     uvicorn.run(app,host="0.0.0.0",port=get_port())
