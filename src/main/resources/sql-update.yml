@@ -462,7 +462,7 @@ build: # 内部构建版本信息
              index idx_nat_forward_rule_node (node_id, rule_type)
          ) comment '主控NAT转发规则';"
       - "create table if not exists nat_sync_state
-         (
+          (
              id               int auto_increment primary key,
              node_id          int           not null comment '宿主机节点ID',
              initial_imported int default 0 not null comment '是否完成首次导入 0否 1是',
@@ -470,5 +470,13 @@ build: # 内部构建版本信息
              last_message     varchar(255)  null,
              last_import_time bigint        null,
              last_sync_time   bigint        null,
-             unique index uk_nat_sync_state_node (node_id)
-         ) comment 'NAT规则同步状态';"
+              unique index uk_nat_sync_state_node (node_id)
+          ) comment 'NAT规则同步状态';"
+    4:
+      - "alter table vmhost
+                   add flow_type varchar(10) default 'in+out' not null comment '流量计费类型 in/out/in+out' after used_flow;"
+      - "update vmhost
+                   set flow_type = 'in+out'
+                   where flow_type is null
+                      or trim(flow_type) = ''
+                      or flow_type not in ('in', 'out', 'in+out');"

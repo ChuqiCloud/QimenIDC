@@ -201,6 +201,24 @@ public class VmInfoServiceImpl implements VmInfoService {
         return vmHostDto;
     }
 
+    @Override
+    public JSONObject getVmCurrentStatus(Integer hostId) {
+        Vmhost vmhost = vmhostService.getById(hostId);
+        if (vmhost == null) {
+            return null;
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return null;
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        try {
+            return new ProxmoxApiUtil().getVmStatus(node, cookieMap, vmhost.getVmid());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
     * @Author: mryunqi
     * @Description: 获取虚拟机历史负载

@@ -83,6 +83,10 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Double usedFlow;
     /**
+     * 流量计费类型 in/out/in+out，默认入流量和出流量相加
+     */
+    private String flowType;
+    /**
      * 上次重置流量时间
      */
     private Long lastResetFlow;

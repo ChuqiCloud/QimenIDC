@@ -67,7 +67,8 @@ public class FlowDataCron {
             Map<Integer, Boolean> nodeOnlineCache = new HashMap<>();
             while (true){
                 QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
-                queryWrapper.eq("status", 0); // 只获取开机的虚拟机
+                // 正常运行和流量超限限速中的虚拟机都可能继续产生流量
+                queryWrapper.in("status", 0, 15);
                 Page<Vmhost> vmhostPage = vmhostService.selectPage(i, PAGE_SIZE, queryWrapper);
                 List<Vmhost> vmhostList = vmhostPage.getRecords();
                 if (vmhostList == null || vmhostList.isEmpty()) {
@@ -106,7 +107,8 @@ public class FlowDataCron {
             Map<Integer, Boolean> nodeOnlineCache = new HashMap<>();
             while (true){
                 QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
-                queryWrapper.eq("status", 0); // 只获取开机的虚拟机
+                // 正常运行和流量超限限速中的虚拟机都需要继续同步流量
+                queryWrapper.in("status", 0, 15);
                 Page<Vmhost> vmhostPage = vmhostService.selectPage(i, PAGE_SIZE, queryWrapper);
                 List<Vmhost> vmhostList = vmhostPage.getRecords();
                 if (vmhostList == null || vmhostList.isEmpty()) {

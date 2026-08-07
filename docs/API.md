@@ -10774,6 +10774,7 @@ POST /vnc/import
   "bandwidth": 0,
   "ipv4num": 1,
   "ipv6num": 0,
+  "flowType": "in+out",
   "onBoot": 0,
   "username": "string",
   "password": "string",
@@ -10811,6 +10812,7 @@ POST /vnc/import
 |os|string|true|none||操作系统，可填镜像名称或id|
 |osType|string¦null|false|none||操作系统类型，（windows|linux）|
 |bandwidth|integer¦null|false|none||带宽，单位Mbps|
+|flowType|string¦null|false|in/out/in+out|流量计费类型|in仅计算入流量，out仅计算出流量，in+out计算入流量和出流量相加，默认in+out|
 |onBoot|integer¦null|false|none||是否开机自启 0:否 1:是，默认0关闭|
 |username|string¦null|false|none||虚拟机登录用户名|
 |password|string¦null|false|none||虚拟机登录密码|

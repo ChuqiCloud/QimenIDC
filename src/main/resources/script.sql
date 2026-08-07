@@ -326,6 +326,7 @@ create table vmhost
     bwlimit               bigint                                     null,
     flow_limit            bigint       default 0                     not null comment '月流量上限',
     used_flow             double       default 0                     not null comment '已用流量',
+    flow_type             varchar(10)  default 'in+out'              not null comment '流量计费类型 in/out/in+out',
     last_reset_flow       bigint       default 0                     not null comment '上次重置流量月份',
     args                  text                                       null,
     arch                  varchar(20)                                null,

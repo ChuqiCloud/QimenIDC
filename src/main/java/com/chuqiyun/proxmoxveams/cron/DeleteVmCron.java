@@ -12,11 +12,14 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
+import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.NatForwardSyncService;
 import com.chuqiyun.proxmoxveams.service.SecurityGroupBusinessService;
 import com.chuqiyun.proxmoxveams.service.SubnetpoolService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -29,6 +32,7 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -54,6 +58,11 @@ public class DeleteVmCron {
     private SubnetpoolService subnetpoolService;
     @Resource
     private SecurityGroupBusinessService securityGroupBusinessService;
+    @Resource
+    private NatForwardSyncService natForwardSyncService;
+    @Resource
+    private ConfigService configService;
+    private final AtomicBoolean deleteVmRunning = new AtomicBoolean(false);
 
     /**
     * @Author: mryunqi
@@ -122,6 +131,17 @@ public class DeleteVmCron {
     @Async
     @Scheduled(fixedDelay = 2000)
     public void deleteVm() {
+        if (!deleteVmRunning.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            processDeleteVm();
+        } finally {
+            deleteVmRunning.set(false);
+        }
+    }
+
+    private void processDeleteVm() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", DELETE_VM);
         taskQueryWrapper.eq("status", 0);
@@ -134,40 +154,49 @@ public class DeleteVmCron {
         try {
             // 获取虚拟机配置信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if (vmhost == null) {
+                task.setStatus(2);
+                task.setError("虚拟机记录不存在，删除任务已结束");
+                taskService.updateById(task);
+                log.info("[DeleteVmCron] 虚拟机记录不存在，结束删除任务: TaskId={}, HostId={}, VmId={}",
+                        task.getId(), task.getHostid(), task.getVmid());
+                return;
+            }
             // 获取node信息
             Master node = masterService.getById(task.getNodeid());
+            if (node == null) {
+                task.setStatus(2);
+                task.setError("宿主机节点不存在，删除任务已结束");
+                taskService.updateById(task);
+                log.warn("[DeleteVmCron] 宿主机节点不存在，结束删除任务: TaskId={}, NodeId={}, HostId={}, VmId={}",
+                        task.getId(), task.getNodeid(), task.getHostid(), task.getVmid());
+                return;
+            }
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             JSONObject vmInfo;
             //删除Nat转发
-            Object vmNat = vmhostService.getVmhostNatByVmid(1, 99999, task.getHostid());
-            if (vmNat != null) {
-                ResponseResult responseResult = (ResponseResult) vmNat;
-                Integer code = responseResult.getCode();
-                String message = responseResult.getMessage();
-                if (20000 == code) {
-                    Object data = responseResult.getData();
-                    if (data instanceof JSONArray) {
-                        JSONArray dataList = (JSONArray) data;
-                        for (int i = 0; i < dataList.size(); i++) {
-                            try {
-                                JSONObject item = dataList.getJSONObject(i);
-                                Integer destinationPort = item.getInteger("destination_port");
-                                Integer sourcePort = item.getInteger("source_port");
-                                String destinationIp = item.getString("destination_ip");
-                                String protocol = item.getString("protocol");
-                                Integer vm = item.getInteger("vm");
-                                vmhostService.delVmhostNat(node.getHost(), sourcePort, destinationIp, destinationPort, protocol, vm);
-                                System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
-                            } catch (Exception e) {
-                                System.err.println("Error processing item at index " + i + ": " + e.getMessage());
-                            }
-                        }
-                    } else {
-                        System.err.println("Data is not a JSONArray: " + data.getClass().getName());
+            JSONArray dataList = natForwardSyncService.getPortRulesByHost(task.getHostid(), 1, 99999);
+            for (int i = 0; i < dataList.size(); i++) {
+                try {
+                    JSONObject item = dataList.getJSONObject(i);
+                    Integer destinationPort = item.getInteger("destination_port");
+                    Integer sourcePort = item.getInteger("source_port");
+                    String sourceIp = item.getString("source_ip");
+                    String destinationIp = item.getString("destination_ip");
+                    String protocol = item.getString("protocol");
+                    Integer vm = item.getInteger("vm");
+                    natForwardSyncService.deletePortRule(node.getId(), sourceIp, sourcePort, protocol);
+                    Boolean deleted = ClientApiUtil.deletePortForward(
+                            node.getHost(), configService.getToken(), node.getControllerPort(), vm,
+                            sourceIp, sourcePort, destinationIp, destinationPort, protocol);
+                    if (!Boolean.TRUE.equals(deleted)) {
+                        log.warn("[DeleteVmCron] 删除远程NAT失败: TaskId={}, HostId={}, SourcePort={}, Protocol={}",
+                                task.getId(), task.getHostid(), sourcePort, protocol);
                     }
-                } else {
-                    System.err.println("获取VM NAT信息失败: " + message);
+                } catch (Exception e) {
+                    log.warn("[DeleteVmCron] 处理NAT规则异常: TaskId={}, HostId={}, Index={}, Error={}",
+                            task.getId(), task.getHostid(), i, e.getMessage());
                 }
             }
             // 获取虚拟机实时信息

@@ -85,6 +85,10 @@ public class VmParams {
      */
     private Double usedFlow;
     /**
+     * 流量计费类型 in/out/in+out，默认入流量和出流量相加
+     */
+    private String flowType;
+    /**
      * args 命令集参数
      */
     private String args;
@@ -218,7 +222,9 @@ public class VmParams {
     private Integer ipv6num;
     // 额外流量包
     private Long extraFlowLimit;
+    //流量重置日 0开通日 1表示每月1号
     private Integer resetFlowTime;
+    //0为暂停虚拟机，1024为限速1024 单位kb
     private Integer outFlow;
     private Integer deleteState;
 }

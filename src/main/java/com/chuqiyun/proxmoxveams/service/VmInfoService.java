@@ -20,6 +20,8 @@ public interface VmInfoService {
 
     VmHostDto getVmHostById(Integer vmId);
 
+    JSONObject getVmCurrentStatus(Integer vmId);
+
     JSONObject getVmInfoRrdData(Integer vmId, String timeframe, String cf);
 
     JSONObject getVmInfoRrdDataAllTime(Integer vmId, String cf);

@@ -75,6 +75,10 @@ public class CreateVmServiceImpl implements CreateVmService {
     @Override
     public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams, boolean isApi){
 
+        if (!FlowTypeUtil.isValid(vmParams.getFlowType())) {
+            return invalidParam("flowType只能是in、out或in+out");
+        }
+        vmParams.setFlowType(FlowTypeUtil.normalize(vmParams.getFlowType()));
         if (vmParams.getHostname() != null && !vmParams.getHostname().equals("")) {
             Vmhost vmhost = vmhostService.getVmhostByNameOne(vmParams.getHostname());
             if (vmhost != null) {

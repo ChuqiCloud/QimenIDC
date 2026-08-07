@@ -26,6 +26,7 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
+import com.chuqiyun.proxmoxveams.utils.FlowTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
@@ -298,6 +299,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit());
         vmhost.setResetFlowTime(vmParams.getResetFlowTime());
         vmhost.setOutFlow(vmParams.getOutFlow());
+        vmhost.setFlowType(FlowTypeUtil.normalize(vmParams.getFlowType()));
         vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
         if (vmParams.getNested() == null || !vmParams.getNested()) {
             vmhost.setNested(0);
@@ -939,14 +941,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                                         System.out.println("Deleted NAT forwarding for destination port: " + destinationPort);
                                     }
                                 } catch (Exception e) {
-                                    System.err.println("Error processing item at index " + i + ": " + e.getMessage());
+                                    log.warn("[ResetVmOs] 处理旧NAT规则异常: HostId={}, Index={}, Error={}",
+                                            vmhost.getId(), i, e.getMessage());
                                 }
                             }
-                        } else {
-                            System.err.println("Data is not a JSONArray: " + data.getClass().getName());
+                        } else if (data != null) {
+                            log.warn("[ResetVmOs] NAT返回数据格式异常: HostId={}, Type={}",
+                                    vmhost.getId(), data.getClass().getName());
                         }
-                    } else {
-                        System.err.println("获取VM NAT信息失败: " + message);
+                    } else if (!"虚拟机不存在或已删除".equals(message)) {
+                        log.warn("[ResetVmOs] 获取旧NAT信息失败: HostId={}, Message={}",
+                                vmhost.getId(), message);
                     }
                 }
             }
@@ -1149,11 +1154,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        if (!FlowTypeUtil.isValid(vmParams.getFlowType())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "flowType只能是in、out或in+out");
+        }
         if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
         if (vmParams.getExtraFlowLimit() != null) vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit()*1024*1024*1024);
         if (vmParams.getNatnum() != null ) vmhost.setNatnum(vmParams.getNatnum());
         if (vmParams.getResetFlowTime() != null ) vmhost.setResetFlowTime(vmParams.getResetFlowTime());
         if (vmParams.getOutFlow() != null ) vmhost.setOutFlow(vmParams.getOutFlow());
+        if (vmParams.getFlowType() != null) vmhost.setFlowType(FlowTypeUtil.normalize(vmParams.getFlowType()));
         this.updateById(vmhost);
         if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
         || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
