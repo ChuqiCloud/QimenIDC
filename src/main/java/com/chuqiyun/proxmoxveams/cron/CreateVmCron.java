@@ -198,7 +198,11 @@ public class CreateVmCron {
                 } else {
                     dest_port = 22;
                 }
-                String dest_ip = ipList.get(0);
+                String dest_ip = getFirstIpv4(ipList);
+                if (dest_ip == null) {
+                    finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建默认NAT失败: 未找到IPv4地址");
+                    return;
+                }
                 Master node = masterService.getById(vmParams.getNodeid());
                 int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
                 if (!vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId)){
@@ -661,5 +665,17 @@ public class CreateVmCron {
 
     private String normalizeStorageText(String storage) {
         return storage == null ? null : storage.trim();
+    }
+
+    private String getFirstIpv4(List<String> ipList) {
+        if (ipList == null) {
+            return null;
+        }
+        for (String ip : ipList) {
+            if (ip != null && !ip.trim().isEmpty() && !ip.contains(":")) {
+                return ip.trim();
+            }
+        }
+        return null;
     }
 }

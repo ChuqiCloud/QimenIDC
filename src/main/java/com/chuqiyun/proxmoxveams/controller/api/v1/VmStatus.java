@@ -262,7 +262,7 @@ public class VmStatus {
         return ResponseResult.ok("操作成功");
     }
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表
      * @DateTime: 2026/5/29 23:03
      */
@@ -277,7 +277,7 @@ public class VmStatus {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 创建指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */
@@ -299,7 +299,7 @@ public class VmStatus {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 删除指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */
@@ -319,7 +319,7 @@ public class VmStatus {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 还原指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */

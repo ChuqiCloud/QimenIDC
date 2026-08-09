@@ -54,6 +54,12 @@ public class SysIpPoolController {
         if (!maskList.contains(ipParams.getMask())){
             return ResponseResult.fail("掩码位不合法！");
         }
+        if (ipVersion == IP_VERSION_6 && IpUtil.getIpv6AllocationMask(ipParams.getMask(), ipParams.getAllocationMask()) == null) {
+            return ResponseResult.fail("IPv6分配掩码位不合法！");
+        }
+        if (ipVersion == IP_VERSION_6 && IpUtil.getIpv6GenerateCount(ipParams.getCount()) == null) {
+            return ResponseResult.fail("IPv6初始插入数量不合法！");
+        }
         // 判断是否有空参数
         if(ipParams.getPoolName() == null || ipParams.getNodeId() == null || ipParams.getGateway() == null || ipParams.getMask() == null
         || ipParams.getDns1() == null || ipParams.getDns2() == null){
@@ -82,7 +88,13 @@ public class SysIpPoolController {
             return ResponseResult.fail("IP池信息添加失败！");
         }
         ipParams.setPoolId(statusId);
-        List<Ippool> ippoolList = IpUtil.getIpList(ipParams);
+        List<Ippool> ippoolList;
+        try {
+            ippoolList = IpUtil.getIpList(ipParams);
+        } catch (IllegalArgumentException e) {
+            ipstatusService.removeById(statusId);
+            return ResponseResult.fail(e.getMessage());
+        }
         // 批量插入ip池
         if (ippoolService.insertIppoolList(ippoolList)){
             return ResponseResult.ok("插入成功！");
@@ -114,6 +126,13 @@ public class SysIpPoolController {
                 !IpUtil.isValidIp(ipParams.getEndIp(), ipVersion)){
             return ResponseResult.fail("IP不合法！");
         }
+        Integer allocationMask = null;
+        if (ipVersion == IP_VERSION_6) {
+            allocationMask = IpUtil.getIpv6AllocationMask(ipstatus.getMask(), ipParams.getAllocationMask());
+            if (allocationMask == null) {
+                return ResponseResult.fail("IPv6分配掩码位不合法！");
+            }
+        }
         // 判断DNS是否合法
         if (!IpUtil.isValidIp(ipParams.getDns1(), ipVersion) ||
                 !IpUtil.isValidIp(ipParams.getDns2(), ipVersion)){
@@ -122,7 +141,14 @@ public class SysIpPoolController {
         // 获取该网关下IP池中的所有IP
         List<String> ipList = ippoolService.getIpListByPoolId(ipParams.getPoolId());
         // 获取该范围内的所有IP
-        List<String> allIpList = IpUtil.getAllIPsInRange(ipParams.getStartIp(),ipParams.getEndIp());
+        List<String> allIpList;
+        try {
+            allIpList = ipVersion == IP_VERSION_6
+                    ? IpUtil.getAllIpv6InRange(ipParams.getStartIp(), ipParams.getEndIp(), allocationMask)
+                    : IpUtil.getAllIPsInRange(ipParams.getStartIp(), ipParams.getEndIp());
+        } catch (IllegalArgumentException e) {
+            return ResponseResult.fail(e.getMessage());
+        }
         // 删除allIpList中存在于ipList中的IP地址
         allIpList.removeAll(ipList);
         // 获取IpStatus对象
@@ -134,7 +160,7 @@ public class SysIpPoolController {
             ippool.setNodeId(ipstatus.getNodeid());
             ippool.setIpVersion(ipVersion);
             ippool.setGateway(ipstatus.getGateway());
-            ippool.setSubnetMask(ipVersion == IP_VERSION_6 ? String.valueOf(ipstatus.getMask()) : IpUtil.getMaskToString(ipstatus.getMask()));
+            ippool.setSubnetMask(ipVersion == IP_VERSION_6 ? String.valueOf(allocationMask) : IpUtil.getMaskToString(ipstatus.getMask()));
             ippool.setIp(ip);
             ippool.setDns1(ipParams.getDns1());
             ippool.setDns2(ipParams.getDns2());
@@ -234,8 +260,9 @@ public class SysIpPoolController {
                 ippool.setGateway(ipstatus.getGateway());
             }
             if (ipstatus.getMask() != null){
-                ippool.setSubnetMask(IpUtil.getIpVersion(ipstatus.getIpVersion()) == IP_VERSION_6
-                        ? String.valueOf(ipstatus.getMask()) : IpUtil.getMaskToString(ipstatus.getMask()));
+                if (IpUtil.getIpVersion(ipstatus.getIpVersion()) != IP_VERSION_6) {
+                    ippool.setSubnetMask(IpUtil.getMaskToString(ipstatus.getMask()));
+                }
             }
             if (ipstatus.getDns1() != null){
                 ippool.setDns1(ipstatus.getDns1());

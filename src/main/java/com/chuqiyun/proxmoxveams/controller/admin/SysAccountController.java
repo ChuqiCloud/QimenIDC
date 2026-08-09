@@ -185,9 +185,9 @@ public class SysAccountController {
     public ResponseResult<String> deleteSysUserById(@PathVariable Long id)
             throws UnauthorizedException {
         if (sysuserService.removeById(id)) {
-            return ResponseResult.ok("鍒犻櫎绠＄悊鍛樿处鎴锋垚鍔燂紒");
+            return ResponseResult.ok("删除管理员账户成功！");
         } else {
-            return ResponseResult.fail("鍒犻櫎绠＄悊鍛樿处鎴峰け璐ワ紒");
+            return ResponseResult.fail("删除管理员账户失败！");
         }
     }
 

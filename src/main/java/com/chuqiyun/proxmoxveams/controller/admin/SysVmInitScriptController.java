@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * @Author: 鏄熺
+ * @Author: 星禾
  * @Description: 后台虚拟机初始化脚本接口
  * @DateTime: 2026/7/3 20:47
  */

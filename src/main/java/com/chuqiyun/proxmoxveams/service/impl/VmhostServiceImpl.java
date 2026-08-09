@@ -955,7 +955,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     }
                 }
             }
-            String dest_ip = vmhost.getIpList().get(0);
+            String dest_ip = getFirstIpv4(vmhost.getIpList());
+            if (StringUtils.isBlank(dest_ip)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "NAT重建失败: 未找到IPv4地址");
+            }
             int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
             if (!this.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhost.getId())) {
                 s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
@@ -1976,7 +1979,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
         if (boundIppoolList.isEmpty()) {
             resultData.put("message", "未发现需要同步的手动绑定IP");
-            syncVmFirewallProtectionForVmhost(vmhost, newIpList);
+            syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
             log.info("[Sync-ManualVmIp] 虚拟机无需同步: NodeId={}, HostId={}, VmId={}, Message={}",
                     vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), resultData.get("message"));
             return resultData;
@@ -1998,7 +2001,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         } else {
             resultData.put("message", "同步手动绑定IP成功");
         }
-        syncVmFirewallProtectionForVmhost(vmhost, newIpList);
+        syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
         log.info("[Sync-ManualVmIp] 虚拟机同步结果: NodeId={}, HostId={}, VmId={}, SyncCount={}, Message={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), addedIpList.size(), resultData.get("message"));
         return resultData;
@@ -2672,6 +2675,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig);
     }
 
+    private String getFirstIpv4(List<String> ipList) {
+        if (ipList == null) {
+            return null;
+        }
+        for (String ip : ipList) {
+            if (StringUtils.isNotBlank(ip) && !ip.contains(":")) {
+                return ip.trim();
+            }
+        }
+        return null;
+    }
+
     private void updateVmhostIpFields(Vmhost vmhost, HashMap<String, String> ipConfig, List<String> ipList, String errorMessage) {
         List<IpDto> ipData = VmUtil.splitIpAddress(ipConfig);
         Vmhost updateVmhost = new Vmhost();
@@ -2702,6 +2717,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private Integer getIpMask(Ipstatus ipstatus, Ippool ippool) {
+        if (ippool != null && Objects.equals(ippool.getIpVersion(), 6) && StringUtils.isNotBlank(ippool.getSubnetMask())) {
+            try {
+                return Integer.parseInt(ippool.getSubnetMask().trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
         if (ipstatus.getMask() != null) {
             return ipstatus.getMask();
         }
@@ -2733,6 +2755,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         String gateway = StringUtils.defaultIfBlank(ippool.getGateway(), ipstatus.getGateway());
         if (mask == null || StringUtils.isBlank(gateway)) {
             return null;
+        }
+        if (Objects.equals(ippool.getIpVersion(), 6)) {
+            return "ip6=" + ippool.getIp() + "/" + mask + ",gw6=" + gateway;
         }
         return "ip=" + ippool.getIp() + "/" + mask + ",gw=" + gateway;
     }
@@ -2846,7 +2871,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (isWindowsVm(vmhost)) {
             removeCicustomNetworkConfig(proxmoxApiUtil, node, cookieMap, vmhost, pveVmConfig);
             proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
-            syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getIpList(ipConfig));
+            syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
             return;
         }
         String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
@@ -2858,7 +2883,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
         proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
-        syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getIpList(ipConfig));
+        syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
     }
 
     private boolean isWindowsVm(Vmhost vmhost) {
@@ -2901,6 +2926,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         try {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
             JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
             String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
             if (StringUtils.isBlank(net0Config)) {
@@ -2923,28 +2949,24 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                                      Vmhost vmhost, Collection<String> allowedIps) throws Exception {
         LinkedHashSet<String> desiredCidrSet = new LinkedHashSet<>();
         if (allowedIps != null) {
-            for (String ip : allowedIps) {
-                if (StringUtils.isBlank(ip)) {
-                    continue;
-                }
-                String normalizedIp = ip.trim();
-                desiredCidrSet.add(normalizeFirewallCidr(normalizedIp));
-            }
+            desiredCidrSet.addAll(CloudInitNetworkUtil.normalizeFirewallCidrs(allowedIps));
         } else if (vmhost != null) {
+            List<String> firewallIpList = new ArrayList<>();
             if (vmhost.getIpList() != null) {
                 for (String ip : vmhost.getIpList()) {
                     if (StringUtils.isNotBlank(ip)) {
-                        desiredCidrSet.add(normalizeFirewallCidr(ip.trim()));
+                        firewallIpList.add(ip.trim());
                     }
                 }
             }
             if (vmhost.getIpConfig() != null) {
-                for (String ip : CloudInitNetworkUtil.getIpList(vmhost.getIpConfig())) {
+                for (String ip : CloudInitNetworkUtil.getFirewallCidrList(vmhost.getIpConfig())) {
                     if (StringUtils.isNotBlank(ip)) {
-                        desiredCidrSet.add(normalizeFirewallCidr(ip.trim()));
+                        firewallIpList.add(ip.trim());
                     }
                 }
             }
+            desiredCidrSet.addAll(CloudInitNetworkUtil.normalizeFirewallCidrs(firewallIpList));
         }
 
         proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
@@ -2976,13 +2998,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
             }
         }
-    }
-
-    private String normalizeFirewallCidr(String ip) {
-        if (StringUtils.isBlank(ip) || ip.contains("/")) {
-            return ip;
-        }
-        return ip.contains(":") ? ip + "/128" : ip + "/32";
     }
 
     private String resolveNet0Bridge(Vmhost vmhost, String net0Config) {

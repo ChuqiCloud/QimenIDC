@@ -34,7 +34,7 @@ import java.util.Objects;
 import static com.chuqiyun.proxmoxveams.constant.TaskType.RUN_QEMU_INIT_SCRIPT;
 
 /**
- * @Author: 鏄熺
+ * @Author: 星禾
  * @Description: 虚拟机初始化脚本业务服务
  * @DateTime: 2026/7/3 20:47
  */

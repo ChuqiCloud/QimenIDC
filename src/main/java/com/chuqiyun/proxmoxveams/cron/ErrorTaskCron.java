@@ -32,7 +32,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Component
 @EnableScheduling
 public class ErrorTaskCron {
-    private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 10 * 60 * 1000L;
+    private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 60 * 60 * 1000L;
 
     @Resource
     private MasterService masterService;

@@ -16,7 +16,7 @@ import javax.annotation.Resource;
 import static com.chuqiyun.proxmoxveams.constant.TaskType.RUN_QEMU_INIT_SCRIPT;
 
 /**
- * @Author: 鏄熺
+ * @Author: 星禾
  * @Description: QEMU Guest Agent初始化脚本任务
  * @DateTime: 2026/7/3 20:47
  */

@@ -168,6 +168,16 @@ public class CloudInitNetworkUtil {
         return parseIpConfigs(ipConfig).size();
     }
 
+    public static int getIpConfigEntryCount(Map<String, String> ipConfig) {
+        int count = 0;
+        for (Map.Entry<String, String> entry : getSortedIpConfigEntries(ipConfig)) {
+            if (!parseIpConfigList(entry.getValue()).isEmpty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public static String getPrimaryIpConfig(Map<String, String> ipConfig) {
         List<Map.Entry<String, String>> entries = getSortedIpConfigEntries(ipConfig);
         for (Map.Entry<String, String> entry : entries) {
@@ -184,6 +194,57 @@ public class CloudInitNetworkUtil {
             ipList.add(item.ip);
         }
         return ipList;
+    }
+
+    public static List<String> getAddressList(Map<String, String> ipConfig) {
+        List<String> addressList = new ArrayList<>();
+        for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
+            addressList.add(item.address);
+        }
+        return addressList;
+    }
+
+    public static List<String> getFirewallCidrList(Map<String, String> ipConfig) {
+        List<String> addressList = new ArrayList<>();
+        for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
+            addressList.add(item.address);
+        }
+        return normalizeFirewallCidrs(addressList);
+    }
+
+    public static List<String> normalizeFirewallCidrs(Iterable<String> addresses) {
+        LinkedHashMap<String, String> cidrMap = new LinkedHashMap<>();
+        if (addresses != null) {
+            for (String address : addresses) {
+                String cidr = normalizeFirewallCidr(address);
+                if (StringUtils.isBlank(cidr)) {
+                    continue;
+                }
+                cidrMap.put(getFirewallCidrAddress(cidr), cidr);
+            }
+        }
+        return new ArrayList<>(cidrMap.values());
+    }
+
+    public static String normalizeFirewallCidr(String address) {
+        if (StringUtils.isBlank(address)) {
+            return address;
+        }
+        String normalizedAddress = address.trim();
+        if ("dhcp".equalsIgnoreCase(normalizedAddress)) {
+            return normalizedAddress;
+        }
+        int maskIndex = normalizedAddress.indexOf('/');
+        String ip = maskIndex >= 0 ? normalizedAddress.substring(0, maskIndex) : normalizedAddress;
+        if (ip.contains(":")) {
+            return maskIndex >= 0 ? normalizedAddress : ip + "/128";
+        }
+        return ip + "/32";
+    }
+
+    private static String getFirewallCidrAddress(String cidr) {
+        int maskIndex = cidr.indexOf('/');
+        return maskIndex >= 0 ? cidr.substring(0, maskIndex) : cidr;
     }
 
     public static List<String> getIpv4List(Map<String, String> ipConfig) {

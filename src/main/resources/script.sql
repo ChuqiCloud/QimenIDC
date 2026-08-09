@@ -20,7 +20,7 @@ create table config
     version                varchar(255)                null,
     build                  varchar(255)                null,
     installed              int          default 1      not null comment '0=否;1=是',
-    delete_days           int  default 3     null comment '回收站删除天数',
+    delete_days           int  default 3     null comment '回收站删除天数'
 );
 
 create table configuretemplate

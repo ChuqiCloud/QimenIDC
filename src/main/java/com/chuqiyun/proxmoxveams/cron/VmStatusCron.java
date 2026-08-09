@@ -12,7 +12,6 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
-import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +23,14 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -43,7 +44,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class VmStatusCron {
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
     private static final long IP_CHANGE_RESTART_WAIT = 2000L;
-    private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 10 * 60 * 1000L;
+    private static final long APPLY_WINDOWS_VM_IP_RETRY_DELAY = 10_000L;
+    private static final int APPLY_WINDOWS_VM_IP_MAX_RETRY = 30;
     private static final long WINDOWS_GUEST_AGENT_COMMAND_TIMEOUT = 120_000L;
 
     @Resource
@@ -345,7 +347,7 @@ public class VmStatusCron {
     }
 
     @Async
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelay = APPLY_WINDOWS_VM_IP_RETRY_DELAY)
     public void applyWindowsVmIp(){
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", APPLY_WINDOWS_VM_IP);
@@ -368,14 +370,15 @@ public class VmStatusCron {
             taskService.updateById(task);
             return;
         }
-        if (isApplyWindowsVmIpTimeout(task)) {
+        if (isApplyWindowsVmIpRetryExceeded(task)) {
             task.setStatus(3);
-            task.setError("Windows附加IP应用超时，最后错误: " + StringUtils.defaultIfBlank(task.getError(), "未知错误"));
+            task.setError("Windows附加IP应用失败，超过最大重试次数，最后错误: " + StringUtils.defaultIfBlank(task.getError(), "未知错误"));
             taskService.updateById(task);
-            log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用超时失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
+            log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用失败，超过最大重试次数: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
                     task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), task.getError());
             return;
         }
+        int retryCount = increaseApplyWindowsVmIpRetryCount(task);
         try {
             if (!isWindowsIpManagedVm(vmhost)) {
                 task.setStatus(2);
@@ -386,34 +389,30 @@ public class VmStatusCron {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             if (!"running".equals(getVmStatus(proxmoxApiUtil, node, authentications, task.getVmid()))) {
-                task.setStatus(0);
-                task.setError("等待Windows虚拟机启动");
-                taskService.updateById(task);
+                scheduleNextApplyWindowsVmIpRetry(task, retryCount, "等待Windows虚拟机启动");
                 return;
             }
-            applyWindowsIpByGuestAgent(node, vmhost);
+            JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, authentications, task.getVmid());
+            applyWindowsIpByGuestAgent(proxmoxApiUtil, node, authentications, vmhost, getNameserversFromPveConfig(pveVmConfig));
             task.setStatus(2);
             task.setError(null);
             taskService.updateById(task);
-            log.info("[Task-ApplyWindowsVmIp] Windows附加IP应用完成: NodeID:{} VM-ID:{} HostId:{}",
-                    node.getId(), task.getVmid(), task.getHostid());
+            log.info("[Task-ApplyWindowsVmIp] Windows附加IP应用完成: NodeID:{} VM-ID:{} HostId:{} Retry:{}",
+                    node.getId(), task.getVmid(), task.getHostid(), retryCount);
         } catch (Exception e) {
-            if (isApplyWindowsVmIpTimeout(task)) {
+            if (retryCount >= APPLY_WINDOWS_VM_IP_MAX_RETRY) {
                 task.setStatus(3);
-                task.setError("Windows附加IP应用超时，最后错误: " + StringUtils.defaultIfBlank(e.getMessage(), "未知错误"));
+                task.setError("Windows附加IP应用失败，超过最大重试次数，最后错误: " + StringUtils.defaultIfBlank(e.getMessage(), "未知错误"));
                 taskService.updateById(task);
-                log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用超时失败: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
-                        task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), e.getMessage(), e);
+                log.error("[Task-ApplyWindowsVmIp] Windows附加IP应用失败，超过最大重试次数: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Retry={}, Error={}",
+                        task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), retryCount, e.getMessage(), e);
                 return;
             }
-            task.setStatus(0);
-            task.setError("等待QEMU Guest Agent应用Windows附加IP: " + e.getMessage());
-            taskService.updateById(task);
-            log.warn("[Task-ApplyWindowsVmIp] Windows附加IP暂未应用，等待下次重试: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Error={}",
-                    task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), e.getMessage());
+            scheduleNextApplyWindowsVmIpRetry(task, retryCount, "等待QEMU Guest Agent应用Windows附加IP: " + e.getMessage());
+            log.warn("[Task-ApplyWindowsVmIp] Windows附加IP暂未应用，10秒后重试: TaskId={}, NodeID={}, VM-ID={}, HostId={}, Retry={}/{}, Error={}",
+                    task.getId(), task.getNodeid(), task.getVmid(), task.getHostid(), retryCount, APPLY_WINDOWS_VM_IP_MAX_RETRY, e.getMessage());
         }
     }
-
     /**
     * @Author: mryunqi
     * @Description: 挂起任务
@@ -876,7 +875,10 @@ public class VmStatusCron {
         task.setType(APPLY_WINDOWS_VM_IP);
         task.setStatus(0);
         HashMap<Object, Object> params = new HashMap<>();
-        params.put("source", "windows_multi_ip");
+        params.put("source", "windows_ip_sync");
+        params.put("retryCount", 0);
+        params.put("maxRetry", APPLY_WINDOWS_VM_IP_MAX_RETRY);
+        params.put("retryDelaySeconds", APPLY_WINDOWS_VM_IP_RETRY_DELAY / 1000);
         task.setParams(params);
         task.setCreateDate(System.currentTimeMillis());
         if (!taskService.insertTask(task)) {
@@ -901,112 +903,312 @@ public class VmStatusCron {
     private boolean isWindowsIpManagedVm(Vmhost vmhost) {
         return vmhost != null
                 && "windows".equalsIgnoreCase(vmhost.getOsType())
-                && CloudInitNetworkUtil.getIpAddressCount(vmhost.getIpConfig()) > 0;
+                && CloudInitNetworkUtil.getIpConfigEntryCount(vmhost.getIpConfig()) > 1;
     }
 
-    private boolean isApplyWindowsVmIpTimeout(Task task) {
-        return task == null || task.getCreateDate() == null
-                || System.currentTimeMillis() - task.getCreateDate() >= APPLY_WINDOWS_VM_IP_TIMEOUT;
+    private boolean isApplyWindowsVmIpRetryExceeded(Task task) {
+        return getApplyWindowsVmIpRetryCount(task) >= APPLY_WINDOWS_VM_IP_MAX_RETRY;
     }
 
-    private void applyWindowsIpByGuestAgent(Master node, Vmhost vmhost) throws Exception {
-        if (node == null || node.getSshPort() == null || StringUtils.isBlank(node.getSshUsername())
-                || StringUtils.isBlank(node.getSshPassword())) {
-            throw new IllegalStateException("节点SSH配置不完整，无法通过qm guest exec应用Windows附加IP");
+    private int increaseApplyWindowsVmIpRetryCount(Task task) {
+        Map<Object, Object> params = ensureTaskParams(task);
+        int retryCount = getApplyWindowsVmIpRetryCount(task) + 1;
+        params.put("retryCount", retryCount);
+        params.put("maxRetry", APPLY_WINDOWS_VM_IP_MAX_RETRY);
+        params.put("retryDelaySeconds", APPLY_WINDOWS_VM_IP_RETRY_DELAY / 1000);
+        task.setParams(params);
+        return retryCount;
+    }
+
+    private int getApplyWindowsVmIpRetryCount(Task task) {
+        if (task == null || task.getParams() == null || task.getParams().get("retryCount") == null) {
+            return 0;
         }
-        String script = buildWindowsMultiIpScript(vmhost);
-        String encodedCommand = Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
-        String command = "qm guest exec " + vmhost.getVmid()
-                + " -- powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand "
-                + shellQuote(encodedCommand);
-        SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
         try {
-            sshUtil.connect();
-            sshUtil.executeCommand(command, WINDOWS_GUEST_AGENT_COMMAND_TIMEOUT);
-        } finally {
-            sshUtil.disconnect();
+            return Integer.parseInt(task.getParams().get("retryCount").toString());
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
-    private String buildWindowsMultiIpScript(Vmhost vmhost) {
-        Map<String, String> ipAddressMap = CloudInitNetworkUtil.getIpAddressMap(vmhost.getIpConfig());
-        List<String> desiredIpv4Items = new ArrayList<>();
-        List<String> desiredIpv4PrefixItems = new ArrayList<>();
-        List<String> desiredIpv6Items = new ArrayList<>();
-        List<String> desiredIpv6PrefixItems = new ArrayList<>();
-        String primaryIp = null;
-        for (Map.Entry<String, String> entry : ipAddressMap.entrySet()) {
-            if (primaryIp == null) {
-                primaryIp = entry.getKey();
-                continue;
+    private void scheduleNextApplyWindowsVmIpRetry(Task task, int retryCount, String error) {
+        task.setStatus(0);
+        task.setCreateDate(System.currentTimeMillis() + APPLY_WINDOWS_VM_IP_RETRY_DELAY);
+        task.setError(error + "，重试进度: " + retryCount + "/" + APPLY_WINDOWS_VM_IP_MAX_RETRY);
+        taskService.updateById(task);
+    }
+
+    private Map<Object, Object> ensureTaskParams(Task task) {
+        if (task.getParams() == null) {
+            task.setParams(new HashMap<>());
+        }
+        return task.getParams();
+    }
+
+    private void applyWindowsIpByGuestAgent(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
+                                            Vmhost vmhost, List<String> nameservers) throws Exception {
+        String script = buildWindowsIpSyncScript(vmhost, nameservers);
+        JSONObject execResult = proxmoxApiUtil.guestExecPowerShell(node, cookieMap, vmhost.getVmid(), script);
+        Integer pid = extractGuestExecPid(execResult);
+        JSONObject execStatus = waitWindowsGuestExecStatus(proxmoxApiUtil, node, cookieMap, vmhost, pid);
+        Integer exitCode = extractGuestExecExitCode(execStatus);
+        if (exitCode == null || exitCode != 0) {
+            throw new IllegalStateException("Windows IP sync failed, exitCode=" + exitCode
+                    + ", stdout=" + StringUtils.defaultString(extractGuestExecOutput(execStatus, "out-data", "out_data", "stdout"))
+                    + ", stderr=" + StringUtils.defaultString(extractGuestExecOutput(execStatus, "err-data", "err_data", "stderr")));
+        }
+    }
+
+    private JSONObject waitWindowsGuestExecStatus(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
+                                                  Vmhost vmhost, Integer pid) throws InterruptedException {
+        if (pid == null) {
+            throw new IllegalStateException("QEMU Guest Agent did not return process pid");
+        }
+        long endTime = System.currentTimeMillis() + WINDOWS_GUEST_AGENT_COMMAND_TIMEOUT;
+        JSONObject lastStatus = null;
+        while (System.currentTimeMillis() <= endTime) {
+            lastStatus = proxmoxApiUtil.guestExecStatus(node, cookieMap, vmhost.getVmid(), pid);
+            JSONObject data = lastStatus == null ? null : lastStatus.getJSONObject("data");
+            if (data != null && data.getBooleanValue("exited")) {
+                return data;
             }
-            Integer prefixLength = CloudInitNetworkUtil.getPrefixLength(entry.getValue());
-            if (prefixLength == null) {
-                continue;
-            }
-            String escapedIp = escapePowerShellString(entry.getKey());
-            if (entry.getKey().contains(":")) {
-                desiredIpv6Items.add("'" + escapedIp + "'");
-                desiredIpv6PrefixItems.add("'" + escapedIp + "'=" + prefixLength);
-            } else {
-                desiredIpv4Items.add("'" + escapedIp + "'");
-                desiredIpv4PrefixItems.add("'" + escapedIp + "'=" + prefixLength);
+            Thread.sleep(2000L);
+        }
+        throw new IllegalStateException("Windows IP sync command timeout, pid=" + pid
+                + ", lastStatus=" + (lastStatus == null ? "" : lastStatus.toJSONString()));
+    }
+
+    private Integer extractGuestExecPid(JSONObject execResult) {
+        JSONObject data = execResult == null ? null : execResult.getJSONObject("data");
+        return data == null ? null : data.getInteger("pid");
+    }
+
+    private Integer extractGuestExecExitCode(JSONObject status) {
+        if (status == null) {
+            return null;
+        }
+        Integer exitCode = status.getInteger("exitcode");
+        return exitCode == null ? status.getInteger("exit-code") : exitCode;
+    }
+
+    private String extractGuestExecOutput(JSONObject status, String... keys) {
+        if (status == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            String value = status.getString(key);
+            if (StringUtils.isNotBlank(value)) {
+                return value;
             }
         }
-        if (StringUtils.isBlank(primaryIp)) {
+        return null;
+    }
+
+    private String buildWindowsIpSyncScript(Vmhost vmhost, List<String> nameservers) {
+        List<WindowsIpConfig> ipConfigs = parseWindowsIpConfigs(vmhost.getIpConfig());
+        List<String> desiredIpv4Items = new ArrayList<>();
+        List<String> desiredIpv6Items = new ArrayList<>();
+        for (WindowsIpConfig item : ipConfigs) {
+            String powershellItem = "@{IPAddress='" + escapePowerShellString(item.ip) + "';PrefixLength="
+                    + item.prefixLength + ";Gateway='" + escapePowerShellString(item.gateway) + "'}";
+            if (item.ipv6) {
+                desiredIpv6Items.add(powershellItem);
+            } else {
+                desiredIpv4Items.add(powershellItem);
+            }
+        }
+        if (desiredIpv4Items.isEmpty() && desiredIpv6Items.isEmpty()) {
             return "";
         }
-        String desiredIpv4s = "@(" + String.join(",", desiredIpv4Items) + ")";
-        String desiredIpv4Prefixes = "@{" + String.join(";", desiredIpv4PrefixItems) + "}";
-        String desiredIpv6s = "@(" + String.join(",", desiredIpv6Items) + ")";
-        String desiredIpv6Prefixes = "@{" + String.join(";", desiredIpv6PrefixItems) + "}";
-        String escapedPrimaryIp = escapePowerShellString(primaryIp);
-        String primaryAddressFamily = primaryIp.contains(":") ? "IPv6" : "IPv4";
         return "$ErrorActionPreference = 'Stop'\n"
-                + "$primaryIp = '" + escapedPrimaryIp + "'\n"
-                + "$primaryAddressFamily = '" + primaryAddressFamily + "'\n"
-                + "$desiredIpv4s = " + desiredIpv4s + "\n"
-                + "$ipv4PrefixMap = " + desiredIpv4Prefixes + "\n"
-                + "$desiredIpv6s = " + desiredIpv6s + "\n"
-                + "$ipv6PrefixMap = " + desiredIpv6Prefixes + "\n"
-                + "$adapter = Get-NetIPAddress -AddressFamily $primaryAddressFamily | Where-Object { $_.IPAddress -eq $primaryIp } | Select-Object -First 1\n"
-                + "if ($null -eq $adapter) { throw \"Primary IP $primaryIp not found\" }\n"
-                + "$index = $adapter.InterfaceIndex\n"
-                + "$currentIpv4s = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
-                + "foreach ($ip in $currentIpv4s) {\n"
-                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIpv4s -notcontains $ip.IPAddress) {\n"
-                + "        Remove-NetIPAddress -InterfaceIndex $index -IPAddress $ip.IPAddress -Confirm:$false\n"
-                + "    }\n"
+                + "$desiredIpv4s = @(" + String.join(",", desiredIpv4Items) + ")\n"
+                + "$desiredIpv6s = @(" + String.join(",", desiredIpv6Items) + ")\n"
+                + "$dnsServers = " + buildPowershellStringArray(nameservers) + "\n"
+                + "function Has-Command($name) { $null -ne (Get-Command $name -ErrorAction SilentlyContinue) }\n"
+                + "function Prefix-ToMask([int]$prefix) {\n"
+                + "    $mask = [uint32]0\n"
+                + "    for ($i = 0; $i -lt $prefix; $i++) { $mask = $mask -bor ([uint32]1 -shl (31 - $i)) }\n"
+                + "    return ((($mask -shr 24) -band 255), (($mask -shr 16) -band 255), (($mask -shr 8) -band 255), ($mask -band 255)) -join '.'\n"
                 + "}\n"
-                + "foreach ($ip in $desiredIpv4s) {\n"
-                + "    $exists = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index -IPAddress $ip -ErrorAction SilentlyContinue\n"
-                + "    if ($null -eq $exists) {\n"
-                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$ipv4PrefixMap[$ip]) | Out-Null\n"
-                + "    }\n"
+                + "function Get-TargetAdapter {\n"
+                + "    try {\n"
+                + "        $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric,InterfaceMetric | Select-Object -First 1\n"
+                + "        if ($null -eq $route) { $route = Get-NetRoute -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric,InterfaceMetric | Select-Object -First 1 }\n"
+                + "        if ($null -ne $route) {\n"
+                + "            $adapter = Get-NetAdapter -InterfaceIndex $route.InterfaceIndex -ErrorAction SilentlyContinue\n"
+                + "            if ($null -ne $adapter) { return @{Index=$adapter.ifIndex;Alias=$adapter.Name} }\n"
+                + "        }\n"
+                + "    } catch {}\n"
+                + "    try {\n"
+                + "        $adapter = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface -ne $false } | Sort-Object ifIndex | Select-Object -First 1\n"
+                + "        if ($null -ne $adapter) { return @{Index=$adapter.ifIndex;Alias=$adapter.Name} }\n"
+                + "    } catch {}\n"
+                + "    try {\n"
+                + "        $adapter = Get-WmiObject Win32_NetworkAdapter -Filter \"NetEnabled=true\" | Where-Object { $_.NetConnectionID } | Sort-Object InterfaceIndex | Select-Object -First 1\n"
+                + "        if ($null -ne $adapter) { return @{Index=$adapter.InterfaceIndex;Alias=$adapter.NetConnectionID} }\n"
+                + "    } catch {}\n"
+                + "    throw 'No enabled network adapter found'\n"
                 + "}\n"
-                + "$currentIpv6s = Get-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }\n"
-                + "foreach ($ip in $currentIpv6s) {\n"
-                + "    if ($ip.IPAddress -ne $primaryIp -and $desiredIpv6s -notcontains $ip.IPAddress) {\n"
-                + "        Remove-NetIPAddress -InterfaceIndex $index -IPAddress $ip.IPAddress -Confirm:$false\n"
+                + "function Ensure-DefaultRoute($family, $gateway) {\n"
+                + "    if ([string]::IsNullOrWhiteSpace($gateway)) { return }\n"
+                + "    $dest = if ($family -eq 'IPv6') { '::/0' } else { '0.0.0.0/0' }\n"
+                + "    if (Has-Command 'Get-NetRoute') {\n"
+                + "        $exists = Get-NetRoute -DestinationPrefix $dest -InterfaceIndex $index -NextHop $gateway -ErrorAction SilentlyContinue\n"
+                + "        if ($null -eq $exists) { New-NetRoute -DestinationPrefix $dest -InterfaceIndex $index -NextHop $gateway -ErrorAction SilentlyContinue | Out-Null }\n"
+                + "        return\n"
                 + "    }\n"
+                + "    if ($family -eq 'IPv6') { netsh interface ipv6 add route ::/0 \"$alias\" $gateway publish=no | Out-Null }\n"
+                + "    else { netsh interface ipv4 add route 0.0.0.0/0 \"$alias\" $gateway | Out-Null }\n"
                 + "}\n"
-                + "foreach ($ip in $desiredIpv6s) {\n"
-                + "    $exists = Get-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index -IPAddress $ip -ErrorAction SilentlyContinue\n"
-                + "    if ($null -eq $exists) {\n"
-                + "        New-NetIPAddress -InterfaceIndex $index -IPAddress $ip -PrefixLength ([int]$ipv6PrefixMap[$ip]) | Out-Null\n"
+                + "function Ensure-Ipv4($item, [bool]$primary) {\n"
+                + "    if (Has-Command 'Get-NetIPAddress') {\n"
+                + "        $exists = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index -IPAddress $item.IPAddress -ErrorAction SilentlyContinue\n"
+                + "        if ($null -eq $exists) { New-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $index -IPAddress $item.IPAddress -PrefixLength ([int]$item.PrefixLength) -ErrorAction Stop | Out-Null }\n"
+                + "        if ($primary) { Ensure-DefaultRoute 'IPv4' $item.Gateway }\n"
+                + "        return\n"
+                + "    }\n"
+                + "    $mask = Prefix-ToMask ([int]$item.PrefixLength)\n"
+                + "    if ($primary -and -not [string]::IsNullOrWhiteSpace($item.Gateway)) { netsh interface ipv4 set address name=\"$alias\" static $item.IPAddress $mask $item.Gateway | Out-Null }\n"
+                + "    else { netsh interface ipv4 add address name=\"$alias\" addr=$item.IPAddress mask=$mask | Out-Null }\n"
+                + "}\n"
+                + "function Ensure-Ipv6($item, [bool]$primary) {\n"
+                + "    if (Has-Command 'Get-NetIPAddress') {\n"
+                + "        $exists = Get-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index -IPAddress $item.IPAddress -ErrorAction SilentlyContinue\n"
+                + "        if ($null -eq $exists) { New-NetIPAddress -AddressFamily IPv6 -InterfaceIndex $index -IPAddress $item.IPAddress -PrefixLength ([int]$item.PrefixLength) -ErrorAction Stop | Out-Null }\n"
+                + "        if ($primary) { Ensure-DefaultRoute 'IPv6' $item.Gateway }\n"
+                + "        return\n"
+                + "    }\n"
+                + "    netsh interface ipv6 add address \"$alias\" ($item.IPAddress + '/' + $item.PrefixLength) | Out-Null\n"
+                + "    if ($primary) { Ensure-DefaultRoute 'IPv6' $item.Gateway }\n"
+                + "}\n"
+                + "$target = Get-TargetAdapter\n"
+                + "$index = [int]$target.Index\n"
+                + "$alias = [string]$target.Alias\n"
+                + "if ([string]::IsNullOrWhiteSpace($alias)) { throw 'Network adapter alias is empty' }\n"
+                + "try { Enable-NetAdapterBinding -Name $alias -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | Out-Null } catch {}\n"
+                + "try { netsh interface ipv6 set interface \"$alias\" admin=enabled | Out-Null } catch {}\n"
+                + "$primary = $true\n"
+                + "foreach ($item in $desiredIpv4s) { Ensure-Ipv4 $item $primary; $primary = $false }\n"
+                + "$primary = $true\n"
+                + "foreach ($item in $desiredIpv6s) { Ensure-Ipv6 $item $primary; $primary = $false }\n"
+                + "if ($dnsServers.Count -gt 0) {\n"
+                + "    if (Has-Command 'Set-DnsClientServerAddress') { Set-DnsClientServerAddress -InterfaceIndex $index -ServerAddresses $dnsServers -ErrorAction SilentlyContinue }\n"
+                + "    else {\n"
+                + "        $v4dns = @($dnsServers | Where-Object { $_ -notlike '*:*' })\n"
+                + "        $v6dns = @($dnsServers | Where-Object { $_ -like '*:*' })\n"
+                + "        for ($i = 0; $i -lt $v4dns.Count; $i++) { if ($i -eq 0) { netsh interface ipv4 set dnsservers name=\"$alias\" static $v4dns[$i] primary | Out-Null } else { netsh interface ipv4 add dnsservers name=\"$alias\" $v4dns[$i] index=($i + 1) | Out-Null } }\n"
+                + "        for ($i = 0; $i -lt $v6dns.Count; $i++) { if ($i -eq 0) { netsh interface ipv6 set dnsservers \"$alias\" static $v6dns[$i] primary | Out-Null } else { netsh interface ipv6 add dnsservers \"$alias\" $v6dns[$i] index=($i + 1) | Out-Null } }\n"
                 + "    }\n"
                 + "}\n";
     }
 
-    private String escapePowerShellString(String value) {
-        return value == null ? "" : value.replace("'", "''");
+    private List<WindowsIpConfig> parseWindowsIpConfigs(Map<String, String> ipConfig) {
+        if (ipConfig == null || ipConfig.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> keys = new ArrayList<>(ipConfig.keySet());
+        keys.sort(Comparator.comparingInt(this::getIpConfigIndex));
+        List<WindowsIpConfig> result = new ArrayList<>();
+        for (String key : keys) {
+            String config = ipConfig.get(key);
+            if (StringUtils.isBlank(config)) {
+                continue;
+            }
+            String address4 = null;
+            String gateway4 = null;
+            String address6 = null;
+            String gateway6 = null;
+            for (String token : config.split(",")) {
+                String item = token == null ? null : token.trim();
+                if (StringUtils.isBlank(item)) {
+                    continue;
+                }
+                if (item.startsWith("ip=")) {
+                    address4 = item.substring(3);
+                } else if (item.startsWith("gw=")) {
+                    gateway4 = item.substring(3);
+                } else if (item.startsWith("ip6=")) {
+                    address6 = item.substring(4);
+                } else if (item.startsWith("gw6=")) {
+                    gateway6 = item.substring(4);
+                }
+            }
+            addWindowsIpConfig(result, address4, gateway4, false);
+            addWindowsIpConfig(result, address6, gateway6, true);
+        }
+        return result;
     }
 
-    private String shellQuote(String value) {
-        if (value == null) {
-            return "''";
+    private void addWindowsIpConfig(List<WindowsIpConfig> result, String address, String gateway, boolean ipv6) {
+        if (StringUtils.isBlank(address) || "dhcp".equalsIgnoreCase(address)) {
+            return;
         }
-        return "'" + value.replace("'", "'\"'\"'") + "'";
+        Integer prefixLength = CloudInitNetworkUtil.getPrefixLength(address);
+        String ip = getIpWithoutPrefix(address);
+        if (prefixLength == null || StringUtils.isBlank(ip)) {
+            return;
+        }
+        result.add(new WindowsIpConfig(ip, prefixLength, StringUtils.defaultString(gateway), ipv6));
+    }
+
+    private String getIpWithoutPrefix(String address) {
+        if (StringUtils.isBlank(address)) {
+            return null;
+        }
+        int index = address.indexOf('/');
+        return index > 0 ? address.substring(0, index) : address;
+    }
+
+    private int getIpConfigIndex(String key) {
+        try {
+            return Integer.parseInt(key);
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    private List<String> getNameserversFromPveConfig(JSONObject pveVmConfig) {
+        if (pveVmConfig == null || StringUtils.isBlank(pveVmConfig.getString("nameserver"))) {
+            return Collections.emptyList();
+        }
+        Set<String> nameservers = new LinkedHashSet<>();
+        for (String item : pveVmConfig.getString("nameserver").split("[,\\s]+")) {
+            if (StringUtils.isNotBlank(item)) {
+                nameservers.add(item.trim());
+            }
+        }
+        return new ArrayList<>(nameservers);
+    }
+
+    private String buildPowershellStringArray(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "@()";
+        }
+        List<String> items = new ArrayList<>();
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                items.add("'" + escapePowerShellString(value.trim()) + "'");
+            }
+        }
+        return "@(" + String.join(",", items) + ")";
+    }
+
+    private static class WindowsIpConfig {
+        private final String ip;
+        private final Integer prefixLength;
+        private final String gateway;
+        private final boolean ipv6;
+
+        private WindowsIpConfig(String ip, Integer prefixLength, String gateway, boolean ipv6) {
+            this.ip = ip;
+            this.prefixLength = prefixLength;
+            this.gateway = gateway;
+            this.ipv6 = ipv6;
+        }
+    }
+
+    private String escapePowerShellString(String value) {
+        return value == null ? "" : value.replace("'", "''");
     }
 
     private void waitVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> authentications, Integer vmid) throws InterruptedException {

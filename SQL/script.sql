@@ -20,7 +20,7 @@ create table config
     version                varchar(255)                null,
     build                  varchar(255)                null,
     installed              int          default 1      not null comment '0=否;1=是',
-    delete_days           int  default 3     null comment '回收站删除天数',
+    delete_days           int  default 3     null comment '回收站删除天数'
 );
 
 create table configuretemplate
@@ -172,6 +172,37 @@ create table natcontroller
     status     int default 0 not null
 );
 
+create table nat_forward_rule
+(
+    id               int auto_increment primary key,
+    rule_key         varchar(255) not null comment '规则唯一键',
+    rule_type        varchar(20)  not null comment '规则类型 port/ip',
+    node_id          int          not null comment '宿主机节点ID',
+    host_id          int          not null comment '虚拟机主机ID',
+    source_ip        varchar(64)  not null,
+    source_port      int          null,
+    destination_ip   varchar(64)  not null,
+    destination_port int          null,
+    protocol         varchar(10)  null,
+    create_time      bigint       null,
+    update_time      bigint       null,
+    unique index uk_nat_forward_rule_key (rule_key),
+    index idx_nat_forward_rule_host (host_id, rule_type),
+    index idx_nat_forward_rule_node (node_id, rule_type)
+) comment '主控NAT转发规则';
+
+create table nat_sync_state
+(
+    id               int auto_increment primary key,
+    node_id          int           not null comment '宿主机节点ID',
+    initial_imported int default 0 not null comment '是否完成首次导入 0否 1是',
+    in_sync          int default 0 not null comment '是否同步正常 0否 1是',
+    last_message     varchar(255)  null,
+    last_import_time bigint        null,
+    last_sync_time   bigint        null,
+    unique index uk_nat_sync_state_node (node_id)
+) comment 'NAT规则同步状态';
+
 create table os
 (
     id          int auto_increment
@@ -294,6 +325,7 @@ create table vmhost
     bwlimit               bigint                                     null,
     flow_limit            bigint       default 0                     not null comment '月流量上限',
     used_flow             double       default 0                     not null comment '已用流量',
+    flow_type             varchar(10)  default 'in+out'              not null comment '流量计费类型 in/out/in+out',
     last_reset_flow       bigint       default 0                     not null comment '上次重置流量月份',
     args                  text                                       null,
     arch                  varchar(20)                                null,
@@ -437,6 +469,50 @@ create table security_group_sync
     index idx_security_group_sync_node (node_id)
 ) comment '安全组同步状态';
 
+create table vm_init_script
+(
+    id              int auto_increment
+        primary key,
+    name            varchar(100)             not null comment '初始化脚本名称',
+    script_type     varchar(20) default 'shell' not null comment '脚本类型 auto/shell/bash/powershell/cmd',
+    run_mode        varchar(20) default 'qemu_agent' not null comment '运行模式 qemu_agent',
+    target_os       varchar(20) default 'auto' not null comment '目标系统 auto/linux/windows',
+    content         mediumtext               not null comment '脚本内容',
+    linux_content   mediumtext               null comment 'Linux脚本内容',
+    windows_content mediumtext               null comment 'Windows脚本内容',
+    timeout_seconds int         default 300   not null comment '执行超时时间秒',
+    status          int         default 1     not null comment '状态 0删除 1启用 2停用',
+    remark          varchar(255)             null comment '备注',
+    create_time     bigint                   null,
+    update_time     bigint                   null,
+    index idx_vm_init_script_status (status)
+) comment '虚拟机初始化脚本模板';
+
+create table vm_init_script_record
+(
+    id           int auto_increment
+        primary key,
+    script_id    int          not null comment '初始化脚本ID',
+    host_id      int          not null comment '虚拟机主机ID',
+    vmid         int          null comment 'Proxmox VMID',
+    node_id      int          not null comment '节点ID',
+    trigger_type varchar(20)  not null comment '触发类型 create/reinstall/manual',
+    status       varchar(20)  default 'pending' not null comment '执行状态 pending/running/success/failed',
+    pid          int          null comment 'QEMU Guest Agent进程ID',
+    exit_code    int          null comment '退出码',
+    stdout       mediumtext   null comment '标准输出',
+    stderr       mediumtext   null comment '标准错误',
+    error        text         null comment '错误信息',
+    run_count    int          default 0 not null comment '执行次数',
+    create_time  bigint       null,
+    update_time  bigint       null,
+    start_time   bigint       null,
+    finish_time  bigint       null,
+    index idx_vm_init_script_record_host (host_id, status),
+    index idx_vm_init_script_record_script (script_id),
+    index idx_vm_init_script_record_node (node_id)
+) comment '虚拟机初始化脚本执行记录';
+
 create table vm_resource_rank
 (
     id             int auto_increment
@@ -522,6 +598,36 @@ create table zones
     dns        varchar(255)               null,
     reversedns varchar(255)               null,
     state      varchar(255) default 'new' not null
+);
+
+create table system_log
+(
+    id               int auto_increment
+        primary key,
+    request_id       varchar(64)  null,
+    log_type         varchar(32)  null,
+    level            varchar(16)  null,
+    method           varchar(16)  null,
+    uri              varchar(255) null,
+    path_pattern     varchar(255) null,
+    handler          varchar(255) null,
+    client_ip        varchar(64)  null,
+    operator         varchar(255) null,
+    auth_type        varchar(32)  null,
+    query_string     text         null,
+    request_body     text         null,
+    http_status      int          null,
+    business_code    int          null,
+    business_message text         null,
+    response_body    text         null,
+    duration_ms      bigint       null,
+    exception        text         null,
+    content          text         null,
+    create_time      bigint       null,
+    index idx_system_log_create_time (create_time),
+    index idx_system_log_type_create_time (log_type, create_time),
+    index idx_system_log_request_id (request_id),
+    index idx_system_log_level (level)
 );
 
 

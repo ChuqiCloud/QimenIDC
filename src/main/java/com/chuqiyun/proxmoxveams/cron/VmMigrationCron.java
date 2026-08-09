@@ -179,6 +179,7 @@ public class VmMigrationCron {
             targetCommitted = true;
             vmhost.setStatus(0);
             vmhostService.updateById(vmhost);
+            createApplyWindowsVmIpTaskIfNeeded(vmhost);
 
             updateProgress(task, "CLEANUP_SOURCE", 96, null);
             JSONObject cleanupResult = ClientApiUtil.cleanupMigrationSource(sourceNode.getHost(), token, sourceNode.getControllerPort(), taskId, sourceVmid);
@@ -664,7 +665,7 @@ public class VmMigrationCron {
                     mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
         }
         proxmoxApiUtil.resetVmCloudinit(targetNode, cookieMap, vmhost.getVmid());
-        syncVmFirewallProtection(proxmoxApiUtil, targetNode, cookieMap, vmhost, result.ipList);
+        syncVmFirewallProtection(proxmoxApiUtil, targetNode, cookieMap, vmhost, CloudInitNetworkUtil.getFirewallCidrList(result.ipConfig));
     }
 
     private void migrateNetworkForwards(Vmhost vmhost, Master sourceNode, Master targetNode, List<NatRule> oldNatRules,
@@ -992,11 +993,7 @@ public class VmMigrationCron {
         }
         LinkedHashSet<String> desiredCidrSet = new LinkedHashSet<>();
         if (allowedIps != null) {
-            for (String ip : allowedIps) {
-                if (StringUtils.isNotBlank(ip)) {
-                    desiredCidrSet.add(normalizeFirewallCidr(ip.trim()));
-                }
-            }
+            desiredCidrSet.addAll(CloudInitNetworkUtil.normalizeFirewallCidrs(allowedIps));
         }
         for (String cidr : currentCidrSet) {
             if (!desiredCidrSet.contains(cidr)) {
@@ -1008,13 +1005,6 @@ public class VmMigrationCron {
                 proxmoxApiUtil.addVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
             }
         }
-    }
-
-    private String normalizeFirewallCidr(String ip) {
-        if (StringUtils.isBlank(ip) || ip.contains("/")) {
-            return ip;
-        }
-        return ip.contains(":") ? ip + "/128" : ip + "/32";
     }
 
     private List<NatRule> fetchNatRules(Vmhost vmhost) {
@@ -1108,6 +1098,43 @@ public class VmMigrationCron {
 
     private boolean isWindowsVm(Vmhost vmhost) {
         return vmhost != null && "windows".equalsIgnoreCase(vmhost.getOsType());
+    }
+
+    private void createApplyWindowsVmIpTaskIfNeeded(Vmhost vmhost) {
+        if (!isWindowsVm(vmhost) || CloudInitNetworkUtil.getIpConfigEntryCount(vmhost.getIpConfig()) <= 1
+                || getPendingApplyWindowsVmIpTask(vmhost.getId()) != null) {
+            return;
+        }
+        Task task = new Task();
+        task.setNodeid(vmhost.getNodeid());
+        task.setVmid(vmhost.getVmid());
+        task.setHostid(vmhost.getId());
+        task.setType(TaskType.APPLY_WINDOWS_VM_IP);
+        task.setStatus(0);
+        HashMap<Object, Object> params = new HashMap<>();
+        params.put("source", "windows_ip_sync_migration");
+        params.put("retryCount", 0);
+        params.put("maxRetry", 30);
+        params.put("retryDelaySeconds", 10);
+        task.setParams(params);
+        task.setCreateDate(System.currentTimeMillis());
+        if (!taskService.insertTask(task)) {
+            throw new IllegalStateException("failed to create Windows IP sync task: hostId=" + vmhost.getId());
+        }
+        vmhostService.addVmHostTask(vmhost.getId(), task.getId());
+    }
+
+    private Task getPendingApplyWindowsVmIpTask(Integer hostId) {
+        if (hostId == null) {
+            return null;
+        }
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("hostid", hostId);
+        queryWrapper.eq("type", TaskType.APPLY_WINDOWS_VM_IP);
+        queryWrapper.in("status", 0, 1);
+        queryWrapper.orderByDesc("create_date");
+        queryWrapper.last("limit 1");
+        return taskService.getOne(queryWrapper);
     }
 
     private String formatBandwidth(Integer bandwidth) {

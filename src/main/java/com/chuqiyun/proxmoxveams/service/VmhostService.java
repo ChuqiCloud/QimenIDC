@@ -120,25 +120,25 @@ public interface VmhostService extends IService<Vmhost> {
     boolean deleteVmSnapShot(Vmhost vmhost, String snapName);
     boolean rollbackVmSnapShot(Vmhost vmhost, String snapName);
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表
      * @DateTime: 2026/5/29 23:03
      */
     JSONObject getVmBackup(Vmhost vmhost);
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 创建指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */
     JSONObject addVmBackup(Vmhost vmhost, String mode, String compress, String notes);
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 删除指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */
     JSONObject deleteVmBackup(Vmhost vmhost, String volid);
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 还原指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      */

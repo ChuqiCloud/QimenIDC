@@ -10,7 +10,7 @@ import lombok.EqualsAndHashCode;
 import java.io.Serializable;
 
 /**
- * @Author: 鏄熺
+ * @Author: 星禾
  * @Description: 虚拟机初始化脚本模板
  * @DateTime: 2026/7/3 20:47
  */

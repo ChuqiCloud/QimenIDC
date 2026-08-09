@@ -154,7 +154,7 @@ public class TaskType {
      */
     public static Integer IP_CHANGE_RESTART_VM = 37;
     /**
-     * Windows铏氭嫙鏈哄簲鐢ㄩ檮鍔燛P
+     * Windows虚拟机应用IP
      */
     public static Integer APPLY_WINDOWS_VM_IP = 38;
     /**

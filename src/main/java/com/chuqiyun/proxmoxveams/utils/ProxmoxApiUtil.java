@@ -341,7 +341,7 @@ public class ProxmoxApiUtil {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 强制关闭指定虚拟机
      * @DateTime: 2026/5/29 23:03
      * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID
@@ -690,14 +690,25 @@ public class ProxmoxApiUtil {
 
     /**
      * @Author: 星禾
-     * @Description: 启用虚拟机级防IP和MAC伪造配置
+     * @Description: 确保虚拟机级防火墙默认输入输出放行
      * @DateTime: 2026/6/7 22:47
      */
-    public void enableVmFirewallAntiSpoof(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+    public void ensureVmFirewallDefaultAccept(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
         HashMap<String,Object> params = new HashMap<>();
         params.put("enable", 1);
         params.put("policy_in", "ACCEPT");
         params.put("policy_out", "ACCEPT");
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/firewall/options", params);
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 启用虚拟机级防IP和MAC伪造配置
+     * @DateTime: 2026/6/7 22:47
+     */
+    public void enableVmFirewallAntiSpoof(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        ensureVmFirewallDefaultAccept(node, cookie, vmid);
+        HashMap<String,Object> params = new HashMap<>();
         params.put("macfilter", 1);
         params.put("ipfilter", 1);
         params.put("dhcp", 1);
@@ -857,7 +868,7 @@ public class ProxmoxApiUtil {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表
      * @DateTime: 2026/5/29 23:03
      * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String storage 备份存储
@@ -906,7 +917,7 @@ public class ProxmoxApiUtil {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 创建指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String storage 备份存储 String mode 备份模式 String compress 压缩方式 String notes 备注
@@ -926,7 +937,7 @@ public class ProxmoxApiUtil {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 删除指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 String volid 备份卷标
@@ -938,7 +949,7 @@ public class ProxmoxApiUtil {
     }
 
     /**
-     * @Author: 鏄熺
+     * @Author: 星禾
      * @Description: 还原指定虚拟机备份
      * @DateTime: 2026/5/29 23:03
      * @Params: Master node 节点信息 HashMap<String,String> cookie 登录信息 Integer vmid 虚拟机ID String volid 备份卷标 Boolean force 是否覆盖 Boolean start 是否启动

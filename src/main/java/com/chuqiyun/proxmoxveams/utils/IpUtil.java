@@ -18,6 +18,7 @@ import java.util.Random;
 public class IpUtil {
     private static final int IPV4 = 4;
     private static final int IPV6 = 6;
+    private static final int IPV6_DEFAULT_AUTO_GENERATE = 128;
     private static final int IPV6_MAX_AUTO_GENERATE = 65536;
 
     /**
@@ -91,23 +92,27 @@ public class IpUtil {
     public static List<Ippool> getIpv6List(IpParams ipParams) {
         String gateway = normalizeIpv6(ipParams.getGateway());
         Integer mask = ipParams.getMask();
+        Integer allocationMask = getIpv6AllocationMask(mask, ipParams.getAllocationMask());
+        Integer generateCount = getIpv6GenerateCount(ipParams.getCount());
         Integer nodeId = ipParams.getNodeId();
         String dns1 = ipParams.getDns1();
         String dns2 = ipParams.getDns2();
-        if (mask == null || mask < 1 || mask > 128) {
+        if (mask == null || mask < 1 || mask > 128 || allocationMask == null) {
             throw new IllegalArgumentException("IPv6掩码位不合法");
+        }
+        if (generateCount == null) {
+            throw new IllegalArgumentException("IPv6初始插入数量不合法，范围1-" + IPV6_MAX_AUTO_GENERATE);
         }
 
         BigInteger gatewayValue = ipv6ToBigInteger(gateway);
         BigInteger networkAddress = gatewayValue.and(ipv6Mask(mask));
-        BigInteger hostCount = BigInteger.ONE.shiftLeft(128 - mask);
-        if (hostCount.compareTo(BigInteger.valueOf(IPV6_MAX_AUTO_GENERATE)) > 0) {
-            throw new IllegalArgumentException("IPv6掩码范围过大，请使用起止IPv6范围添加地址池");
-        }
+        BigInteger segmentCount = BigInteger.ONE.shiftLeft(allocationMask - mask);
+        BigInteger actualGenerateCount = segmentCount.min(BigInteger.valueOf(generateCount));
+        BigInteger step = BigInteger.ONE.shiftLeft(128 - allocationMask);
 
         BigInteger start = networkAddress;
-        BigInteger end = networkAddress.add(hostCount).subtract(BigInteger.ONE);
-        return buildIpv6IppoolList(ipParams.getPoolId(), nodeId, gateway, mask, dns1, dns2, start, end, gatewayValue);
+        BigInteger end = start.add(step.multiply(actualGenerateCount)).subtract(BigInteger.ONE);
+        return buildIpv6IppoolList(ipParams.getPoolId(), nodeId, gateway, allocationMask, dns1, dns2, start, end, gatewayValue);
     }
 
     /**
@@ -210,17 +215,27 @@ public class IpUtil {
     }
 
     public static List<String> getAllIpv6InRange(String startIP, String endIP) {
-        BigInteger start = ipv6ToBigInteger(startIP);
-        BigInteger end = ipv6ToBigInteger(endIP);
+        return getAllIpv6InRange(startIP, endIP, 128);
+    }
+
+    public static List<String> getAllIpv6InRange(String startIP, String endIP, Integer allocationMask) {
+        Integer actualAllocationMask = getIpv6AllocationMask(1, allocationMask);
+        if (actualAllocationMask == null) {
+            throw new IllegalArgumentException("IPv6分配掩码位不合法");
+        }
+        BigInteger allocationMaskValue = ipv6Mask(actualAllocationMask);
+        BigInteger start = ipv6ToBigInteger(startIP).and(allocationMaskValue);
+        BigInteger end = ipv6ToBigInteger(endIP).and(allocationMaskValue);
         if (start.compareTo(end) > 0) {
             throw new IllegalArgumentException("IPv6起始地址不能大于结束地址");
         }
-        BigInteger count = end.subtract(start).add(BigInteger.ONE);
+        BigInteger step = BigInteger.ONE.shiftLeft(128 - actualAllocationMask);
+        BigInteger count = end.subtract(start).divide(step).add(BigInteger.ONE);
         if (count.compareTo(BigInteger.valueOf(IPV6_MAX_AUTO_GENERATE)) > 0) {
-            throw new IllegalArgumentException("IPv6范围过大，单次最多添加" + IPV6_MAX_AUTO_GENERATE + "个地址");
+            throw new IllegalArgumentException("IPv6范围过大，单次最多添加" + IPV6_MAX_AUTO_GENERATE + "个分配段");
         }
         List<String> ipList = new ArrayList<>();
-        for (BigInteger current = start; current.compareTo(end) <= 0; current = current.add(BigInteger.ONE)) {
+        for (BigInteger current = start; current.compareTo(end) <= 0; current = current.add(step)) {
             ipList.add(bigIntegerToIpv6(current));
         }
         return ipList;
@@ -264,6 +279,23 @@ public class IpUtil {
 
     public static String normalizeIpv6(String ip) {
         return bigIntegerToIpv6(ipv6ToBigInteger(ip));
+    }
+
+    public static Integer getIpv6AllocationMask(Integer poolMask, Integer allocationMask) {
+        int actualAllocationMask = allocationMask == null ? 128 : allocationMask;
+        if (poolMask == null || poolMask < 1 || poolMask > 128
+                || actualAllocationMask < poolMask || actualAllocationMask > 128) {
+            return null;
+        }
+        return actualAllocationMask;
+    }
+
+    public static Integer getIpv6GenerateCount(Integer count) {
+        int actualCount = count == null ? IPV6_DEFAULT_AUTO_GENERATE : count;
+        if (actualCount < 1 || actualCount > IPV6_MAX_AUTO_GENERATE) {
+            return null;
+        }
+        return actualCount;
     }
 
     /**
@@ -330,16 +362,17 @@ public class IpUtil {
         return macAddress.toString();
     }
 
-    private static List<Ippool> buildIpv6IppoolList(Integer poolId, Integer nodeId, String gateway, Integer mask,
+    private static List<Ippool> buildIpv6IppoolList(Integer poolId, Integer nodeId, String gateway, Integer allocationMask,
                                                     String dns1, String dns2, BigInteger start, BigInteger end,
                                                     BigInteger gatewayValue) {
         List<Ippool> ipList = new ArrayList<>();
-        for (BigInteger current = start; current.compareTo(end) <= 0; current = current.add(BigInteger.ONE)) {
+        BigInteger step = BigInteger.ONE.shiftLeft(128 - allocationMask);
+        for (BigInteger current = start; current.compareTo(end) <= 0; current = current.add(step)) {
             Ippool ip = new Ippool();
             ip.setNodeId(nodeId);
             ip.setIpVersion(IPV6);
             ip.setGateway(gateway);
-            ip.setSubnetMask(String.valueOf(mask));
+            ip.setSubnetMask(String.valueOf(allocationMask));
             ip.setDns1(dns1);
             ip.setDns2(dns2);
             ip.setMac(generateRandomMacAddress());
