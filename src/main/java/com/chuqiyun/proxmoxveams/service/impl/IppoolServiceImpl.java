@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service("ippoolService")
 public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements IppoolService {
+    private static final int IPPOOL_AUDIT_DETAIL_LIMIT = 20;
+
     /**
     * @Author: mryunqi
     * @Description: 批量插入ip池
@@ -355,6 +357,7 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
         int invalidBoundCount = getIpCountByCondition(invalidBoundWrapper);
         if (invalidBoundCount > 0) {
             log.warn("[IppoolAudit] 发现已占用但缺少VM绑定的IP数量: Count={}", invalidBoundCount);
+            logIppoolAuditDetails("已占用但缺少VM绑定", invalidBoundWrapper, invalidBoundCount);
         }
 
         QueryWrapper<Ippool> invalidFreeWrapper = new QueryWrapper<>();
@@ -363,6 +366,26 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
         int invalidFreeCount = getIpCountByCondition(invalidFreeWrapper);
         if (invalidFreeCount > 0) {
             log.warn("[IppoolAudit] 发现空闲但仍保留VM绑定的IP数量: Count={}", invalidFreeCount);
+            logIppoolAuditDetails("空闲但仍保留VM绑定", invalidFreeWrapper, invalidFreeCount);
+        }
+    }
+
+    private void logIppoolAuditDetails(String type, QueryWrapper<Ippool> queryWrapper, int totalCount) {
+        QueryWrapper<Ippool> detailWrapper = queryWrapper.clone();
+        detailWrapper.orderByAsc("node_id", "ip_version", "ip", "id");
+        detailWrapper.last("limit " + IPPOOL_AUDIT_DETAIL_LIMIT);
+        List<Ippool> ippoolList = this.list(detailWrapper);
+        if (ippoolList == null || ippoolList.isEmpty()) {
+            return;
+        }
+        for (Ippool ippool : ippoolList) {
+            log.warn("[IppoolAudit] 异常IP明细: Type={}, Id={}, NodeId={}, PoolId={}, IpVersion={}, Ip={}, Status={}, VmId={}",
+                    type, ippool.getId(), ippool.getNodeId(), ippool.getPoolId(), ippool.getIpVersion(),
+                    ippool.getIp(), ippool.getStatus(), ippool.getVmId());
+        }
+        if (totalCount > IPPOOL_AUDIT_DETAIL_LIMIT) {
+            log.warn("[IppoolAudit] 异常IP明细仅显示前{}条: Type={}, Total={}",
+                    IPPOOL_AUDIT_DETAIL_LIMIT, type, totalCount);
         }
     }
 

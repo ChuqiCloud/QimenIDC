@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
@@ -13,6 +14,7 @@ import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import com.chuqiyun.proxmoxveams.utils.IpUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -81,8 +83,30 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     * @Return boolean
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateIpStatus(Ipstatus ipstatus) {
-        return this.updateById(ipstatus);
+        if (ipstatus == null || ipstatus.getId() == null) {
+            return false;
+        }
+        if (!this.updateById(ipstatus)) {
+            return false;
+        }
+        return syncIppoolNodeId(ipstatus);
+    }
+
+    private boolean syncIppoolNodeId(Ipstatus ipstatus) {
+        if (ipstatus.getNodeid() == null) {
+            return true;
+        }
+        QueryWrapper<Ippool> countWrapper = new QueryWrapper<>();
+        countWrapper.eq("pool_id", ipstatus.getId());
+        if (ippoolService.count(countWrapper) == 0) {
+            return true;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("pool_id", ipstatus.getId());
+        updateWrapper.set("node_id", ipstatus.getNodeid());
+        return ippoolService.update(updateWrapper);
     }
     /**
     * @Author: mryunqi
