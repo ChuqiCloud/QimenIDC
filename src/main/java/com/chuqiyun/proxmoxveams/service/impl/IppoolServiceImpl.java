@@ -7,11 +7,13 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.IppoolDao;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
  * @author mryunqi
  * @since 2023-07-02 19:08:38
  */
+@Slf4j
 @Service("ippoolService")
 public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements IppoolService {
     /**
@@ -32,7 +35,36 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
     */
     @Override
     public boolean insertIppoolList(List<Ippool> ippoolList) {
-        return this.saveBatch(ippoolList,254);
+        if (ippoolList == null || ippoolList.isEmpty()) {
+            return true;
+        }
+        List<Ippool> insertList = new ArrayList<>();
+        Set<String> seenKeySet = new LinkedHashSet<>();
+        for (Ippool ippool : ippoolList) {
+            if (ippool == null || ippool.getNodeId() == null || ippool.getIpVersion() == null || ippool.getIp() == null) {
+                continue;
+            }
+            String ip = ippool.getIp().trim();
+            String key = ippool.getNodeId() + "|" + ippool.getIpVersion() + "|" + ip;
+            if (!seenKeySet.add(key)) {
+                log.warn("[Ippool] 跳过本次批量插入中的重复IP: NodeId={}, IpVersion={}, Ip={}",
+                        ippool.getNodeId(), ippool.getIpVersion(), ip);
+                continue;
+            }
+            QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("node_id", ippool.getNodeId());
+            queryWrapper.eq("ip_version", ippool.getIpVersion());
+            queryWrapper.eq("ip", ip);
+            queryWrapper.last("limit 1");
+            if (this.getOne(queryWrapper) != null) {
+                log.warn("[Ippool] 跳过数据库已存在IP: NodeId={}, IpVersion={}, Ip={}",
+                        ippool.getNodeId(), ippool.getIpVersion(), ip);
+                continue;
+            }
+            ippool.setIp(ip);
+            insertList.add(ippool);
+        }
+        return insertList.isEmpty() || this.saveBatch(insertList,254);
     }
 
     /**
@@ -156,8 +188,7 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
     */
     @Override
     public Integer getIpCountByCondition(QueryWrapper<Ippool> ippool) {
-        List<Ippool> ippoolList = this.list(ippool);
-        return ippoolList.size();
+        return Math.toIntExact(this.count(ippool));
     }
     /**
     * @Author: mryunqi
@@ -220,6 +251,41 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
         return this.lambdaQuery().eq(Ippool::getIp, ip).one();
     }
 
+    @Override
+    public boolean bindFreeIppool(Integer ippoolId, Integer vmId) {
+        if (ippoolId == null || vmId == null) {
+            return false;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", ippoolId);
+        updateWrapper.eq("status", 0);
+        updateWrapper.set("status", 1);
+        updateWrapper.set("vm_id", vmId);
+        boolean success = this.update(updateWrapper);
+        if (!success) {
+            log.warn("[Ippool] 绑定IP失败，IP可能已被其他任务占用: IppoolId={}, VmId={}", ippoolId, vmId);
+        }
+        return success;
+    }
+
+    @Override
+    public boolean releaseBoundIppool(Integer ippoolId, Integer vmId) {
+        if (ippoolId == null || vmId == null) {
+            return false;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", ippoolId);
+        updateWrapper.eq("status", 1);
+        updateWrapper.eq("vm_id", vmId);
+        updateWrapper.set("status", 0);
+        updateWrapper.set("vm_id", 0);
+        boolean success = this.update(updateWrapper);
+        if (!success) {
+            log.warn("[Ippool] 释放IP被拦截，IP未绑定到当前VM: IppoolId={}, VmId={}", ippoolId, vmId);
+        }
+        return success;
+    }
+
     /**
      * @Author: 星禾
      * @Description: 释放指定节点下虚拟机绑定的全部IP
@@ -239,35 +305,65 @@ public class IppoolServiceImpl extends ServiceImpl<IppoolDao, Ippool> implements
             return 0;
         }
 
-        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("node_id", nodeId);
-        if (vmId != null && !releaseIpSet.isEmpty()) {
-            queryWrapper.and(wrapper -> wrapper.eq("vm_id", vmId).or().in("ip", releaseIpSet));
-        } else if (vmId != null) {
-            queryWrapper.eq("vm_id", vmId);
-        } else {
-            queryWrapper.in("ip", releaseIpSet);
+        QueryWrapper<Ippool> beforeWrapper = new QueryWrapper<>();
+        beforeWrapper.eq("node_id", nodeId);
+        beforeWrapper.eq("status", 1);
+        beforeWrapper.eq("vm_id", vmId);
+        if (!releaseIpSet.isEmpty()) {
+            beforeWrapper.in("ip", releaseIpSet);
         }
-        List<Ippool> ippoolList = this.list(queryWrapper);
-        if (ippoolList == null || ippoolList.isEmpty()) {
-            return 0;
-        }
-
-        List<Integer> ids = new ArrayList<>();
-        for (Ippool ippool : ippoolList) {
-            if (ippool.getId() != null && !ids.contains(ippool.getId())) {
-                ids.add(ippool.getId());
-            }
-        }
-        if (ids.isEmpty()) {
+        int releaseCount = getIpCountByCondition(beforeWrapper);
+        if (releaseCount <= 0) {
+            log.warn("[Ippool] 未找到可释放IP: NodeId={}, VmId={}, IpList={}", nodeId, vmId, releaseIpSet);
             return 0;
         }
 
         UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.in("id", ids);
+        updateWrapper.eq("node_id", nodeId);
+        updateWrapper.eq("status", 1);
+        updateWrapper.eq("vm_id", vmId);
+        if (!releaseIpSet.isEmpty()) {
+            updateWrapper.in("ip", releaseIpSet);
+        }
         updateWrapper.set("status", 0);
         updateWrapper.set("vm_id", 0);
-        return this.update(updateWrapper) ? ids.size() : 0;
+        boolean success = this.update(updateWrapper);
+        if (!success) {
+            log.warn("[Ippool] 未释放任何IP: NodeId={}, VmId={}, IpList={}", nodeId, vmId, releaseIpSet);
+            return 0;
+        }
+        return releaseCount;
+    }
+
+    @Override
+    public void logIppoolConsistencyWarnings() {
+        QueryWrapper<Ippool> duplicateWrapper = new QueryWrapper<>();
+        duplicateWrapper.select("node_id", "ip_version", "ip", "count(*) duplicate_count");
+        duplicateWrapper.groupBy("node_id", "ip_version", "ip");
+        duplicateWrapper.having("count(*) > 1");
+        List<Map<String, Object>> duplicateList = this.listMaps(duplicateWrapper);
+        if (duplicateList != null && !duplicateList.isEmpty()) {
+            for (Map<String, Object> item : duplicateList) {
+                log.warn("[IppoolAudit] 发现IP池重复记录: NodeId={}, IpVersion={}, Ip={}, Count={}",
+                        item.get("node_id"), item.get("ip_version"), item.get("ip"), item.get("duplicate_count"));
+            }
+        }
+
+        QueryWrapper<Ippool> invalidBoundWrapper = new QueryWrapper<>();
+        invalidBoundWrapper.eq("status", 1);
+        invalidBoundWrapper.and(wrapper -> wrapper.isNull("vm_id").or().eq("vm_id", 0));
+        int invalidBoundCount = getIpCountByCondition(invalidBoundWrapper);
+        if (invalidBoundCount > 0) {
+            log.warn("[IppoolAudit] 发现已占用但缺少VM绑定的IP数量: Count={}", invalidBoundCount);
+        }
+
+        QueryWrapper<Ippool> invalidFreeWrapper = new QueryWrapper<>();
+        invalidFreeWrapper.eq("status", 0);
+        invalidFreeWrapper.gt("vm_id", 0);
+        int invalidFreeCount = getIpCountByCondition(invalidFreeWrapper);
+        if (invalidFreeCount > 0) {
+            log.warn("[IppoolAudit] 发现空闲但仍保留VM绑定的IP数量: Count={}", invalidFreeCount);
+        }
     }
 
     /**

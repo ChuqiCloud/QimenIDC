@@ -326,7 +326,7 @@ public class VmMigrationCron {
             if (ippool == null) {
                 throw new IllegalStateException("target node has no free IPv" + ipVersion + " address");
             }
-            if (bindIppool(ippool, targetVmid)) {
+            if (ippoolService.bindFreeIppool(ippool.getId(), targetVmid)) {
                 ippool.setStatus(1);
                 ippool.setVmId(targetVmid);
                 return ippool;
@@ -391,22 +391,13 @@ public class VmMigrationCron {
             if (ippool == null) {
                 throw new IllegalStateException("target node has no free VPC public IP");
             }
-            if (bindIppool(ippool, targetVmid)) {
+            if (ippoolService.bindFreeIppool(ippool.getId(), targetVmid)) {
                 ippool.setStatus(1);
                 ippool.setVmId(targetVmid);
                 return ippool;
             }
             skippedIds.add(ippool.getId());
         }
-    }
-
-    private boolean bindIppool(Ippool ippool, Integer targetVmid) {
-        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", ippool.getId());
-        updateWrapper.eq("status", 0);
-        updateWrapper.set("status", 1);
-        updateWrapper.set("vm_id", targetVmid);
-        return ippoolService.update(updateWrapper);
     }
 
     private boolean bindSubnetpool(Subnetpool subnetpool, Integer targetVmid) {
@@ -912,11 +903,7 @@ public class VmMigrationCron {
         if (ippool == null || ippool.getId() == null) {
             return;
         }
-        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", ippool.getId());
-        updateWrapper.set("status", 0);
-        updateWrapper.set("vm_id", 0);
-        ippoolService.update(updateWrapper);
+        ippoolService.releaseBoundIppool(ippool.getId(), ippool.getVmId());
     }
 
     private void releaseSubnetpool(Subnetpool subnetpool) {
@@ -925,6 +912,8 @@ public class VmMigrationCron {
         }
         UpdateWrapper<Subnetpool> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", subnetpool.getId());
+        updateWrapper.eq("vm_id", subnetpool.getVmId());
+        updateWrapper.eq("status", 1);
         updateWrapper.set("status", 0);
         updateWrapper.set("vm_id", 0);
         updateWrapper.set("mac", null);

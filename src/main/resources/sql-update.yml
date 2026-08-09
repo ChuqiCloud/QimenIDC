@@ -480,3 +480,7 @@ build: # 内部构建版本信息
                    where flow_type is null
                       or trim(flow_type) = ''
                       or flow_type not in ('in', 'out', 'in+out');"
+  1.3.2:
+    2:
+      - "alter table ippool
+                   add unique index uk_ippool_node_version_ip (node_id, ip_version, ip);"

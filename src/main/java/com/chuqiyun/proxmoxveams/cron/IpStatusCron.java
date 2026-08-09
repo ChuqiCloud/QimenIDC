@@ -22,6 +22,9 @@ import java.util.List;
 @Component
 @EnableScheduling
 public class IpStatusCron {
+    private static final long IPPOOL_AUDIT_INTERVAL = 15 * 60 * 1000L;
+    private volatile long lastIppoolAuditTime = 0L;
+
     @Resource
     private IpstatusService ipstatusService;
     @Resource
@@ -55,6 +58,20 @@ public class IpStatusCron {
             ipstatus.setUsed(used);
             // 更新数据
             ipstatusService.updateById(ipstatus);
+        }
+        logIppoolConsistencyWarningsIfDue();
+    }
+
+    private void logIppoolConsistencyWarningsIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - lastIppoolAuditTime < IPPOOL_AUDIT_INTERVAL) {
+            return;
+        }
+        lastIppoolAuditTime = now;
+        try {
+            ippoolService.logIppoolConsistencyWarnings();
+        } catch (Exception e) {
+            log.warn("[IppoolAudit] IP池一致性巡检失败: {}", e.getMessage());
         }
     }
 }

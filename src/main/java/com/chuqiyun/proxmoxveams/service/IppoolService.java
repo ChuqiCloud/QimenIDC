@@ -49,7 +49,13 @@ public interface IppoolService extends IService<Ippool> {
 
     Ippool getIppoolByIp(String ip);
 
+    boolean bindFreeIppool(Integer ippoolId, Integer vmId);
+
+    boolean releaseBoundIppool(Integer ippoolId, Integer vmId);
+
     int releaseIppoolByNodeIdAndVmId(Integer nodeId, Integer vmId, List<String> ipList);
+
+    void logIppoolConsistencyWarnings();
 
     boolean deleteIppoolByCondition(QueryWrapper<Ippool> ippool);
 }

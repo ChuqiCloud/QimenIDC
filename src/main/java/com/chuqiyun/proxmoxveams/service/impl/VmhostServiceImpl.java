@@ -1361,7 +1361,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (!bindNewIp(newIppool, vmhost)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
         }
-        releaseOldIp(oldIppool, newIppool);
+        releaseOldIp(oldIppool, newIppool, vmhost);
 
         ipConfig.put(ipConfigKey, newIpConfig);
         List<String> newIpList = replaceVmhostIpList(vmhost, ipConfig, oldIp, newIppool.getIp());
@@ -2110,19 +2110,25 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     "VPC公网IP不能使用宿主机管理IP: hostId=" + vmhost.getId());
         }
 
+        if (!bindNewIp(newPublicPool, vmhost)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
+                    "VPC公网IP已被占用: hostId=" + vmhost.getId());
+        }
         if (!delVmhostVpcIpForward(vmhost.getId(), oldPublicIp, privateIp)) {
+            releaseIppool(newPublicPool, vmhost);
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
                     "VPC回收旧公网IP转发失败: hostId=" + vmhost.getId());
         }
         if (!addVmhostVpcIpForward(vmhost.getId(), newPublicPool.getIp(), privateIp)) {
             addVmhostVpcIpForward(vmhost.getId(), oldPublicIp, privateIp);
+            releaseIppool(newPublicPool, vmhost);
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null,
                     "VPC修改公网IP转发失败: hostId=" + vmhost.getId());
         }
 
         Ippool oldPublicPool = publicIpList.get(targetIndex);
         if (oldPublicPool != null && !Objects.equals(oldPublicPool.getId(), newPublicPool.getId())) {
-            releaseIppool(oldPublicPool);
+            releaseIppool(oldPublicPool, vmhost);
         }
         log.info("[VmIpChange] VPC公网IP修改成功: NodeId={}, HostId={}, VmId={}, OldPublicIp={}, NewPublicIp={}, PrivateIp={}",
                 vmhost.getNodeid(), vmhost.getId(), vmhost.getVmid(), oldPublicIp, newPublicPool.getIp(), privateIp);
@@ -2152,7 +2158,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
             releaseVpcPrivateIp(privateIp, vmhost);
             if (publicIp != null) {
-                releaseIppool(publicIp);
+                releaseIppool(publicIp, vmhost);
             }
         }
 
@@ -2346,7 +2352,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             releaseVpcPrivateIp(subnetpool.getIp(), vmhost);
         }
         for (Ippool ippool : publicIpList) {
-            releaseIppool(ippool);
+            releaseIppool(ippool, vmhost);
         }
     }
 
@@ -2528,7 +2534,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             if (Objects.equals(ippool.getStatus(), 1) && !Objects.equals(ippool.getVmId(), vmhost.getVmid())) {
                 throw new IllegalStateException("IP已绑定到其他虚拟机，无法释放: ip=" + ip);
             }
-            releaseIppool(ippool);
+            releaseIppool(ippool, vmhost);
         }
     }
 
@@ -2599,34 +2605,21 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private boolean bindNewIp(Ippool newIppool, Vmhost vmhost) {
-        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", newIppool.getId());
-        updateWrapper.eq("status", 0);
-        updateWrapper.set("status", 1);
-        updateWrapper.set("vm_id", vmhost.getVmid());
-        return ippoolService.update(updateWrapper);
+        return newIppool != null && vmhost != null && ippoolService.bindFreeIppool(newIppool.getId(), vmhost.getVmid());
     }
 
-    private void releaseOldIp(Ippool oldIppool, Ippool newIppool) {
+    private void releaseOldIp(Ippool oldIppool, Ippool newIppool, Vmhost vmhost) {
         if (oldIppool == null || Objects.equals(oldIppool.getId(), newIppool.getId())) {
             return;
         }
-        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", oldIppool.getId());
-        updateWrapper.set("status", 0);
-        updateWrapper.set("vm_id", 0);
-        if (!ippoolService.update(updateWrapper)) {
+        if (!ippoolService.releaseBoundIppool(oldIppool.getId(), vmhost.getVmid())) {
             throw new IllegalStateException("释放旧IP失败: ip=" + oldIppool.getIp());
         }
     }
 
-    private void releaseIppool(Ippool ippool) {
-        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", ippool.getId());
-        updateWrapper.set("status", 0);
-        updateWrapper.set("vm_id", 0);
-        if (!ippoolService.update(updateWrapper)) {
-            throw new IllegalStateException("释放IP失败: ip=" + ippool.getIp());
+    private void releaseIppool(Ippool ippool, Vmhost vmhost) {
+        if (ippool == null || vmhost == null || !ippoolService.releaseBoundIppool(ippool.getId(), vmhost.getVmid())) {
+            throw new IllegalStateException("释放IP失败: ip=" + (ippool == null ? null : ippool.getIp()));
         }
     }
 

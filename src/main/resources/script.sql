@@ -94,7 +94,8 @@ create table ippool
     mac         varchar(255)  null,
     dns1        varchar(64)   null,
     dns2        varchar(64)   null,
-    status      int default 0 not null
+    status      int default 0 not null,
+    unique index uk_ippool_node_version_ip (node_id, ip_version, ip)
 );
 
 create table ipstatus

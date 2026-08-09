@@ -114,6 +114,10 @@ public class CreateVmCron {
                 return;
             }
             vmParams.setStorage(getCreateVmStorage(vmParams.getStorage(), createNode));
+            if (!isVpcNetwork(vmParams) && !bindCreateVmClassicIps(vmParams, vmIdInit)) {
+                finishCreateVmFailed(task, null, vmParams, vmIdInit, "创建基础虚拟机失败，IP已被占用，请重新开通");
+                return;
+            }
 
             // 将创建的虚拟机信息存入数据库
             Integer vmhostId = vmhostService.addVmhost(vmIdInit, vmParams);
@@ -147,19 +151,14 @@ public class CreateVmCron {
                         subnetpool.setStatus(1);
                         subnetpoolService.updateById(subnetpool);
                     }
-                } else {
-                    // 根据ip查询ip实体类
-                    Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
-                    if (ippool != null){
-                        ippool.setVmId(vmIdInit);
-                        ippool.setStatus(1);
-                        ippoolService.updateById(ippool);
-                    }
                 }
             }
 
             if (isVpcNetwork(vmParams)) {
-                bindVpcPublicIps(vmParams, vmIdInit);
+                if (!bindVpcPublicIps(vmParams, vmIdInit)) {
+                    finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建基础虚拟机失败，VPC公网IP已被占用，请重新开通");
+                    return;
+                }
             }
 
             int vmId;
@@ -507,18 +506,57 @@ public class CreateVmCron {
         return subnetpoolService.getOne(queryWrapper);
     }
 
-    private void bindVpcPublicIps(VmParams vmParams, Integer vmId) {
-        if (vmParams == null || vmId == null || vmParams.getPublicIpList() == null || vmParams.getPublicIpList().isEmpty()) {
+    private boolean bindCreateVmClassicIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getIpList() == null || vmParams.getIpList().isEmpty()) {
+            return true;
+        }
+        List<Ippool> boundIppoolList = new ArrayList<>();
+        for (String ip : vmParams.getIpList()) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+            if (ippool == null) {
+                releaseBoundCreateVmClassicIps(boundIppoolList, vmId);
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机绑定IP失败，IP池记录不存在: NodeID={}, VM-ID={}, IP={}",
+                        vmParams.getNodeid(), vmId, ip);
+                return false;
+            }
+            if (!ippoolService.bindFreeIppool(ippool.getId(), vmId)) {
+                releaseBoundCreateVmClassicIps(boundIppoolList, vmId);
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机绑定IP失败，IP已被占用: NodeID={}, VM-ID={}, IP={}, IppoolId={}",
+                        vmParams.getNodeid(), vmId, ip, ippool.getId());
+                return false;
+            }
+            boundIppoolList.add(ippool);
+        }
+        return true;
+    }
+
+    private void releaseBoundCreateVmClassicIps(List<Ippool> boundIppoolList, Integer vmId) {
+        if (boundIppoolList == null || boundIppoolList.isEmpty() || vmId == null) {
             return;
         }
-        for (String ip : vmParams.getPublicIpList()) {
-            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+        for (Ippool ippool : boundIppoolList) {
             if (ippool != null) {
-                ippool.setVmId(vmId);
-                ippool.setStatus(1);
-                ippoolService.updateById(ippool);
+                ippoolService.releaseBoundIppool(ippool.getId(), vmId);
             }
         }
+    }
+
+    private boolean bindVpcPublicIps(VmParams vmParams, Integer vmId) {
+        if (vmParams == null || vmId == null || vmParams.getPublicIpList() == null || vmParams.getPublicIpList().isEmpty()) {
+            return true;
+        }
+        List<Ippool> boundIppoolList = new ArrayList<>();
+        for (String ip : vmParams.getPublicIpList()) {
+            Ippool ippool = getIppoolByIpAndNodeId(ip, vmParams.getNodeid());
+            if (ippool == null || !ippoolService.bindFreeIppool(ippool.getId(), vmId)) {
+                releaseBoundCreateVmClassicIps(boundIppoolList, vmId);
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_CREATE_VM, "创建VPC虚拟机绑定公网IP失败: NodeID={}, VM-ID={}, IP={}",
+                        vmParams.getNodeid(), vmId, ip);
+                return false;
+            }
+            boundIppoolList.add(ippool);
+        }
+        return true;
     }
 
     private boolean addVpcIpForwards(Integer vmhostId, VmParams vmParams) {
@@ -608,9 +646,7 @@ public class CreateVmCron {
             if (ippool == null || !Objects.equals(ippool.getVmId(), vmId)) {
                 continue;
             }
-            ippool.setStatus(0);
-            ippool.setVmId(0);
-            if (ippoolService.updateById(ippool)) {
+            if (ippoolService.releaseBoundIppool(ippool.getId(), vmId)) {
                 releaseCount++;
             }
         }
@@ -629,9 +665,7 @@ public class CreateVmCron {
             if (ippool == null || !Objects.equals(ippool.getVmId(), vmId)) {
                 continue;
             }
-            ippool.setStatus(0);
-            ippool.setVmId(0);
-            if (ippoolService.updateById(ippool)) {
+            if (ippoolService.releaseBoundIppool(ippool.getId(), vmId)) {
                 releaseCount++;
             }
         }
