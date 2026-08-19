@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.*;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -332,7 +333,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         Integer requestedIpv4Count = getRequestedIpCount(vmParams.getIpv4num(), selectedIpSet.size(), getIpConfigCount(ipConfigMap), true);
         Integer requestedIpv6Count = getRequestedIpCount(vmParams.getIpv6num(), selectedIpv6Set.size(), 0, false);
         if (requestedIpv4Count == null || requestedIpv6Count == null) {
-            return invalidParam("ipv4num/ipv6num涓嶈兘灏忎簬0");
+            return invalidParam("ipv4num/ipv6num为空");
         }
         if (selectedIpSet.size() > requestedIpv4Count) {
             return invalidParam("ipConfig中IPv4数量不能大于ipv4num");
@@ -742,23 +743,120 @@ public class CreateVmServiceImpl implements CreateVmService {
     }
 
     private Ippool getOneFreeIpForCreateVm(Integer nodeId, Integer ifnat, Integer natippool, Set<String> excludeIpSet, Integer ipVersion) {
-        QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("node_id", nodeId);
-        queryWrapper.eq("status", 0);
-        queryWrapper.eq("ip_version", ipVersion);
-        if (Objects.equals(ifnat, 1) && Objects.equals(ipVersion, IP_VERSION_4) && natippool != null) {
-            queryWrapper.eq("pool_id", natippool);
-        } else if (!Objects.equals(ifnat, 1) && natippool != null) {
-            queryWrapper.ne("pool_id", natippool);
-        } else if (Objects.equals(ipVersion, IP_VERSION_6) && natippool != null) {
-            queryWrapper.ne("pool_id", natippool);
+        while (true) {
+            QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("node_id", nodeId);
+            queryWrapper.eq("status", 0);
+            queryWrapper.eq("ip_version", ipVersion);
+            if (Objects.equals(ifnat, 1) && Objects.equals(ipVersion, IP_VERSION_4) && natippool != null) {
+                queryWrapper.eq("pool_id", natippool);
+            } else if (!Objects.equals(ifnat, 1) && natippool != null) {
+                queryWrapper.ne("pool_id", natippool);
+            } else if (Objects.equals(ipVersion, IP_VERSION_6) && natippool != null) {
+                queryWrapper.ne("pool_id", natippool);
+            }
+            if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
+                queryWrapper.notIn("ip", excludeIpSet);
+            }
+            queryWrapper.orderByAsc("id");
+            queryWrapper.last("limit 1");
+            Ippool ippool = ippoolService.getOne(queryWrapper);
+            if (ippool == null) {
+                return null;
+            }
+            if (Objects.equals(ipVersion, IP_VERSION_4)) {
+                Vmhost occupiedVmhost = getOccupiedVmhostByIp(nodeId, ippool.getIp());
+                if (occupiedVmhost != null) {
+                    repairDuplicateIpv4Pool(ippool, occupiedVmhost);
+                    if (excludeIpSet != null) {
+                        excludeIpSet.add(ippool.getIp());
+                    }
+                    continue;
+                }
+            }
+            return ippool;
         }
-        if (excludeIpSet != null && !excludeIpSet.isEmpty()) {
-            queryWrapper.notIn("ip", excludeIpSet);
+    }
+
+    private Vmhost getOccupiedVmhostByIp(Integer nodeId, String ip) {
+        if (nodeId == null || StringUtils.isBlank(ip)) {
+            return null;
         }
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("nodeid", nodeId);
+        queryWrapper.and(wrapper -> wrapper.isNull("delete_state").or().eq("delete_state", 0));
         queryWrapper.orderByAsc("id");
-        queryWrapper.last("limit 1");
-        return ippoolService.getOne(queryWrapper);
+        List<Vmhost> vmhostList = vmhostService.list(queryWrapper);
+        if (vmhostList == null || vmhostList.isEmpty()) {
+            return null;
+        }
+        String normalizedIp = ip.trim();
+        for (Vmhost vmhost : vmhostList) {
+            if (vmhost == null) {
+                continue;
+            }
+            if (vmhostHasIp(vmhost, normalizedIp)) {
+                return vmhost;
+            }
+        }
+        return null;
+    }
+
+    private boolean vmhostHasIp(Vmhost vmhost, String ip) {
+        if (vmhost == null || StringUtils.isBlank(ip)) {
+            return false;
+        }
+        Set<String> vmhostIpSet = new LinkedHashSet<>();
+        if (vmhost.getIpList() != null) {
+            for (String currentIp : vmhost.getIpList()) {
+                addNormalizedVmhostIp(vmhostIpSet, currentIp);
+            }
+        }
+        if (vmhost.getIpConfig() != null) {
+            for (String currentIp : CloudInitNetworkUtil.getIpList(vmhost.getIpConfig())) {
+                addNormalizedVmhostIp(vmhostIpSet, currentIp);
+            }
+        }
+        return vmhostIpSet.contains(ip);
+    }
+
+    private void addNormalizedVmhostIp(Set<String> ipSet, String ip) {
+        if (StringUtils.isBlank(ip)) {
+            return;
+        }
+        String normalizedIp = ip.trim();
+        int maskIndex = normalizedIp.indexOf('/');
+        if (maskIndex > 0) {
+            normalizedIp = normalizedIp.substring(0, maskIndex);
+        }
+        if (!normalizedIp.isEmpty()) {
+            ipSet.add(normalizedIp);
+        }
+    }
+
+    private void repairDuplicateIpv4Pool(Ippool ippool, Vmhost vmhost) {
+        if (ippool == null || vmhost == null || ippool.getId() == null || vmhost.getVmid() == null) {
+            return;
+        }
+        UpdateWrapper<Ippool> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("node_id", ippool.getNodeId());
+        updateWrapper.eq("ip", ippool.getIp());
+        updateWrapper.eq("status", 0);
+        updateWrapper.set("status", 1);
+        updateWrapper.set("vm_id", vmhost.getVmid());
+        if (vmhost.getNodeid() != null) {
+            updateWrapper.set("node_id", vmhost.getNodeid());
+        }
+        boolean success = ippoolService.update(updateWrapper);
+        if (success) {
+            UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM,
+                    "检测到重复IPv4并自动修复: PoolId={}, IppoolId={}, NodeID={}, IP={}, 已绑定到VMID={}, Hostname={}",
+                    ippool.getPoolId(), ippool.getId(), ippool.getNodeId(), ippool.getIp(), vmhost.getVmid(), vmhost.getHostname());
+        } else {
+            UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM,
+                    "检测到重复IPv4但自动修复失败: PoolId={}, IppoolId={}, NodeID={}, IP={}, 目标VMID={}, Hostname={}",
+                    ippool.getPoolId(), ippool.getId(), ippool.getNodeId(), ippool.getIp(), vmhost.getVmid(), vmhost.getHostname());
+        }
     }
 
     private Ipstatus appendClassicIpConfig(HashMap<String, String> ipConfigMap, Ippool ipEntity, Set<String> selectedIpSet, boolean ipv6) {

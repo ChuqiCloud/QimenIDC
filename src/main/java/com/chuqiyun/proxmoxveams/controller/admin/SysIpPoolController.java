@@ -7,9 +7,12 @@ import com.chuqiyun.proxmoxveams.dto.IpParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Ipstatus;
+import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.IppoolService;
 import com.chuqiyun.proxmoxveams.service.IpstatusService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.IpUtil;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -35,6 +38,8 @@ public class SysIpPoolController {
     private IppoolService ippoolService;
     @Resource
     private IpstatusService ipstatusService;
+    @Resource
+    private VmhostService vmhostService;
 
     /**
      * 根据掩码位批量添加IP池
@@ -233,6 +238,31 @@ public class SysIpPoolController {
             }
         }
         return ResponseResult.ok(ippoolService.getFreeIppoolListByNodeId(nodeId, page, size, poolId, ipVersion));
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取当前虚拟机可用的节点IP池
+     * @DateTime: 2026/8/19 00:00
+    */
+    @AdminApiCheck
+    @GetMapping({"/selectAvailableIpPoolByHostId", "/selectVmAvailableIpPoolList"})
+    public ResponseResult<List<Ipstatus>> selectAvailableIpPoolByHostId(@RequestParam(name = "hostId", required = false) Integer hostId,
+                                                                        @RequestParam(name = "hostid", required = false) Integer hostid,
+                                                                        @RequestParam(name = "ipVersion", required = false) Integer ipVersion) throws UnauthorizedException {
+        Integer realHostId = hostId == null ? hostid : hostId;
+        if (realHostId == null) {
+            return ResponseResult.fail("虚拟机ID不能为空！");
+        }
+        Vmhost vmhost = vmhostService.getById(realHostId);
+        if (vmhost == null || (vmhost.getDeleteState() != null && vmhost.getDeleteState() != 0)) {
+            return ResponseResult.fail("虚拟机不存在！");
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return ResponseResult.fail("节点不存在！");
+        }
+        return ResponseResult.ok(ipstatusService.getAvailableIpPoolListForVm(vmhost.getNodeid(), node.getNatippool(), vmhost.getIfnat(), ipVersion));
     }
 
     /**

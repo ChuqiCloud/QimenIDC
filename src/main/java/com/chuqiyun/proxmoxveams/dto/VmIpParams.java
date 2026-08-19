@@ -43,6 +43,10 @@ public class VmIpParams {
      */
     private Integer poolId;
     /**
+     * IP版本，可选值：4、6；不传时保持原有自动选择逻辑
+     */
+    private Integer ipVersion;
+    /**
      * cloud-init IP序号，从1开始；默认修改第1个IP，即PVE的ipconfig0
      */
     private Integer networkIndex;

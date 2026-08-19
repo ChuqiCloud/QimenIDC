@@ -27,6 +27,8 @@ public interface IpstatusService extends IService<Ipstatus> {
 
     List<Integer> getAllId();
 
+    List<Ipstatus> getAvailableIpPoolListForVm(Integer nodeId, Integer natippool, Integer ifnat, Integer ipVersion);
+
     default Ipstatus getIpStatusMaxByNodeId(Integer nodeId, Integer natippool, Integer excludeId) {
         return null;
     }

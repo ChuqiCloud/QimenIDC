@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -117,6 +119,37 @@ public class IpstatusServiceImpl extends ServiceImpl<IpstatusDao, Ipstatus> impl
     public List<Integer> getAllId() {
         return this.lambdaQuery().select(Ipstatus::getId).list().stream().map(Ipstatus::getId).collect(Collectors.toList());
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 获取虚拟机可用节点IP池列表
+     * @DateTime: 2026/8/19 00:00
+     */
+    @Override
+    public List<Ipstatus> getAvailableIpPoolListForVm(Integer nodeId, Integer natippool, Integer ifnat, Integer ipVersion) {
+        if (nodeId == null) {
+            return Collections.emptyList();
+        }
+        Integer queryIpVersion = ipVersion == null ? null : IpUtil.getIpVersion(ipVersion);
+        QueryWrapper<Ipstatus> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("nodeid", nodeId);
+        queryWrapper.gt("available", 0);
+        if (queryIpVersion != null) {
+            queryWrapper.eq("ip_version", queryIpVersion);
+        }
+        if (Objects.equals(ifnat, 1) && (queryIpVersion == null || Objects.equals(queryIpVersion, 4))) {
+            if (natippool == null || natippool <= 0) {
+                return Collections.emptyList();
+            }
+            queryWrapper.eq("id", natippool);
+        } else if (natippool != null && natippool > 0) {
+            queryWrapper.ne("id", natippool);
+        }
+        queryWrapper.orderByDesc("available");
+        queryWrapper.orderByAsc("id");
+        return this.list(queryWrapper);
+    }
+
     /**
     * @Author: mryunqi
     * @Description: 获取指定nodeID下available最大的IP组

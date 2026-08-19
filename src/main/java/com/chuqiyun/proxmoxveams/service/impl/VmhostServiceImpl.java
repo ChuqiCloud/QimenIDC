@@ -1311,9 +1311,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "修改IP");
+        if (busyResult != null) {
+            return busyResult;
         }
         Master node = masterService.getById(vmhost.getNodeid());
         if (node == null) {
@@ -1385,9 +1389,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        if (vmIpParams.getIpVersion() != null
+                && !Objects.equals(vmIpParams.getIpVersion(), 4)
+                && !Objects.equals(vmIpParams.getIpVersion(), 6)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "ipVersion只支持4或6");
+        }
+        Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "新增IP");
+        if (busyResult != null) {
+            return busyResult;
         }
         Master node = masterService.getById(vmhost.getNodeid());
         if (node == null) {
@@ -1398,6 +1411,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
         if (isVpcNetwork(vmhost)) {
+            if (Objects.equals(vmIpParams.getIpVersion(), 6)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "VPC虚拟机暂不支持通过addVmIp添加IPv6");
+            }
             return addVpcVmIp(vmIpParams, vmhost, node, count);
         }
 
@@ -1459,9 +1475,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        Vmhost vmhost = this.getById(vmIpParams.getHostId());
+        Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "删除IP");
+        if (busyResult != null) {
+            return busyResult;
         }
         Master node = masterService.getById(vmhost.getNodeid());
         if (node == null) {
@@ -1924,6 +1944,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private LinkedHashMap<String, Object> syncManualIpForVmhost(Vmhost vmhost) {
+        vmhost = getVmhostForIpOperation(vmhost == null ? null : vmhost.getId());
+        if (vmhost == null) {
+            throw new IllegalStateException("虚拟机不存在");
+        }
+        UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "同步IP");
+        if (busyResult != null) {
+            throw new IllegalStateException(busyResult.getMessage());
+        }
         HashMap<String, String> ipConfig = new HashMap<>();
         if (vmhost.getIpConfig() != null) {
             ipConfig.putAll(vmhost.getIpConfig());
@@ -2457,7 +2485,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     return null;
                 }
                 Ippool ippool = getIppoolByIpAndNodeIdAndPoolId(ip, vmhost.getNodeid(), vmIpParams.getPoolId());
-                if (ippool == null || !isAddIpAvailable(ippool, vmhost)) {
+                if (ippool == null || !isRequestedIpVersion(ippool, vmIpParams.getIpVersion()) || !isAddIpAvailable(ippool, vmhost)) {
                     return null;
                 }
                 ippoolList.add(ippool);
@@ -2468,7 +2496,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         List<Ippool> ippoolList = new ArrayList<>();
         Set<Integer> selectedIdSet = new LinkedHashSet<>();
         for (int i = 0; i < count; i++) {
-            Ippool ippool = getOneFreeIppoolByNodeId(vmhost.getNodeid(), null, selectedIdSet, usedIpSet);
+            Ippool ippool = getOneFreeIppoolByNodeId(vmhost.getNodeid(), vmIpParams.getPoolId(), vmIpParams.getIpVersion(), selectedIdSet, usedIpSet);
             if (ippool == null) {
                 return null;
             }
@@ -2569,12 +2597,15 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
     }
 
-    private Ippool getOneFreeIppoolByNodeId(Integer nodeId, Integer poolId, Set<Integer> excludeIdSet, Set<String> excludeIpSet) {
+    private Ippool getOneFreeIppoolByNodeId(Integer nodeId, Integer poolId, Integer ipVersion, Set<Integer> excludeIdSet, Set<String> excludeIpSet) {
         QueryWrapper<Ippool> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("node_id", nodeId);
         queryWrapper.eq("status", 0);
         if (poolId != null) {
             queryWrapper.eq("pool_id", poolId);
+        }
+        if (ipVersion != null) {
+            queryWrapper.eq("ip_version", ipVersion);
         }
         if (excludeIdSet != null && !excludeIdSet.isEmpty()) {
             queryWrapper.notIn("id", excludeIdSet);
@@ -2585,6 +2616,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         queryWrapper.orderByAsc("id");
         queryWrapper.last("limit 1");
         return ippoolService.getOne(queryWrapper);
+    }
+
+    private boolean isRequestedIpVersion(Ippool ippool, Integer ipVersion) {
+        return ipVersion == null || Objects.equals(ippool.getIpVersion(), ipVersion);
     }
 
     private boolean isAddIpAvailable(Ippool ippool, Vmhost vmhost) {
@@ -3009,6 +3044,48 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
         }
         return "vmbr0";
+    }
+
+    private Vmhost getVmhostForIpOperation(Integer hostId) {
+        if (hostId == null) {
+            return null;
+        }
+        QueryWrapper<Vmhost> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("id", hostId);
+        queryWrapper.last("LIMIT 1 FOR UPDATE");
+        return this.getOne(queryWrapper);
+    }
+
+    private UnifiedResultDto<Object> checkVmIpOperationBusy(Vmhost vmhost, String operationName) {
+        Task pendingTask = getPendingVmIpOperationTask(vmhost == null ? null : vmhost.getId());
+        if (pendingTask == null) {
+            return null;
+        }
+        String pendingOperationName = getPendingVmIpOperationName(pendingTask);
+        String message = "该虚拟机正在" + pendingOperationName + "，暂时无法执行" + operationName;
+        log.warn("[VmIpChange] 虚拟机IP操作被拦截: HostId={}, VmId={}, Operation={}, PendingTaskId={}, PendingType={}, PendingStatus={}",
+                vmhost.getId(), vmhost.getVmid(), operationName, pendingTask.getId(), pendingTask.getType(), pendingTask.getStatus());
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, message);
+    }
+
+    private Task getPendingVmIpOperationTask(Integer hostId) {
+        if (hostId == null) {
+            return null;
+        }
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("hostid", hostId);
+        queryWrapper.in("type", Arrays.asList(IP_CHANGE_RESTART_VM, APPLY_WINDOWS_VM_IP));
+        queryWrapper.in("status", Arrays.asList(0, 1));
+        queryWrapper.orderByAsc("create_date");
+        queryWrapper.last("LIMIT 1");
+        return taskService.getOne(queryWrapper);
+    }
+
+    private String getPendingVmIpOperationName(Task task) {
+        if (task != null && Objects.equals(task.getType(), APPLY_WINDOWS_VM_IP)) {
+            return "应用Windows IP";
+        }
+        return "应用IP变更";
     }
 
     /**

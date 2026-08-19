@@ -324,7 +324,7 @@ public class SysVmHostController {
         VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, poolId, networkIndex);
         UnifiedResultDto<Object> resultDto = vmhostService.updateVmIp(params);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getData());
     }
@@ -344,11 +344,12 @@ public class SysVmHostController {
                           @RequestParam(name = "ips", required = false) List<String> ips,
                           @RequestParam(name = "count", required = false) Integer count,
                           @RequestParam(name = "poolId", required = false) Integer poolId,
+                          @RequestParam(name = "ipVersion", required = false) Integer ipVersion,
                           @RequestParam(name = "networkIndex", required = false) Integer networkIndex) throws UnauthorizedException {
-        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, count, poolId, networkIndex);
+        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, count, poolId, ipVersion, networkIndex);
         UnifiedResultDto<Object> resultDto = vmhostService.addVmIp(params);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getData());
     }
@@ -368,10 +369,10 @@ public class SysVmHostController {
                              @RequestParam(name = "ips", required = false) List<String> ips,
                              @RequestParam(name = "poolId", required = false) Integer poolId,
                              @RequestParam(name = "networkIndex", required = false) Integer networkIndex) throws UnauthorizedException {
-        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, null, poolId, networkIndex);
+        VmIpParams params = buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, ips, null, poolId, null, networkIndex);
         UnifiedResultDto<Object> resultDto = vmhostService.deleteVmIp(params);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getData());
     }
@@ -389,7 +390,7 @@ public class SysVmHostController {
         VmIpParams params = buildSyncVmIpParams(vmIpParams, nodeId, nodeid);
         UnifiedResultDto<Object> resultDto = vmhostService.syncVmManualIp(params);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
         }
         return ResponseResult.ok(resultDto.getData());
     }
@@ -458,10 +459,10 @@ public class SysVmHostController {
     }
 
     private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, Integer poolId, Integer networkIndex) {
-        return buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, null, null, poolId, networkIndex);
+        return buildVmIpParams(vmIpParams, hostId, hostid, ip, newIp, null, null, poolId, null, networkIndex);
     }
 
-    private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, List<String> ips, Integer count, Integer poolId, Integer networkIndex) {
+    private VmIpParams buildVmIpParams(VmIpParams vmIpParams, Integer hostId, Integer hostid, String ip, String newIp, List<String> ips, Integer count, Integer poolId, Integer ipVersion, Integer networkIndex) {
         VmIpParams params = vmIpParams == null ? new VmIpParams() : vmIpParams;
         if (params.getHostId() == null) {
             params.setHostId(hostId);
@@ -483,6 +484,9 @@ public class SysVmHostController {
         }
         if (params.getPoolId() == null) {
             params.setPoolId(poolId);
+        }
+        if (params.getIpVersion() == null) {
+            params.setIpVersion(ipVersion);
         }
         if (params.getNetworkIndex() == null) {
             params.setNetworkIndex(networkIndex);
