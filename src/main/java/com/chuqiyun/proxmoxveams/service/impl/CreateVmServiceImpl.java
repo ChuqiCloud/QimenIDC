@@ -1276,7 +1276,8 @@ public class CreateVmServiceImpl implements CreateVmService {
                 bridge = "vmbr0";
             }
         }
-        return CloudInitNetworkUtil.buildPveNet0Config(bridge, macAddress, bandWidth);
+        return CloudInitNetworkUtil.buildPveNet0Config(
+                bridge, macAddress, bandWidth, shouldEnablePveAntiSpoof(vmParams));
     }
 
     private List<String> getNameservers(VmParams vmParams) {
@@ -1296,6 +1297,9 @@ public class CreateVmServiceImpl implements CreateVmService {
     private void syncCreateVmFirewallProtection(Master node, HashMap<String, String> cookieMap, VmParams vmParams,
                                                 Integer vmId, ProxmoxApiUtil proxmoxApiUtil) {
         if (node == null || cookieMap == null || vmParams == null || vmId == null) {
+            return;
+        }
+        if (!shouldEnablePveAntiSpoof(vmParams)) {
             return;
         }
         try {
@@ -1360,6 +1364,10 @@ public class CreateVmServiceImpl implements CreateVmService {
             ipList.addAll(CloudInitNetworkUtil.getFirewallCidrList(vmParams.getIpConfig()));
         }
         return CloudInitNetworkUtil.normalizeFirewallCidrs(ipList);
+    }
+
+    private boolean shouldEnablePveAntiSpoof(VmParams vmParams) {
+        return vmParams != null && (isVpcNetwork(vmParams) || !Objects.equals(vmParams.getIfnat(), 1));
     }
 
     private void updateCreatedIppoolMac(VmParams vmParams, Integer vmId, String macAddress) {

@@ -733,6 +733,18 @@ public class ProxmoxApiUtil {
 
     /**
      * @Author: 星禾
+     * @Description: 关闭虚拟机IP和MAC反欺骗过滤，不修改虚拟机防火墙总开关和默认策略
+     * @DateTime: 2026/8/20 21:39
+     */
+    public void disableVmFirewallFilters(Master node, HashMap<String,String> cookie, Integer vmid) throws UnauthorizedException {
+        HashMap<String,Object> params = new HashMap<>();
+        params.put("macfilter", 0);
+        params.put("ipfilter", 0);
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/firewall/options", params);
+    }
+
+    /**
+     * @Author: 星禾
      * @Description: 获取虚拟机防火墙IPSet条目
      * @DateTime: 2026/6/7 22:47
      */

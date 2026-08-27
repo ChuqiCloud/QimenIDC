@@ -121,6 +121,8 @@ public class CloudInitNetworkUtil {
         }
         if (firewallEnabled) {
             optionMap.put("firewall", "1");
+        } else {
+            optionMap.remove("firewall");
         }
 
         if (StringUtils.isNotBlank(macAddress)) {

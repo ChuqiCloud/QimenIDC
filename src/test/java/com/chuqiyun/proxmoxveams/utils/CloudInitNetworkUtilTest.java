@@ -10,6 +10,15 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class CloudInitNetworkUtilTest {
+
+    @Test
+    void removesFirewallOptionWhenDisabled() {
+        assertEquals("virtio=02:00:00:00:00:01,bridge=vmbr1,rate=10.00,tag=100",
+                CloudInitNetworkUtil.ensurePveNet0Config(
+                        "virtio=02:00:00:00:00:01,bridge=vmbr0,firewall=1,rate=10.00,tag=100",
+                        "vmbr1", null, null, false));
+    }
+
     @Test
     void normalizesFirewallCidrsByIpVersion() {
         assertEquals("107.178.112.104/32", CloudInitNetworkUtil.normalizeFirewallCidr("107.178.112.104/29"));

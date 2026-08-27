@@ -2954,7 +2954,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         try {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-            proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
             JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
             String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
             if (StringUtils.isBlank(net0Config)) {
@@ -2962,10 +2961,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
             String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
             String bridge = resolveNet0Bridge(vmhost, net0Config);
-            String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(net0Config, bridge, macAddress, rate, true);
+            boolean antiSpoofEnabled = shouldEnablePveAntiSpoof(vmhost);
+            String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(
+                    net0Config, bridge, macAddress, rate, antiSpoofEnabled);
             if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
                 proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
             }
+            if (!antiSpoofEnabled) {
+                clearAndDeleteVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+                proxmoxApiUtil.disableVmFirewallFilters(node, cookieMap, vmhost.getVmid());
+                return;
+            }
+            proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
             proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
             syncVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost, allowedIps);
         } catch (Exception e) {
@@ -3044,6 +3051,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             }
         }
         return "vmbr0";
+    }
+
+    private boolean shouldEnablePveAntiSpoof(Vmhost vmhost) {
+        return vmhost != null && (isVpcNetwork(vmhost) || !Objects.equals(vmhost.getIfnat(), 1));
     }
 
     private Vmhost getVmhostForIpOperation(Integer hostId) {

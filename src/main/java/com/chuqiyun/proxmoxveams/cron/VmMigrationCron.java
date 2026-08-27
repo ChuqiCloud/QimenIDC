@@ -627,7 +627,7 @@ public class VmMigrationCron {
         String oldNet0 = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
         String macAddress = CloudInitNetworkUtil.extractMacAddress(oldNet0);
         String desiredNet0 = CloudInitNetworkUtil.ensurePveNet0Config(oldNet0, result.targetBridge, macAddress,
-                formatBandwidth(vmhost.getBandwidth()), true);
+                formatBandwidth(vmhost.getBandwidth()), shouldEnablePveAntiSpoof(vmhost));
         if (StringUtils.isNotBlank(desiredNet0) && !StringUtils.equals(desiredNet0, oldNet0)) {
             proxmoxApiUtil.resetVmConfig(targetNode, cookieMap, vmhost.getVmid(), "net0", desiredNet0);
             vmhost.setNet0(desiredNet0);
@@ -966,9 +966,12 @@ public class VmMigrationCron {
 
     private void syncVmFirewallProtection(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
                                           Vmhost vmhost, Collection<String> allowedIps) {
-        proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
-        proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
-        proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+        boolean antiSpoofEnabled = shouldEnablePveAntiSpoof(vmhost);
+        if (antiSpoofEnabled) {
+            proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
+            proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
+            proxmoxApiUtil.createVmFirewallIpset(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+        }
         JSONObject ipsetEntries = proxmoxApiUtil.getVmFirewallIpsetEntries(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
         LinkedHashSet<String> currentCidrSet = new LinkedHashSet<>();
         if (ipsetEntries != null && ipsetEntries.getJSONArray("data") != null) {
@@ -985,9 +988,14 @@ public class VmMigrationCron {
             desiredCidrSet.addAll(CloudInitNetworkUtil.normalizeFirewallCidrs(allowedIps));
         }
         for (String cidr : currentCidrSet) {
-            if (!desiredCidrSet.contains(cidr)) {
+            if (!antiSpoofEnabled || !desiredCidrSet.contains(cidr)) {
                 proxmoxApiUtil.deleteVmFirewallIpsetEntry(node, cookieMap, vmhost.getVmid(), "ipfilter-net0", cidr);
             }
+        }
+        if (!antiSpoofEnabled) {
+            proxmoxApiUtil.deleteVmFirewallIpset(node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+            proxmoxApiUtil.disableVmFirewallFilters(node, cookieMap, vmhost.getVmid());
+            return;
         }
         for (String cidr : desiredCidrSet) {
             if (!currentCidrSet.contains(cidr)) {
@@ -1083,6 +1091,10 @@ public class VmMigrationCron {
 
     private boolean isVpcNetwork(Vmhost vmhost) {
         return vmhost != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType());
+    }
+
+    private boolean shouldEnablePveAntiSpoof(Vmhost vmhost) {
+        return vmhost != null && (isVpcNetwork(vmhost) || !Objects.equals(vmhost.getIfnat(), 1));
     }
 
     private boolean isWindowsVm(Vmhost vmhost) {
