@@ -353,6 +353,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // qosPause=超流暂停
         switch (action) {
             case "start": {
+                // 判断虚拟机是否在创建/重装中
+                if (vmStatus == 6 || vmStatus == 13){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机创建/重装中，无法开机");
+                    return result;
+                }
                 // 判断虚拟机是否被暂停
                 if (vmStatus == 4){
                     result.put("status", false);
@@ -405,6 +411,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "stop": {
+                // 判断虚拟机是否在创建/重装中
+                if (vmStatus == 6 || vmStatus == 13){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机创建/重装中，无法关机");
+                    return result;
+                }
                 if (vmStatus == 1 || vmStatus == 2) {
                     result.put("status", true);
                     // 直接返回true
@@ -436,6 +448,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "reboot": {
+                // 判断虚拟机是否在创建/重装中
+                if (vmStatus == 6 || vmStatus == 13){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机创建/重装中，无法重启");
+                    return result;
+                }
                 // 判断虚拟机状态是否为暂停
                 if (vmStatus == 4) {
                     result.put("status", false);
@@ -455,12 +473,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     return result;
                 }
                 else {
-                    // 设置虚拟机状态为12，表示重启中
-                    vmhost.setStatus(12);
-                    // 更新虚拟机状态
-                    this.updateById(vmhost);
                     // 判断虚拟机状态是否为已停止，如果是则直接开机
                     if (vmStatus == 1 || vmStatus == 2) {
+                        // 设置虚拟机状态为7，表示开机中
+                        vmhost.setStatus(7);
+                        // 更新虚拟机状态
+                        this.updateById(vmhost);
+                        // 创建开机任务
                         Task vmStartTask = new Task();
                         vmStartTask.setNodeid(nodeId);
                         vmStartTask.setVmid(vmId);
@@ -481,6 +500,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                         }
                     }
                     else {
+                        // 设置虚拟机状态为12，表示重启中
+                        vmhost.setStatus(12);
+                        // 更新虚拟机状态
+                        this.updateById(vmhost);
                         // 创建重启任务
                         Task vmRebootTask = new Task();
                         vmRebootTask.setNodeid(nodeId);
@@ -504,6 +527,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "shutdown":{
+                // 判断虚拟机是否在创建/重装中
+                if (vmStatus == 6 || vmStatus == 13){
+                    result.put("status", false);
+                    result.put("msg", "虚拟机创建/重装中，无法强制关机");
+                    return result;
+                }
                 // 设置虚拟机状态为9，表示强制关机中
                 vmhost.setStatus(9);
                 // 更新虚拟机状态
@@ -1157,6 +1186,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        // 判断虚拟机是否在创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
         if (!FlowTypeUtil.isValid(vmParams.getFlowType())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
                     "flowType只能是in、out或in+out");
@@ -1315,6 +1348,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        // 判断虚拟机是否在创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
         UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "修改IP");
         if (busyResult != null) {
             return busyResult;
@@ -1398,6 +1435,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
         }
+        // 判断虚拟机是否在创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
         UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "新增IP");
         if (busyResult != null) {
             return busyResult;
@@ -1478,6 +1519,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        // 判断虚拟机是否在创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
         }
         UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "删除IP");
         if (busyResult != null) {
@@ -1947,6 +1992,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         vmhost = getVmhostForIpOperation(vmhost == null ? null : vmhost.getId());
         if (vmhost == null) {
             throw new IllegalStateException("虚拟机不存在");
+        }
+        // 判断虚拟机是否在创建/重装中
+        if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
+            throw new IllegalStateException("虚拟机创建/重装中，无法同步IP");
         }
         UnifiedResultDto<Object> busyResult = checkVmIpOperationBusy(vmhost, "同步IP");
         if (busyResult != null) {
