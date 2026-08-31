@@ -328,6 +328,19 @@ public class ClientApiUtil {
         return result != null && result.getInteger("code") == 200;
     }
 
+    /**
+     * 获取被控节点上虚拟机磁盘的实际分配容量。
+     */
+    public static JSONObject getVmDiskUsage(String ip, String token, Integer controllerPort, JSONObject request) {
+        String url = "http://" + ip + ":" + controllerPort + "/disk/usage";
+        Map<String, Object> params = new HashMap<>(request);
+        JSONObject result = postControllerApi(url, params, token);
+        if (result == null || result.getInteger("code") != 200) {
+            return null;
+        }
+        return result.getJSONObject("data");
+    }
+
     public static JSONObject startMigrationBackup(String ip, String token, Integer controllerPort, String taskId, Integer vmid, String backupDir) {
         String url = "http://" + ip + ":" + controllerPort + "/migration/backup";
         Map<String, Object> paramMap = new HashMap<>();

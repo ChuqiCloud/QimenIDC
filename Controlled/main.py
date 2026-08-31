@@ -21,7 +21,7 @@ app=FastAPI(
 # nat.ForwardRuleManager()
 
 # 路由
-from controller import update,changePassword,importDisk,status,file,vnc,natForward,netWork,securityGroup,migration
+from controller import update,changePassword,importDisk,status,file,vnc,natForward,netWork,securityGroup,migration,disk
 
 # 挂载路由
 app.include_router(update.update_router,tags=["update"])
@@ -34,6 +34,7 @@ app.include_router(natForward.nat_router,tags=["nat"])
 app.include_router(netWork.netWork_router,tags=["netWork"])
 app.include_router(securityGroup.security_group_router,tags=["securityGroup"])
 app.include_router(migration.migration_router,tags=["migration"])
+app.include_router(disk.disk_router,tags=["disk"])
 
 '''
 自定义错误处理

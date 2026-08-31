@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.dto.VmHostDto;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Area;
 import com.chuqiyun.proxmoxveams.entity.Ippool;
 import com.chuqiyun.proxmoxveams.entity.Master;
@@ -13,6 +14,8 @@ import com.chuqiyun.proxmoxveams.entity.VpcIpBinding;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import com.chuqiyun.proxmoxveams.utils.VmDiskUsageUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import org.springframework.stereotype.Service;
 
@@ -44,6 +47,8 @@ public class VmInfoServiceImpl implements VmInfoService {
     private IppoolService ippoolService;
     @Resource
     private VpcIpBindingService vpcIpBindingService;
+    @Resource
+    private ConfigService configService;
 
     /**
     * @Author: mryunqi
@@ -197,6 +202,19 @@ public class VmInfoServiceImpl implements VmInfoService {
             vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmhost.getVmid()));
         }catch(Exception e){
             vmHostDto.setCurrent(null);
+        }
+        try {
+            JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
+            if (vmConfig != null) {
+                JSONObject diskUsageRequest = VmDiskUsageUtil.buildRequest(vmConfig);
+                vmHostDto.setDiskUsage(ClientApiUtil.getVmDiskUsage(
+                        node.getHost(), configService.getToken(), node.getControllerPort(), diskUsageRequest));
+            }
+        } catch (Exception e) {
+            vmHostDto.setDiskUsage(null);
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
+                    "Get VM disk usage failed: NodeID:{} VM-ID:{}, {}",
+                    node.getId(), vmhost.getVmid(), e.getMessage());
         }
         return vmHostDto;
     }

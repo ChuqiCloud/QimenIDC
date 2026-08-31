@@ -17,4 +17,5 @@ public class VmHostDto {
     private Os os;
     private JSONObject current;
     private JSONObject rrddata;
+    private JSONObject diskUsage;
 }

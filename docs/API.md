@@ -4455,6 +4455,20 @@ GET /{adminPath}/getVmHostInfo
         "agent": 1
       }
     },
+    "diskUsage": {
+      "systemDisk": {
+        "device": "scsi0",
+        "storage": "local-lvm",
+        "volume": "local-lvm:vm-103-disk-0",
+        "provisionedBytes": 42949672960,
+        "actualBytes": 8589934592,
+        "backend": "lvm-thin",
+        "available": true
+      },
+      "dataDisks": [],
+      "totalActualBytes": 8589934592,
+      "complete": true
+    },
     "rrddata": {
       "data": [
         {
@@ -5580,6 +5594,19 @@ GET /{adminPath}/getVmHostInfo
 |»»»» maxcpu|integer|true|none||none|
 |»»»» disk|integer|true|none||none|
 |»»»» maxdisk|integer|true|none||none|
+|»» diskUsage|object|false|none||宿主机侧磁盘实际分配容量；采集失败时为null|
+|»»» systemDisk|object¦null|false|none||系统盘，优先识别scsi0|
+|»»»» device|string|true|none||PVE磁盘设备名|
+|»»»» storage|string¦null|false|none||PVE存储名称|
+|»»»» volume|string|true|none||PVE卷ID|
+|»»»» provisionedBytes|integer¦null|false|none||逻辑制备容量，单位字节|
+|»»»» actualBytes|integer¦null|false|none||宿主机实际占用容量，单位字节|
+|»»»» backend|string¦null|false|none||存储后端类型|
+|»»»» available|boolean|true|none||该磁盘容量是否采集成功|
+|»»»» error|string¦null|false|none||采集失败原因|
+|»»» dataDisks|[object]|true|none||数据盘列表，没有数据盘时为空数组|
+|»»» totalActualBytes|integer|true|none||所有成功采集磁盘的实际占用总量，单位字节|
+|»»» complete|boolean|true|none||是否所有磁盘均采集成功|
 
 ## GET 获取虚拟机历史负载
 
