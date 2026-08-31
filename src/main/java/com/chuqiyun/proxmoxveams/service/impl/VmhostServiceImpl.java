@@ -1346,6 +1346,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
+        if (vmIpParams.getIpVersion() != null
+                && !Objects.equals(vmIpParams.getIpVersion(), 4)
+                && !Objects.equals(vmIpParams.getIpVersion(), 6)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "ipVersion只支持4或6");
+        }
         Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
@@ -1366,13 +1371,20 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return updateVpcVmIp(vmIpParams, vmhost, node);
         }
 
-        int networkIndex = vmIpParams.getNetworkIndex() == null ? 1 : vmIpParams.getNetworkIndex();
+        boolean networkIndexSpecified = vmIpParams.getNetworkIndex() != null;
+        int networkIndex = networkIndexSpecified ? vmIpParams.getNetworkIndex() : 1;
         if (networkIndex < 1) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
         HashMap<String, String> ipConfig = new HashMap<>();
         if (vmhost.getIpConfig() != null) {
             ipConfig.putAll(vmhost.getIpConfig());
+        }
+        if (!networkIndexSpecified && vmIpParams.getIpVersion() != null) {
+            int resolvedIndex = resolveUpdateIpConfigIndex(ipConfig, vmIpParams.getIpVersion());
+            if (resolvedIndex > 0) {
+                networkIndex = resolvedIndex;
+            }
         }
         String ipConfigKey = String.valueOf(networkIndex);
         String oldIp = getIpFromCloudInitConfig(ipConfig.get(ipConfigKey));
@@ -1381,6 +1393,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (newIppool == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
         }
+        // 未指定序号时，按目标 IP 版本定位对应的 ipconfig 项，避免 IPv6 更新误改 IPv4 项。
+        if (!networkIndexSpecified) {
+            int resolvedIndex = resolveUpdateIpConfigIndex(ipConfig, newIppool);
+            if (resolvedIndex != networkIndex) {
+                networkIndex = resolvedIndex;
+                ipConfigKey = String.valueOf(networkIndex);
+            }
+        }
+        oldIp = getIpFromCloudInitConfigByVersion(ipConfig.get(ipConfigKey), newIppool.getIpVersion());
+        oldIppool = oldIp == null ? null : getIppoolByIpAndNodeId(oldIp, vmhost.getNodeid());
         if (!Objects.equals(newIppool.getNodeId(), vmhost.getNodeid())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
@@ -1400,7 +1422,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
 
-        String newIpConfig = "ip=" + newIppool.getIp() + "/" + mask + ",gw=" + gateway;
+        boolean ipv6 = Objects.equals(newIppool.getIpVersion(), 6);
+        String newIpConfig = replaceIpConfigAddress(ipConfig.get(ipConfigKey), newIppool.getIp(), mask, gateway, ipv6);
         if (!bindNewIp(newIppool, vmhost)) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NO_AVAILABLE_IPV4, null);
         }
@@ -1548,7 +1571,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
 
         HashMap<String, String> newIpConfig = removeIpConfigItems(ipConfig, deleteIpSet);
-        if (newIpConfig.size() == ipConfig.size() || newIpConfig.isEmpty()) {
+        if (newIpConfig.equals(ipConfig) || newIpConfig.isEmpty()) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
         Set<String> removedIpSet = getRemovedIpSet(ipConfig, newIpConfig);
@@ -2512,10 +2535,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private Ippool getNewIppool(VmIpParams vmIpParams, Vmhost vmhost, Ippool oldIppool) {
-        String newIp = StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp());
+        String newIp = normalizeIpAddress(StringUtils.defaultIfBlank(vmIpParams.getNewIp(), vmIpParams.getIp()));
         if (StringUtils.isNotBlank(newIp)) {
             Ippool ippool = getIppoolByIpAndNodeId(newIp, vmhost.getNodeid());
-            if (ippool == null || !Objects.equals(ippool.getStatus(), 0)) {
+            if (ippool == null || !Objects.equals(ippool.getStatus(), 0)
+                    || !isRequestedIpVersion(ippool, vmIpParams.getIpVersion())) {
                 return null;
             }
             return ippool;
@@ -2524,7 +2548,34 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (poolId == null && oldIppool != null) {
             poolId = oldIppool.getPoolId();
         }
-        return ippoolService.getOneFreeIpByNodeId(vmhost.getNodeid(), poolId);
+        return ippoolService.getOneFreeIpByNodeId(vmhost.getNodeid(), poolId, vmIpParams.getIpVersion());
+    }
+
+    private int resolveUpdateIpConfigIndex(HashMap<String, String> ipConfig, Ippool newIppool) {
+        return resolveUpdateIpConfigIndex(ipConfig, newIppool == null ? null : newIppool.getIpVersion());
+    }
+
+    private int resolveUpdateIpConfigIndex(HashMap<String, String> ipConfig, Integer ipVersion) {
+        if (ipConfig == null || ipConfig.isEmpty() || ipVersion == null) {
+            return 1;
+        }
+        boolean ipv6 = Objects.equals(ipVersion, 6);
+        List<Map.Entry<String, String>> entries = new ArrayList<>(ipConfig.entrySet());
+        entries.sort(Comparator.comparingInt(entry -> getIpConfigIndex(entry.getKey())));
+        for (Map.Entry<String, String> entry : entries) {
+            String value = entry.getValue();
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+            for (String token : value.split(",")) {
+                String item = token.trim();
+                if ((ipv6 && item.startsWith("ip6=")) || (!ipv6 && item.startsWith("ip="))) {
+                    int index = getIpConfigIndex(entry.getKey());
+                    return index == Integer.MAX_VALUE ? 1 : index;
+                }
+            }
+        }
+        return 1;
     }
 
     private List<Ippool> getAddIppoolList(VmIpParams vmIpParams, Vmhost vmhost, Set<String> usedIpSet, int count) {
@@ -2559,7 +2610,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private Set<String> getDeleteIpSet(VmIpParams vmIpParams, HashMap<String, String> ipConfig) {
-        Set<String> deleteIpSet = new LinkedHashSet<>(getRequestIpList(vmIpParams));
+        Set<String> deleteIpSet = new LinkedHashSet<>();
+        for (String requestedIp : getRequestIpList(vmIpParams)) {
+            String normalizedIp = normalizeIpAddress(requestedIp);
+            if (StringUtils.isNotBlank(normalizedIp)) {
+                deleteIpSet.add(normalizedIp);
+            }
+        }
         if (!deleteIpSet.isEmpty()) {
             return deleteIpSet;
         }
@@ -2574,20 +2631,77 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return deleteIpSet;
     }
 
+    private String normalizeIpAddress(String ip) {
+        if (StringUtils.isBlank(ip)) {
+            return null;
+        }
+        String value = ip.trim();
+        int maskIndex = value.indexOf('/');
+        return maskIndex > 0 ? value.substring(0, maskIndex) : value;
+    }
+
     private HashMap<String, String> removeIpConfigItems(HashMap<String, String> ipConfig, Set<String> deleteIpSet) {
         HashMap<String, String> newIpConfig = new HashMap<>();
         List<Map.Entry<String, String>> entries = new ArrayList<>(ipConfig.entrySet());
         entries.sort(Comparator.comparingInt(entry -> getIpConfigIndex(entry.getKey())));
         int index = 1;
         for (Map.Entry<String, String> entry : entries) {
-            String ip = getIpFromCloudInitConfig(entry.getValue());
-            if (StringUtils.isNotBlank(ip) && deleteIpSet.contains(ip)) {
+            String filteredConfig = removeIpConfigAddresses(entry.getValue(), deleteIpSet);
+            if (StringUtils.isBlank(filteredConfig)) {
                 continue;
             }
-            newIpConfig.put(String.valueOf(index), entry.getValue());
+            newIpConfig.put(String.valueOf(index), filteredConfig);
             index++;
         }
         return newIpConfig;
+    }
+
+    private String removeIpConfigAddresses(String ipConfig, Set<String> deleteIpSet) {
+        if (StringUtils.isBlank(ipConfig)) {
+            return null;
+        }
+        List<String> otherTokens = new ArrayList<>();
+        String gateway4 = null;
+        String gateway6 = null;
+        boolean hasIpv4 = false;
+        boolean hasIpv6 = false;
+        for (String token : ipConfig.split(",")) {
+            String item = token.trim();
+            if (StringUtils.isBlank(item)) {
+                continue;
+            }
+            int separator = item.indexOf('=');
+            String key = separator > 0 ? item.substring(0, separator).trim() : item;
+            String value = separator > 0 ? item.substring(separator + 1).trim() : "";
+            if ("ip".equals(key) || "ip6".equals(key)) {
+                boolean ipv6 = "ip6".equals(key) || value.contains(":");
+                if (deleteIpSet.contains(normalizeIpAddress(value))) {
+                    continue;
+                }
+                if (ipv6) {
+                    hasIpv6 = true;
+                } else {
+                    hasIpv4 = true;
+                }
+                // 将历史上写成 ip=IPv6 的配置一并规范化。
+                otherTokens.add((ipv6 ? "ip6=" : "ip=") + value);
+            } else if ("gw".equals(key) || "gw6".equals(key)) {
+                if ("gw6".equals(key) || value.contains(":")) {
+                    gateway6 = value;
+                } else {
+                    gateway4 = value;
+                }
+            } else {
+                otherTokens.add(item);
+            }
+        }
+        if (hasIpv4 && StringUtils.isNotBlank(gateway4)) {
+            otherTokens.add(gateway4.startsWith("gw=") ? gateway4 : "gw=" + gateway4);
+        }
+        if (hasIpv6 && StringUtils.isNotBlank(gateway6)) {
+            otherTokens.add(gateway6.startsWith("gw6=") ? gateway6 : "gw6=" + gateway6);
+        }
+        return otherTokens.isEmpty() ? null : String.join(",", otherTokens);
     }
 
     private Set<String> getRemovedIpSet(HashMap<String, String> oldIpConfig, HashMap<String, String> newIpConfig) {
@@ -2754,6 +2868,66 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return CloudInitNetworkUtil.getIpFromCloudInitConfig(ipConfig);
     }
 
+    private String getIpFromCloudInitConfigByVersion(String ipConfig, Integer ipVersion) {
+        if (StringUtils.isBlank(ipConfig)) {
+            return null;
+        }
+        boolean ipv6 = Objects.equals(ipVersion, 6);
+        String addressKey = ipv6 ? "ip6=" : "ip=";
+        for (String token : ipConfig.split(",")) {
+            String item = token.trim();
+            boolean legacyIpv6 = ipv6 && item.startsWith("ip=") && item.substring(3).contains(":");
+            if (item.startsWith(addressKey) || legacyIpv6) {
+                String address = item.substring(legacyIpv6 ? 3 : addressKey.length());
+                return normalizeIpAddress(address);
+            }
+        }
+        return null;
+    }
+
+    private String replaceIpConfigAddress(String currentConfig, String ip, Integer mask, String gateway, boolean ipv6) {
+        String addressKey = ipv6 ? "ip6" : "ip";
+        String gatewayKey = ipv6 ? "gw6" : "gw";
+        String addressValue = addressKey + "=" + ip + "/" + mask;
+        String gatewayValue = gatewayKey + "=" + gateway;
+        List<String> tokens = new ArrayList<>();
+        boolean addressUpdated = false;
+        boolean gatewayUpdated = false;
+        if (StringUtils.isNotBlank(currentConfig)) {
+            for (String token : currentConfig.split(",")) {
+                String item = token.trim();
+                if (StringUtils.isBlank(item)) {
+                    continue;
+                }
+                int separator = item.indexOf('=');
+                String key = separator > 0 ? item.substring(0, separator).trim() : item;
+                String value = separator > 0 ? item.substring(separator + 1).trim() : "";
+                boolean legacyIpv6Address = ipv6 && "ip".equals(key) && value.contains(":");
+                boolean legacyIpv6Gateway = ipv6 && "gw".equals(key) && value.contains(":");
+                if (addressKey.equals(key) || legacyIpv6Address) {
+                    if (!addressUpdated) {
+                        tokens.add(addressValue);
+                        addressUpdated = true;
+                    }
+                } else if (gatewayKey.equals(key) || legacyIpv6Gateway) {
+                    if (!gatewayUpdated) {
+                        tokens.add(gatewayValue);
+                        gatewayUpdated = true;
+                    }
+                } else {
+                    tokens.add(item);
+                }
+            }
+        }
+        if (!addressUpdated) {
+            tokens.add(addressValue);
+        }
+        if (!gatewayUpdated) {
+            tokens.add(gatewayValue);
+        }
+        return String.join(",", tokens);
+    }
+
     private String getFirstIpv4(List<String> ipList) {
         if (ipList == null) {
             return null;
@@ -2767,18 +2941,44 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private void updateVmhostIpFields(Vmhost vmhost, HashMap<String, String> ipConfig, List<String> ipList, String errorMessage) {
-        List<IpDto> ipData = VmUtil.splitIpAddress(ipConfig);
+        HashMap<String, String> normalizedIpConfig = normalizeIpConfigVersions(ipConfig);
+        List<IpDto> ipData = VmUtil.splitIpAddress(normalizedIpConfig);
         Vmhost updateVmhost = new Vmhost();
         updateVmhost.setId(vmhost.getId());
-        updateVmhost.setIpConfig(ipConfig);
+        updateVmhost.setIpConfig(normalizedIpConfig);
         updateVmhost.setIpList(ipList);
         updateVmhost.setIpData(ipData);
         if (!this.updateById(updateVmhost)) {
             throw new IllegalStateException(errorMessage + ": hostId=" + vmhost.getId());
         }
-        vmhost.setIpConfig(ipConfig);
+        vmhost.setIpConfig(normalizedIpConfig);
         vmhost.setIpList(ipList);
         vmhost.setIpData(ipData);
+    }
+
+    private HashMap<String, String> normalizeIpConfigVersions(Map<String, String> ipConfig) {
+        HashMap<String, String> normalized = new HashMap<>();
+        if (ipConfig == null) {
+            return normalized;
+        }
+        for (Map.Entry<String, String> entry : ipConfig.entrySet()) {
+            if (StringUtils.isBlank(entry.getValue())) {
+                normalized.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            List<String> tokens = new ArrayList<>();
+            for (String token : entry.getValue().split(",")) {
+                String item = token.trim();
+                if (item.startsWith("ip=") && item.substring(3).contains(":")) {
+                    item = "ip6=" + item.substring(3);
+                } else if (item.startsWith("gw=") && item.substring(3).contains(":")) {
+                    item = "gw6=" + item.substring(3);
+                }
+                tokens.add(item);
+            }
+            normalized.put(entry.getKey(), String.join(",", tokens));
+        }
+        return normalized;
     }
 
     private boolean updateVmhostStatusOnly(Integer hostId, Integer status) {
