@@ -1008,7 +1008,9 @@ public class ProxmoxApiUtil {
 
     private boolean isNotFound(RestClientResponseException e) {
         return e.getRawStatusCode() == HttpStatus.NOT_FOUND.value()
-                || containsResponseBody(e, "not found");
+                || containsResponseBody(e, "not found")
+                // PVE 返回不存在的 VM 防火墙 IPSet 时使用 500，而不是 404。
+                || containsResponseBody(e, "no such ipset");
     }
 
     private boolean isAlreadyExists(RestClientResponseException e) {
