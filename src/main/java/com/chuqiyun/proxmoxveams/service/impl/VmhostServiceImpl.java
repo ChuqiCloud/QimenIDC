@@ -35,6 +35,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -3001,8 +3003,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost == null || node == null || cookieMap == null || vmhost.getVmid() == null) {
             return;
         }
+        String stage = "初始化";
         try {
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            stage = "读取虚拟机配置";
             JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
             String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
             if (StringUtils.isBlank(net0Config)) {
@@ -3014,19 +3018,51 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Config(
                     net0Config, bridge, macAddress, rate, antiSpoofEnabled);
             if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
+                stage = "更新虚拟机net0配置";
                 proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
             }
             if (!antiSpoofEnabled) {
+                stage = "清理虚拟机防火墙IPSet";
                 clearAndDeleteVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost.getVmid(), "ipfilter-net0");
+                stage = "关闭虚拟机防火墙过滤";
                 proxmoxApiUtil.disableVmFirewallFilters(node, cookieMap, vmhost.getVmid());
                 return;
             }
+            stage = "启用节点防火墙";
             proxmoxApiUtil.ensureFirewallEnabledAccept(node, cookieMap);
+            stage = "启用虚拟机防伪配置";
             proxmoxApiUtil.enableVmFirewallAntiSpoof(node, cookieMap, vmhost.getVmid());
+            stage = "同步虚拟机防火墙IPSet";
             syncVmFirewallIpset(proxmoxApiUtil, node, cookieMap, vmhost, allowedIps);
         } catch (Exception e) {
-            throw new IllegalStateException("同步虚拟机防火墙配置失败: vmid=" + vmhost.getVmid(), e);
+            String detail = describeFirewallSyncException(e);
+            log.error("[VmFirewallSync] 防火墙配置同步失败: NodeId={}, NodeName={}, HostId={}, VmId={}, Stage={}, Detail={}",
+                    node.getId(), node.getNodeName(), vmhost.getId(), vmhost.getVmid(), stage, detail, e);
+            throw new IllegalStateException("同步虚拟机防火墙配置失败: hostId=" + vmhost.getId()
+                    + ", vmid=" + vmhost.getVmid() + ", 阶段=" + stage + ", 原因=" + detail, e);
         }
+    }
+
+    private String describeFirewallSyncException(Throwable exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof RestClientResponseException) {
+                RestClientResponseException responseException = (RestClientResponseException) cause;
+                String body = StringUtils.trimToEmpty(responseException.getResponseBodyAsString());
+                if (body.length() > 500) {
+                    body = body.substring(0, 500) + "...";
+                }
+                return "PVE HTTP " + responseException.getRawStatusCode()
+                        + (body.isEmpty() ? "" : ": " + body);
+            }
+            if (cause instanceof ResourceAccessException) {
+                String message = StringUtils.trimToEmpty(cause.getMessage());
+                return message.isEmpty() ? cause.getClass().getSimpleName() : message;
+            }
+            cause = cause.getCause();
+        }
+        String message = exception == null ? null : StringUtils.trimToEmpty(exception.getMessage());
+        return message.isEmpty() && exception != null ? exception.getClass().getSimpleName() : message;
     }
 
     private void syncVmNet0Rate(Vmhost vmhost, Master node, HashMap<String, String> cookieMap, String rate) {

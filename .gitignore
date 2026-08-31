@@ -38,3 +38,6 @@ out/
 ### VS Code ###
 .vscode/
 /config/install.lock
+
+# Local Apifox CLI artifacts
+.apifox/
