@@ -16,6 +16,27 @@ function update_source(){
     apt-get update
     apt-get upgrade -y
     apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
+    ensure_lsof
+}
+
+# lsof is required by the VNC proxy process to detect its listening port.
+function ensure_lsof(){
+    if command -v lsof >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Error: lsof is required, but apt-get is not available."
+        exit 1
+    fi
+
+    echo "lsof is not installed. Installing it now..."
+    apt-get install -y lsof
+
+    if ! command -v lsof >/dev/null 2>&1; then
+        echo "Error: lsof installation failed."
+        exit 1
+    fi
 }
 # 初始化系统软件目录
 function init_system_dir(){
