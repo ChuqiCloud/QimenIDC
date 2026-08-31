@@ -3029,6 +3029,27 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
     }
 
+    private void syncVmNet0Rate(Vmhost vmhost, Master node, HashMap<String, String> cookieMap, String rate) {
+        if (vmhost == null || node == null || cookieMap == null || vmhost.getVmid() == null) {
+            return;
+        }
+        try {
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+            String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+            if (StringUtils.isBlank(net0Config)) {
+                throw new IllegalStateException("虚拟机net0配置为空: vmid=" + vmhost.getVmid());
+            }
+            String desiredNet0Config = CloudInitNetworkUtil.ensurePveNet0Rate(net0Config, rate);
+            if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
+                proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
+                vmhost.setNet0(desiredNet0Config);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("同步虚拟机带宽配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+    }
+
     private void syncVmFirewallIpset(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
                                      Vmhost vmhost, Collection<String> allowedIps) throws Exception {
         LinkedHashSet<String> desiredCidrSet = new LinkedHashSet<>();
@@ -3953,7 +3974,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-        syncVmFirewallProtection(vmhost, node, cookieMap, bandwidth, null);
+        syncVmNet0Rate(vmhost, node, cookieMap, bandwidth);
         return true;
     }
     /**

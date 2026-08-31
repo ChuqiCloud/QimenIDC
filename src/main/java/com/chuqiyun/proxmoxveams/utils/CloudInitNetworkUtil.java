@@ -146,6 +146,34 @@ public class CloudInitNetworkUtil {
         return String.join(",", parts);
     }
 
+    public static String ensurePveNet0Rate(String netConfig, String rate) {
+        if (StringUtils.isBlank(netConfig)) {
+            return netConfig;
+        }
+        List<String> parts = new ArrayList<>();
+        boolean rateUpdated = false;
+        for (String token : netConfig.split(",")) {
+            String item = token.trim();
+            if (StringUtils.isBlank(item)) {
+                continue;
+            }
+            int idx = item.indexOf('=');
+            String key = idx > 0 ? item.substring(0, idx).trim() : item;
+            if ("rate".equalsIgnoreCase(key)) {
+                if (StringUtils.isNotBlank(rate)) {
+                    parts.add("rate=" + rate.trim());
+                    rateUpdated = true;
+                }
+                continue;
+            }
+            parts.add(item);
+        }
+        if (!rateUpdated && StringUtils.isNotBlank(rate)) {
+            parts.add("rate=" + rate.trim());
+        }
+        return String.join(",", parts);
+    }
+
     public static String removePveNet0FirewallConfig(String netConfig) {
         if (StringUtils.isBlank(netConfig)) {
             return netConfig;
