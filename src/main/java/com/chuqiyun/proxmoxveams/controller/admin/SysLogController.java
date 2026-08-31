@@ -39,9 +39,10 @@ public class SysLogController {
             @RequestParam(name = "level", defaultValue = "all") String level,
             @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "requestId", required = false) String requestId,
-            @RequestParam(name = "date", required = false) String date
+            @RequestParam(name = "date", required = false) String date,
+            @RequestParam(name = "hostId", required = false) Integer hostId
     ) throws UnauthorizedException {
-        return ResponseResult.ok(systemLogService.getSystemLogs(page, size, type, level, keyword, requestId, date));
+        return ResponseResult.ok(systemLogService.getSystemLogs(page, size, type, level, keyword, requestId, date, hostId));
     }
 
     /**

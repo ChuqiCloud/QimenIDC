@@ -613,6 +613,7 @@ create table system_log
     level            varchar(16)  null,
     method           varchar(16)  null,
     uri              varchar(255) null,
+    host_id          int          null comment '虚拟机数据库ID',
     path_pattern     varchar(255) null,
     handler          varchar(255) null,
     client_ip        varchar(64)  null,
@@ -631,7 +632,8 @@ create table system_log
     index idx_system_log_create_time (create_time),
     index idx_system_log_type_create_time (log_type, create_time),
     index idx_system_log_request_id (request_id),
-    index idx_system_log_level (level)
+    index idx_system_log_level (level),
+    index idx_system_log_host_id_create_time (host_id, create_time)
 );
 
 

@@ -18,7 +18,8 @@ public interface SystemLogService extends IService<SystemLog> {
                                   String level,
                                   String keyword,
                                   String requestId,
-                                  String date);
+                                  String date,
+                                  Integer hostId);
 
     SystemLog getSystemLogById(Integer id);
 

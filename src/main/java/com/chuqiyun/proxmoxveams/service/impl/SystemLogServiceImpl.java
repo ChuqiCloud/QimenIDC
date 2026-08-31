@@ -59,7 +59,8 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
                                          String level,
                                          String keyword,
                                          String requestId,
-                                         String date) {
+                                         String date,
+                                         Integer hostId) {
         Page<SystemLog> systemLogPage = new Page<>(normalizePage(page), normalizeSize(size));
         QueryWrapper<SystemLog> queryWrapper = new QueryWrapper<>();
         String normalizedType = normalizeType(type);
@@ -72,6 +73,9 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
         }
         if (StringUtils.isNotBlank(requestId)) {
             queryWrapper.eq("request_id", StringUtils.trim(requestId));
+        }
+        if (hostId != null && hostId > 0) {
+            queryWrapper.eq("host_id", hostId);
         }
         if (StringUtils.isNotBlank(keyword)) {
             String normalizedKeyword = StringUtils.trim(keyword);
@@ -198,6 +202,9 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
         systemLog.setLevel(truncate(systemLog.getLevel(), 16));
         systemLog.setMethod(truncate(systemLog.getMethod(), 16));
         systemLog.setUri(truncate(systemLog.getUri(), 255));
+        if (systemLog.getHostId() != null && systemLog.getHostId() <= 0) {
+            systemLog.setHostId(null);
+        }
         systemLog.setPathPattern(truncate(systemLog.getPathPattern(), 255));
         systemLog.setHandler(truncate(systemLog.getHandler(), 255));
         systemLog.setClientIp(truncate(systemLog.getClientIp(), 64));

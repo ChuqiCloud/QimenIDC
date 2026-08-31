@@ -484,3 +484,7 @@ build: # 内部构建版本信息
     2:
       - "alter table ippool
                    add unique index uk_ippool_node_version_ip (node_id, ip_version, ip);"
+    5:
+      - "alter table system_log
+                   add host_id int null comment '虚拟机数据库ID' after uri,
+                   add index idx_system_log_host_id_create_time (host_id, create_time);"

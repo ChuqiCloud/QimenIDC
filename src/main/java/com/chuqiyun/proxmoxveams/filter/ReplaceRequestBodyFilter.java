@@ -118,7 +118,9 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
             return;
         }
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-        String requestBody = Objects.nonNull(requestWrapper) ? sanitizeRequestBody(requestWrapper.getBody()) : "";
+        String rawRequestBody = Objects.nonNull(requestWrapper) ? requestWrapper.getBody() : "";
+        String requestBody = sanitizeRequestBody(rawRequestBody);
+        Integer hostId = extractHostId(request, rawRequestBody);
         String responseBody = sanitizeResponseBody(request.getRequestURI(), getResponseBody(responseWrapper));
         Integer businessCode = extractBusinessCode(responseBody);
         String businessMessage = extractBusinessMessage(responseBody);
@@ -130,7 +132,8 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         String level = resolveLogLevel(responseWrapper.getStatus(), businessCode, throwable);
         String auditContent = buildAuditContent(request, level, businessMessage, throwable, requestBody);
         saveAccessLogToDatabase(requestId, level, request, pathPattern, handler, clientIp, operator, authType,
-                responseWrapper.getStatus(), businessCode, durationMs, throwable, auditContent, requestBody, responseBody);
+                responseWrapper.getStatus(), businessCode, durationMs, throwable, auditContent, requestBody, responseBody,
+                hostId);
     }
 
     private String resolvePathPattern(HttpServletRequest request) {
@@ -422,6 +425,96 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         return StringUtils.abbreviate(String.join(", ", values), MAX_AUDIT_CONTENT_LENGTH / 2);
     }
 
+    /** 提取数据库中的虚拟机主键，优先使用显式 hostId 参数或请求体字段。 */
+    private Integer extractHostId(HttpServletRequest request, String requestBody) {
+        Integer hostId = findHostIdInParameters(request.getParameterMap());
+        if (hostId != null) {
+            return hostId;
+        }
+        if (StringUtils.isNotBlank(requestBody)) {
+            try {
+                hostId = findHostIdInJson(JSON.parse(requestBody));
+            } catch (Exception ignored) {
+                // 非 JSON 请求体继续尝试路径变量。
+            }
+            if (hostId != null) {
+                return hostId;
+            }
+        }
+        Object variables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+        if (variables instanceof Map<?, ?>) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) variables).entrySet()) {
+                if (isHostIdKey(String.valueOf(entry.getKey()))) {
+                    return parsePositiveInteger(entry.getValue());
+                }
+            }
+        }
+        return null;
+    }
+
+    private Integer findHostIdInParameters(Map<String, String[]> parameterMap) {
+        if (parameterMap == null) {
+            return null;
+        }
+        for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+            if (!isHostIdKey(entry.getKey()) || entry.getValue() == null) {
+                continue;
+            }
+            for (String value : entry.getValue()) {
+                Integer hostId = parsePositiveInteger(value);
+                if (hostId != null) {
+                    return hostId;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Integer findHostIdInJson(Object value) {
+        if (value instanceof Map<?, ?>) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                if (isHostIdKey(String.valueOf(entry.getKey()))) {
+                    Integer hostId = parsePositiveInteger(entry.getValue());
+                    if (hostId != null) {
+                        return hostId;
+                    }
+                }
+                Integer nestedHostId = findHostIdInJson(entry.getValue());
+                if (nestedHostId != null) {
+                    return nestedHostId;
+                }
+            }
+        } else if (value instanceof Collection<?>) {
+            for (Object item : (Collection<?>) value) {
+                Integer hostId = findHostIdInJson(item);
+                if (hostId != null) {
+                    return hostId;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isHostIdKey(String key) {
+        if (StringUtils.isBlank(key) || isSensitiveKey(key)) {
+            return false;
+        }
+        String normalized = StringUtils.lowerCase(key).replace("_", "").replace("-", "");
+        return "hostid".equals(normalized);
+    }
+
+    private Integer parsePositiveInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(String.valueOf(value).trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private void collectParameterMap(Map<String, String> summaryMap, Map<String, String[]> parameterMap) {
         if (Objects.isNull(parameterMap) || parameterMap.isEmpty()) {
             return;
@@ -535,13 +628,15 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
                                          Throwable throwable,
                                          String content,
                                          String requestBody,
-                                         String responseBody) {
+                                         String responseBody,
+                                         Integer hostId) {
         SystemLog systemLog = new SystemLog();
         systemLog.setRequestId(requestId);
         systemLog.setLogType("API");
         systemLog.setLevel(level);
         systemLog.setMethod(request.getMethod());
         systemLog.setUri(request.getRequestURI());
+        systemLog.setHostId(hostId);
         systemLog.setPathPattern(pathPattern);
         systemLog.setHandler(handler);
         systemLog.setClientIp(clientIp);

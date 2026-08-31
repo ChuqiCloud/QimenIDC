@@ -31,6 +31,9 @@ public class SystemLog extends Model<SystemLog> {
 
     private String uri;
 
+    /** 数据库中的虚拟机主键；非虚拟机操作为空。 */
+    private Integer hostId;
+
     private String pathPattern;
 
     private String handler;
