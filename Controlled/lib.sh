@@ -3,6 +3,28 @@
 find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
 apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
+
+# lsof is required by the VNC proxy process to detect its listening port.
+function ensure_lsof(){
+    if command -v lsof >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Error: lsof is required, but apt-get is not available."
+        exit 1
+    fi
+
+    echo "lsof is not installed. Installing it now..."
+    apt-get install -y lsof
+
+    if ! command -v lsof >/dev/null 2>&1; then
+        echo "Error: lsof installation failed."
+        exit 1
+    fi
+}
+
+ensure_lsof
 pip3.10 install -r /home/software/QAgent/requirements.txt
 rm -rf /usr/share/qemu-server/bootsplash.jpg
 mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
