@@ -75,6 +75,8 @@ create table flowdata
     hostid      int              null,
     rrd         json             null,
     used_flow   double default 0 not null comment '已用流量',
+    in_flow     double default 0 not null comment '入站流量（对应PVE netin）',
+    out_flow    double default 0 not null comment '出站流量（对应PVE netout）',
     status      int    default 0 not null comment '0=未同步;1=已同步',
     create_date varchar(20)      null,
     index idx_flowdata_host_status_create_date (hostid, status, create_date)
@@ -327,6 +329,8 @@ create table vmhost
     bwlimit               bigint                                     null,
     flow_limit            bigint       default 0                     not null comment '月流量上限',
     used_flow             double       default 0                     not null comment '已用流量',
+    used_in_flow          double       default 0                     not null comment '当月入站/下行流量（单位字节）',
+    used_out_flow         double       default 0                     not null comment '当月出站/上行流量（单位字节）',
     flow_type             varchar(10)  default 'in+out'              not null comment '流量计费类型 in/out/in+out',
     last_reset_flow       bigint       default 0                     not null comment '上次重置流量月份',
     args                  text                                       null,

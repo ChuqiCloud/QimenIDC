@@ -60,12 +60,10 @@ public class FlowServiceImpl implements FlowService {
         FlowCounter currentCounter = getCurrentFlowCounter(hostId, collectTime);
         FlowCounter previousCounter = getSavedFlowCounter(flowdata);
         if (currentCounter != null && previousCounter != null && !currentCounter.isResetFrom(previousCounter)) {
-            BigDecimal counterIncrement = FlowTypeUtil.calculate(
-                    currentCounter.netin.subtract(previousCounter.netin),
-                    currentCounter.netout.subtract(previousCounter.netout),
-                    vmhost.getFlowType());
+            BigDecimal inIncrement = currentCounter.netin.subtract(previousCounter.netin);
+            BigDecimal outIncrement = currentCounter.netout.subtract(previousCounter.netout);
             return flowdataService.insertFlowdata(
-                    buildCounterFlowdata(vmhost, hostId, currentCounter, counterIncrement));
+                    buildCounterFlowdata(vmhost, hostId, currentCounter, inIncrement, outIncrement));
         }
 
         long baselineTimestamp = flowdata == null || flowdata.getCreateDate() == null
@@ -80,13 +78,13 @@ public class FlowServiceImpl implements FlowService {
         if (newFlowdata == null && currentCounter != null && previousCounter != null
                 && currentCounter.isResetFrom(previousCounter)) {
             newFlowdata = buildCounterFlowdata(vmhost, hostId, currentCounter,
-                    FlowTypeUtil.calculate(currentCounter.netin, currentCounter.netout, vmhost.getFlowType()));
+                    currentCounter.netin, currentCounter.netout);
         }
 
         if (newFlowdata == null && currentCounter != null && flowdata == null
                 && (vmhost.getUsedFlow() == null || vmhost.getUsedFlow() == 0D)) {
             newFlowdata = buildCounterFlowdata(vmhost, hostId, currentCounter,
-                    FlowTypeUtil.calculate(currentCounter.netin, currentCounter.netout, vmhost.getFlowType()));
+                    currentCounter.netin, currentCounter.netout);
         }
 
         if (newFlowdata == null && currentCounter != null) {
@@ -137,6 +135,8 @@ public class FlowServiceImpl implements FlowService {
             return false;
         }
         BigDecimal totalUsedFlow = BigDecimal.ZERO;
+        BigDecimal totalInFlow = BigDecimal.ZERO;
+        BigDecimal totalOutFlow = BigDecimal.ZERO;
         boolean hasSyncedFlowdata = false;
         while (true) {
             QueryWrapper<Flowdata> flowdataQueryWrapper = new QueryWrapper<>();
@@ -162,6 +162,16 @@ public class FlowServiceImpl implements FlowService {
                     .filter(Objects::nonNull)
                     .map(BigDecimal::valueOf)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal batchInFlow = flowdataList.stream()
+                    .map(Flowdata::getInFlow)
+                    .filter(Objects::nonNull)
+                    .map(BigDecimal::valueOf)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal batchOutFlow = flowdataList.stream()
+                    .map(Flowdata::getOutFlow)
+                    .filter(Objects::nonNull)
+                    .map(BigDecimal::valueOf)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             UpdateWrapper<Flowdata> updateWrapper = new UpdateWrapper<>();
             updateWrapper.in("id", ids);
@@ -171,14 +181,26 @@ public class FlowServiceImpl implements FlowService {
                 break;
             }
             totalUsedFlow = totalUsedFlow.add(batchUsedFlow);
+            totalInFlow = totalInFlow.add(batchInFlow);
+            totalOutFlow = totalOutFlow.add(batchOutFlow);
             hasSyncedFlowdata = true;
         }
 
         if (!hasSyncedFlowdata) {
             return true;
         }
-        if (totalUsedFlow.compareTo(BigDecimal.ZERO) > 0) {
-            newVmhost.setUsedFlow(addFlow(newVmhost.getUsedFlow(), totalUsedFlow));
+        if (totalUsedFlow.compareTo(BigDecimal.ZERO) > 0
+                || totalInFlow.compareTo(BigDecimal.ZERO) > 0
+                || totalOutFlow.compareTo(BigDecimal.ZERO) > 0) {
+            if (totalUsedFlow.compareTo(BigDecimal.ZERO) > 0) {
+                newVmhost.setUsedFlow(addFlow(newVmhost.getUsedFlow(), totalUsedFlow));
+            }
+            if (totalInFlow.compareTo(BigDecimal.ZERO) > 0) {
+                newVmhost.setUsedInFlow(addFlow(newVmhost.getUsedInFlow(), totalInFlow));
+            }
+            if (totalOutFlow.compareTo(BigDecimal.ZERO) > 0) {
+                newVmhost.setUsedOutFlow(addFlow(newVmhost.getUsedOutFlow(), totalOutFlow));
+            }
             if (!vmhostService.updateById(newVmhost)) {
                 throw new IllegalStateException("同步虚拟机流量失败: hostId=" + newVmhost.getId());
             }
@@ -206,6 +228,8 @@ public class FlowServiceImpl implements FlowService {
     private Flowdata buildFlowdataFromRrd(Vmhost vmhost, Integer hostId, JSONArray hourHistoryDataArray, long baselineTimestamp) {
         Map<String,String> hourHistoryDataMap = new HashMap<>();
         BigDecimal usedFlow = BigDecimal.ZERO;
+        BigDecimal inFlow = BigDecimal.ZERO;
+        BigDecimal outFlow = BigDecimal.ZERO;
         BigDecimal baselineTime = baselineTimestamp <= 0
                 ? null : BigDecimal.valueOf(baselineTimestamp).divide(BigDecimal.valueOf(1000));
         BigDecimal lastRrdTime = null;
@@ -235,9 +259,13 @@ public class FlowServiceImpl implements FlowService {
                 if (dtime.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal netin = getRrdValue(hourHistoryDataObject, "netin");
                     BigDecimal netout = getRrdValue(hourHistoryDataObject, "netout");
-                    BigDecimal flow = FlowTypeUtil.calculate(netin, netout, vmhost.getFlowType()).multiply(dtime);
+                    BigDecimal in = netin.multiply(dtime);
+                    BigDecimal out = netout.multiply(dtime);
+                    BigDecimal flow = FlowTypeUtil.calculate(in, out, vmhost.getFlowType());
                     hourHistoryDataMap.put(Long.toString(time), flow.toPlainString());
                     usedFlow = usedFlow.add(flow);
+                    inFlow = inFlow.add(in);
+                    outFlow = outFlow.add(out);
                 }
             }
             lastRrdTime = currentTime;
@@ -249,17 +277,28 @@ public class FlowServiceImpl implements FlowService {
         Flowdata newFlowdata = buildEmptyFlowdata(vmhost, hostId, maxTime);
         newFlowdata.setRrd(hourHistoryDataMap);
         newFlowdata.setUsedFlow(usedFlow.doubleValue());
+        newFlowdata.setInFlow(inFlow.doubleValue());
+        newFlowdata.setOutFlow(outFlow.doubleValue());
         return newFlowdata;
     }
 
-    private Flowdata buildCounterFlowdata(Vmhost vmhost, Integer hostId, FlowCounter counter, BigDecimal increment) {
+    private Flowdata buildCounterFlowdata(Vmhost vmhost, Integer hostId, FlowCounter counter,
+                                          BigDecimal inIncrement, BigDecimal outIncrement) {
         Flowdata newFlowdata = buildEmptyFlowdata(vmhost, hostId, counter.collectTime);
-        BigDecimal normalizedIncrement = increment == null || increment.compareTo(BigDecimal.ZERO) < 0
-                ? BigDecimal.ZERO : increment;
-        newFlowdata.setUsedFlow(normalizedIncrement.doubleValue());
-        newFlowdata.getRrd().put(Long.toString(counter.collectTime), normalizedIncrement.toPlainString());
+        BigDecimal normalizedIn = normalizeIncrement(inIncrement);
+        BigDecimal normalizedOut = normalizeIncrement(outIncrement);
+        BigDecimal usedFlow = FlowTypeUtil.calculate(normalizedIn, normalizedOut, vmhost.getFlowType());
+        newFlowdata.setInFlow(normalizedIn.doubleValue());
+        newFlowdata.setOutFlow(normalizedOut.doubleValue());
+        newFlowdata.setUsedFlow(usedFlow.doubleValue());
+        newFlowdata.getRrd().put(Long.toString(counter.collectTime), usedFlow.toPlainString());
         saveFlowCounter(newFlowdata, counter);
         return newFlowdata;
+    }
+
+    private BigDecimal normalizeIncrement(BigDecimal increment) {
+        return increment == null || increment.compareTo(BigDecimal.ZERO) < 0
+                ? BigDecimal.ZERO : increment;
     }
 
     private FlowCounter getCurrentFlowCounter(Integer hostId, long collectTime) {
@@ -310,6 +349,8 @@ public class FlowServiceImpl implements FlowService {
         newFlowdata.setHostid(hostId);
         newFlowdata.setRrd(new HashMap<>());
         newFlowdata.setUsedFlow(0.00);
+        newFlowdata.setInFlow(0.00);
+        newFlowdata.setOutFlow(0.00);
         newFlowdata.setCreateDate(createDate);
         return newFlowdata;
     }

@@ -4171,6 +4171,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public Boolean resetVmHostFlow (int hostId) {
         Vmhost vmhost = this.getById(hostId);
         vmhost.setUsedFlow(0.0);
+        vmhost.setUsedInFlow(0.0);
+        vmhost.setUsedOutFlow(0.0);
         return this.updateById(vmhost);
     }
     /**

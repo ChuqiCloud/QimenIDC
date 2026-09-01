@@ -446,6 +446,8 @@ public class FlowDataCron {
 
     private void resetVmFlow(Vmhost vmhost) {
         vmhost.setUsedFlow(0.00);
+        vmhost.setUsedInFlow(0.00);
+        vmhost.setUsedOutFlow(0.00);
         vmhost.setExtraFlowLimit(0L);
         vmhost.setLastResetFlow(System.currentTimeMillis());
         vmhostService.updateById(vmhost);

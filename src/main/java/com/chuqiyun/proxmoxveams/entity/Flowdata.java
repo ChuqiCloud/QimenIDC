@@ -32,6 +32,10 @@ public class Flowdata extends Model<Flowdata> {
     private Map<String,String> rrd;
     //已用流量
     private Double usedFlow;
+    //入站流量（对应 PVE netin）
+    private Double inFlow;
+    //出站流量（对应 PVE netout）
+    private Double outFlow;
     //0=未同步;1=已同步
     private Integer status;
     

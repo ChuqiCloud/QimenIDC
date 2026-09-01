@@ -16,6 +16,10 @@ public class VmHostDto {
     private Vmhost vmhost;
     private Os os;
     private JSONObject current;
+    /**
+     * 虚拟机累计运行时间，单位：秒；虚拟机关机或状态获取失败时为 null
+     */
+    private Long uptime;
     private JSONObject rrddata;
     private JSONObject diskUsage;
 }

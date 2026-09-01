@@ -199,9 +199,17 @@ public class VmInfoServiceImpl implements VmInfoService {
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         vmHostDto.setRrddata(getVmInfoRrdDataAllTime(hostId, "AVERAGE"));
         try {
-            vmHostDto.setCurrent(proxmoxApiUtil.getVmStatus(node, cookieMap, vmhost.getVmid()));
+            JSONObject current = proxmoxApiUtil.getVmStatus(node, cookieMap, vmhost.getVmid());
+            vmHostDto.setCurrent(current);
+            if (current != null) {
+                JSONObject currentData = current.getJSONObject("data");
+                if (currentData != null) {
+                    vmHostDto.setUptime(currentData.getLong("uptime"));
+                }
+            }
         }catch(Exception e){
             vmHostDto.setCurrent(null);
+            vmHostDto.setUptime(null);
         }
         try {
             JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());

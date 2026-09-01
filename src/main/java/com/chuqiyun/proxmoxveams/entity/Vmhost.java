@@ -83,6 +83,14 @@ public class Vmhost extends Model<Vmhost> {
      */
     private Double usedFlow;
     /**
+     * 当月入站/下行流量（对应 PVE netin，单位字节）
+     */
+    private Double usedInFlow;
+    /**
+     * 当月出站/上行流量（对应 PVE netout，单位字节）
+     */
+    private Double usedOutFlow;
+    /**
      * 流量计费类型 in/out/in+out，默认入流量和出流量相加
      */
     private String flowType;

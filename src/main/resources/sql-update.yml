@@ -488,3 +488,12 @@ build: # 内部构建版本信息
       - "alter table system_log
                    add host_id int null comment '虚拟机数据库ID' after uri,
                    add index idx_system_log_host_id_create_time (host_id, create_time);"
+    6:
+      - "alter table flowdata
+                   add in_flow double default 0 not null comment '入站流量（对应PVE netin）' after used_flow,
+                   add out_flow double default 0 not null comment '出站流量（对应PVE netout）' after in_flow;"
+  1.3.3:
+    1:
+      - "alter table vmhost
+                   add used_in_flow double default 0 not null comment '当月入站/下行流量（单位字节）' after used_flow,
+                   add used_out_flow double default 0 not null comment '当月出站/上行流量（单位字节）' after used_in_flow;"
