@@ -119,6 +119,10 @@ public interface VmhostService extends IService<Vmhost> {
     boolean addVmSnapShot(Vmhost vmhost, String snapName , Boolean vmstate, String description);
     boolean deleteVmSnapShot(Vmhost vmhost, String snapName);
     boolean rollbackVmSnapShot(Vmhost vmhost, String snapName);
+
+    UnifiedResultDto<Object> addVmDataDisk(Long hostId, Integer size, String storage);
+
+    UnifiedResultDto<Object> deleteVmDataDisk(Long hostId, String disk);
     /**
      * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表

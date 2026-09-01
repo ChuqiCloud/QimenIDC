@@ -544,6 +544,40 @@ public class SysVmHostController {
         }
         return ResponseResult.ok("操作成功");
     }
+
+    /**
+     * @Author: 星禾
+     * @Description: 为指定虚拟机新增数据盘
+     * @DateTime: 2026/9/1 13:20
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/addVmDataDisk/{hostId}", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object addVmDataDisk(@PathVariable("hostId") Long hostId,
+                                @RequestParam("size") Integer size,
+                                @RequestParam(value = "storage", required = false) String storage) {
+        UnifiedResultDto<Object> resultDto = vmhostService.addVmDataDisk(hostId, size, storage);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 删除指定虚拟机数据盘
+     * @DateTime: 2026/9/1 13:20
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/deleteVmDataDisk/{hostId}/{disk}", method = {RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
+    public Object deleteVmDataDisk(@PathVariable("hostId") Long hostId,
+                                   @PathVariable("disk") String disk) {
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVmDataDisk(hostId, disk);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
     /**
      * @Author: 星禾
      * @Description: pve虚拟机回滚快照

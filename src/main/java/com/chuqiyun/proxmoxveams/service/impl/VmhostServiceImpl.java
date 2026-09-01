@@ -4277,6 +4277,204 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         proxmoxApiUtil.rollbackVmSnapShot(node,cookieMap,vmhost.getVmid(),snapName);
         return true;
     }
+
+    @Override
+    public UnifiedResultDto<Object> addVmDataDisk(Long hostId, Integer size, String storage) {
+        if (hostId == null || size == null || size <= 0) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "hostId和size必须有效，size必须大于0");
+        }
+        Vmhost vmhost = this.getById(hostId);
+        if (vmhost == null || Objects.equals(vmhost.getDeleteState(), 1)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 4) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 5) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
+        }
+        if (vmhost.getStatus() != null && (vmhost.getStatus() == 6 || vmhost.getStatus() == 13)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        if (!masterService.isNodeOnline(node.getId())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
+        }
+        String targetStorage = StringUtils.defaultIfBlank(storage, vmhost.getStorage());
+        if (StringUtils.isBlank(targetStorage)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "数据盘存储不能为空");
+        }
+        if (!targetStorage.matches("[A-Za-z0-9_.-]+")) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "数据盘存储名称不合法");
+        }
+
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
+        if (vmConfig == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "获取虚拟机配置失败");
+        }
+        String disk = null;
+        for (int slot = 1; slot <= 30; slot++) {
+            String candidate = "scsi" + slot;
+            if (!vmConfig.containsKey(candidate)) {
+                disk = candidate;
+                break;
+            }
+        }
+        if (disk == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "虚拟机已达到数据盘数量上限");
+        }
+        try {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), disk,
+                    targetStorage + ":" + size + "G,discard=on");
+            Map<Object, Object> dataDisk = new LinkedHashMap<>();
+            if (vmhost.getDataDisk() != null) {
+                dataDisk.putAll(vmhost.getDataDisk());
+            }
+            Map<String, Object> diskInfo = new LinkedHashMap<>();
+            diskInfo.put("size", size);
+            diskInfo.put("storage", targetStorage);
+            dataDisk.put(disk, diskInfo);
+            vmhost.setDataDisk(dataDisk);
+            if (!this.updateById(vmhost)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "数据盘已创建但数据库同步失败");
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("disk", disk);
+            result.put("size", size);
+            result.put("storage", targetStorage);
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, result);
+        } catch (Exception e) {
+            log.error("新增虚拟机数据盘失败: hostId={}, vmId={}, disk={}", hostId, vmhost.getVmid(), disk, e);
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "新增数据盘失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public UnifiedResultDto<Object> deleteVmDataDisk(Long hostId, String disk) {
+        if (hostId == null || StringUtils.isBlank(disk) || !disk.matches("(?i)^scsi[1-9][0-9]*$")) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "disk必须是scsi1及以上的数据盘设备名");
+        }
+        Vmhost vmhost = this.getById(hostId);
+        if (vmhost == null || Objects.equals(vmhost.getDeleteState(), 1)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 4) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 5) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
+        }
+        if (vmhost.getStatus() != null && (vmhost.getStatus() == 6 || vmhost.getStatus() == 13)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        if (!masterService.isNodeOnline(node.getId())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
+        }
+        String normalizedDisk = disk.toLowerCase(Locale.ROOT);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
+        if (vmConfig == null || !vmConfig.containsKey(normalizedDisk)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "指定数据盘不存在");
+        }
+        try {
+            proxmoxApiUtil.deleteVmDisk(node, cookieMap, vmhost.getVmid(), normalizedDisk);
+            Map<Object, Object> dataDisk = new LinkedHashMap<>();
+            if (vmhost.getDataDisk() != null) {
+                dataDisk.putAll(vmhost.getDataDisk());
+            }
+            removeDataDiskEntry(dataDisk, normalizedDisk);
+            vmhost.setDataDisk(dataDisk);
+            if (!this.updateById(vmhost)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "数据盘已删除但数据库同步失败");
+            }
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, Collections.singletonMap("disk", normalizedDisk));
+        } catch (Exception e) {
+            log.error("删除虚拟机数据盘失败: hostId={}, vmId={}, disk={}", hostId, vmhost.getVmid(), normalizedDisk, e);
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "删除数据盘失败: " + e.getMessage());
+        }
+    }
+
+    private void removeDataDiskEntry(Map<Object, Object> dataDisk, String disk) {
+        if (dataDisk == null || dataDisk.isEmpty()) {
+            return;
+        }
+        int slot = Integer.parseInt(disk.substring(4));
+        boolean removed = false;
+        Iterator<Map.Entry<Object, Object>> iterator = dataDisk.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Object, Object> entry = iterator.next();
+            Object key = entry.getKey();
+            if (disk.equalsIgnoreCase(String.valueOf(key)) || slot == parseDiskSlot(key, entry.getValue())) {
+                iterator.remove();
+                removed = true;
+            }
+        }
+        if (removed) {
+            return;
+        }
+
+        // 兼容旧数据：无 scsiN 键时，按 DataDiskUtil 的槽位分配规则定位数据盘。
+        List<Map.Entry<Object, Object>> entries = new ArrayList<>(dataDisk.entrySet());
+        entries.sort(Comparator.comparingInt(entry -> {
+            int entrySlot = parseDiskSlot(entry.getKey(), entry.getValue());
+            return entrySlot < 1 ? Integer.MAX_VALUE : entrySlot;
+        }));
+        Set<Integer> usedSlots = new HashSet<>();
+        int nextSlot = 1;
+        for (Map.Entry<Object, Object> entry : entries) {
+            int entrySlot = parseDiskSlot(entry.getKey(), entry.getValue());
+            int assignedSlot = entrySlot < 1 ? nextSlot : entrySlot;
+            while (assignedSlot < 1 || usedSlots.contains(assignedSlot)) {
+                assignedSlot = nextSlot;
+                nextSlot++;
+            }
+            usedSlots.add(assignedSlot);
+            nextSlot = Math.max(nextSlot, assignedSlot + 1);
+            if (assignedSlot == slot) {
+                dataDisk.remove(entry.getKey());
+                return;
+            }
+        }
+    }
+
+    private int parseDiskSlot(Object key, Object value) {
+        String keyText = key == null ? "" : key.toString().trim();
+        Matcher matcher = Pattern.compile("(?i)^scsi(\\d+)$").matcher(keyText);
+        if (matcher.matches()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+        if (key instanceof Number || keyText.matches("\\d+")) {
+            try {
+                return Integer.parseInt(keyText);
+            } catch (NumberFormatException ignored) {
+                return -1;
+            }
+        }
+        if (value instanceof Map<?, ?> valueMap) {
+            Object valueSlot = valueMap.get("slot");
+            if (valueSlot == null) {
+                valueSlot = valueMap.get("index");
+            }
+            if (valueSlot != null) {
+                try {
+                    return Integer.parseInt(valueSlot.toString());
+                } catch (NumberFormatException ignored) {
+                    return -1;
+                }
+            }
+        }
+        return -1;
+    }
     /**
      * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表

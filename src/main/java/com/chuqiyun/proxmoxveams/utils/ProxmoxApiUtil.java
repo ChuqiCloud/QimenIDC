@@ -371,13 +371,36 @@ public class ProxmoxApiUtil {
     * @Return Boolean 是否成功
     */
     public void deleteVmDisk(Master node, HashMap<String,String> cookie, Integer vmid, String disk) throws UnauthorizedException {
+        JSONObject config = getVmConfig(node, cookie, vmid);
+        if (config == null) {
+            throw new UnauthorizedException("获取虚拟机磁盘配置失败");
+        }
+        String diskValue = config.getString(disk);
+        if (diskValue == null || diskValue.trim().isEmpty()) {
+            throw new IllegalArgumentException("虚拟机磁盘不存在: " + disk);
+        }
+        String diskVolume = diskValue.split(",", 2)[0];
         // 分离磁盘
         HashMap<String,Object> params = new HashMap<>();
         params.put("delete",disk);
         putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
-        // 删除磁盘
-        params.put("delete","unused0");
-        putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+
+        // PVE 分离后会将磁盘放入 unusedN，只删除本次分离出的对应卷。
+        JSONObject refreshedConfig = getVmConfig(node, cookie, vmid);
+        if (refreshedConfig == null) {
+            throw new UnauthorizedException("获取虚拟机磁盘配置失败");
+        }
+        for (String key : refreshedConfig.keySet()) {
+            if (!key.matches("unused\\d+")) {
+                continue;
+            }
+            String unusedValue = refreshedConfig.getString(key);
+            if (unusedValue != null && unusedValue.split(",", 2)[0].equals(diskVolume)) {
+                params.put("delete", key);
+                putNodeApi(node,cookie,"/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config",params);
+                return;
+            }
+        }
     }
     
     /**
