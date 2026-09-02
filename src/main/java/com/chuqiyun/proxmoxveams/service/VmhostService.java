@@ -123,6 +123,8 @@ public interface VmhostService extends IService<Vmhost> {
     UnifiedResultDto<Object> addVmDataDisk(Long hostId, Integer size, String storage);
 
     UnifiedResultDto<Object> deleteVmDataDisk(Long hostId, String disk);
+
+    UnifiedResultDto<Object> resizeVmDataDisk(Long hostId, String disk, Integer size);
     /**
      * @Author: 星禾
      * @Description: 获取指定虚拟机备份列表

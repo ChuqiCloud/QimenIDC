@@ -4406,6 +4406,113 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
     }
 
+    @Override
+    public UnifiedResultDto<Object> resizeVmDataDisk(Long hostId, String disk, Integer size) {
+        if (hostId == null || size == null || size <= 0
+                || StringUtils.isBlank(disk) || !disk.matches("(?i)^scsi[1-9][0-9]*$")) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "hostId、size必须有效，disk必须是scsi1及以上的数据盘设备名");
+        }
+        Vmhost vmhost = this.getById(hostId);
+        if (vmhost == null || Objects.equals(vmhost.getDeleteState(), 1)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 4) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_DISABLED, null);
+        }
+        if (vmhost.getStatus() != null && vmhost.getStatus() == 5) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
+        }
+        if (vmhost.getStatus() != null && (vmhost.getStatus() == 6 || vmhost.getStatus() == 13)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+        }
+        Master node = masterService.getById(vmhost.getNodeid());
+        if (node == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_EXIST, null);
+        }
+        if (!masterService.isNodeOnline(node.getId())) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NODE_NOT_AVAILABLE, null);
+        }
+
+        String normalizedDisk = disk.toLowerCase(Locale.ROOT);
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(node.getId());
+        JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
+        if (vmConfig == null || !vmConfig.containsKey(normalizedDisk)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "指定数据盘不存在");
+        }
+        Integer currentSize = getDataDiskSizeGb(vmConfig.getString(normalizedDisk));
+        if (currentSize == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "无法识别指定数据盘当前容量");
+        }
+        if (size <= currentSize) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "数据盘仅支持扩容，目标容量必须大于当前容量" + currentSize + "G");
+        }
+        try {
+            HashMap<String, Object> params = new HashMap<>();
+            params.put("disk", normalizedDisk);
+            params.put("size", size + "G");
+            proxmoxApiUtil.putNodeApi(node, cookieMap,
+                    "/nodes/" + node.getNodeName() + "/qemu/" + vmhost.getVmid() + "/resize", params);
+
+            Map<Object, Object> dataDisk = new LinkedHashMap<>();
+            if (vmhost.getDataDisk() != null) {
+                dataDisk.putAll(vmhost.getDataDisk());
+            }
+            updateDataDiskEntrySize(dataDisk, normalizedDisk, size);
+            vmhost.setDataDisk(dataDisk);
+            if (!this.updateById(vmhost)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "数据盘已扩容但数据库同步失败");
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("disk", normalizedDisk);
+            result.put("size", size);
+            return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, result);
+        } catch (Exception e) {
+            log.error("扩容虚拟机数据盘失败: hostId={}, vmId={}, disk={}, size={}G",
+                    hostId, vmhost.getVmid(), normalizedDisk, size, e);
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "扩容数据盘失败: " + e.getMessage());
+        }
+    }
+
+    private Integer getDataDiskSizeGb(String diskConfig) {
+        if (StringUtils.isBlank(diskConfig)) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile("(?:^|,)size=(\\d+)(?:\\.\\d+)?G(?:,|$)", Pattern.CASE_INSENSITIVE)
+                .matcher(diskConfig);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void updateDataDiskEntrySize(Map<Object, Object> dataDisk, String disk, Integer size) {
+        int slot = Integer.parseInt(disk.substring(4));
+        for (Map.Entry<Object, Object> entry : dataDisk.entrySet()) {
+            if (!disk.equalsIgnoreCase(String.valueOf(entry.getKey())) && slot != parseDiskSlot(entry.getKey(), entry.getValue())) {
+                continue;
+            }
+            if (entry.getValue() instanceof Map<?, ?>) {
+                Map<Object, Object> diskInfo = new LinkedHashMap<>((Map<Object, Object>) entry.getValue());
+                diskInfo.put("size", size);
+                entry.setValue(diskInfo);
+            } else {
+                entry.setValue(size);
+            }
+            return;
+        }
+        Map<String, Object> diskInfo = new LinkedHashMap<>();
+        diskInfo.put("size", size);
+        dataDisk.put(disk, diskInfo);
+    }
+
     private void removeDataDiskEntry(Map<Object, Object> dataDisk, String disk) {
         if (dataDisk == null || dataDisk.isEmpty()) {
             return;

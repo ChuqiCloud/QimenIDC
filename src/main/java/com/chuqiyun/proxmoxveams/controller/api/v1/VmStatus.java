@@ -278,6 +278,23 @@ public class VmStatus {
 
     /**
      * @Author: 星禾
+     * @Description: 扩容指定虚拟机数据盘
+     * @DateTime: 2026/9/2 13:20
+     */
+    @PublicSysApiCheck
+    @RequestMapping(value = "/pve/resizeVmDataDisk/{hostId}/{disk}", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object resizeVmDataDisk(@PathVariable("hostId") Long hostId,
+                                   @PathVariable("disk") String disk,
+                                   @RequestParam("size") Integer size) {
+        UnifiedResultDto<Object> resultDto = vmhostService.resizeVmDataDisk(hostId, disk, size);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
+        }
+        return ResponseResult.ok(resultDto.getData());
+    }
+
+    /**
+     * @Author: 星禾
      * @Description: pve虚拟机回滚快照
      * @DateTime: 2026/5/24 20:39
      */
