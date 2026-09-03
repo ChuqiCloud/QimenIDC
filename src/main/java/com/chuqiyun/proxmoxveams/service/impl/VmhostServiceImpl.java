@@ -3136,6 +3136,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost.getIpConfig() != null) {
             ipConfig.putAll(vmhost.getIpConfig());
         }
+        if (isNatIpv6Scenario(vmhost)) {
+            syncDualNicIpv6CloudInitNetwork(vmhost, node, nameservers, ipConfig);
+            return;
+        }
         String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(ipConfig);
         if (StringUtils.isBlank(primaryIpConfig)) {
             throw new IllegalStateException("虚拟机IP配置为空: hostId=" + vmhost.getId());
@@ -3143,6 +3147,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+        removeIndependentIpv6NicIfPresent(proxmoxApiUtil, node, cookieMap, vmhost, pveVmConfig);
         proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
         if (nameservers != null && !nameservers.isEmpty()) {
             proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "nameserver", String.join(" ", nameservers));
@@ -3163,6 +3168,86 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
         proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
         syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
+    }
+
+    private void syncDualNicIpv6CloudInitNetwork(Vmhost vmhost, Master node, List<String> nameservers,
+                                                  HashMap<String, String> ipConfig) {
+        String primaryIpv4Config = CloudInitNetworkUtil.getPrimaryIpConfig(ipConfig, false);
+        String primaryIpv6Config = CloudInitNetworkUtil.getPrimaryIpConfig(ipConfig, true);
+        if (StringUtils.isBlank(primaryIpv4Config) || StringUtils.isBlank(primaryIpv6Config)) {
+            throw new IllegalStateException("NAT IPv4/独立 IPv6 配置不完整: hostId=" + vmhost.getId());
+        }
+        HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        JSONObject pveVmConfig = getPveVmConfig(proxmoxApiUtil, node, cookieMap, vmhost);
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig0", primaryIpv4Config);
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig1", primaryIpv6Config);
+
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String net0Mac = CloudInitNetworkUtil.extractMacAddress(net0Config);
+        if (StringUtils.isBlank(net0Mac)) {
+            net0Mac = CloudInitNetworkUtil.buildStableMacAddress(vmhost.getNodeid(), vmhost.getVmid());
+        }
+        String net1Config = pveVmConfig == null ? null : pveVmConfig.getString("net1");
+        String net1Mac = CloudInitNetworkUtil.extractMacAddress(net1Config);
+        if (StringUtils.isBlank(net1Mac)) {
+            net1Mac = CloudInitNetworkUtil.buildStableMacAddress(vmhost.getNodeid(), vmhost.getVmid(), 1);
+        }
+        String net0Bridge = resolveNet0Bridge(vmhost, net0Config);
+        String desiredNet0 = CloudInitNetworkUtil.ensurePveNet0Config(
+                net0Config, net0Bridge, net0Mac, formatBandwidth(vmhost.getBandwidth()), false);
+        if (StringUtils.isNotBlank(desiredNet0) && !StringUtils.equals(desiredNet0, net0Config)) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0);
+        }
+        String desiredNet1 = CloudInitNetworkUtil.buildPveNet0Config(
+                "vmbr0", net1Mac, formatBandwidth(vmhost.getBandwidth()), false);
+        if (!StringUtils.equals(desiredNet1, net1Config)) {
+            proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net1", desiredNet1);
+        }
+
+        if (isWindowsVm(vmhost)) {
+            removeCicustomNetworkConfig(proxmoxApiUtil, node, cookieMap, vmhost, pveVmConfig);
+            proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+            return;
+        }
+        try {
+            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmhost.getVmid(), ipConfig, nameservers,
+                    net0Mac, net1Mac);
+        } catch (Exception e) {
+            throw new IllegalStateException("写入cloud-init双网卡IPv4/IPv6配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+        proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "cicustom",
+                mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
+        proxmoxApiUtil.resetVmCloudinit(node, cookieMap, vmhost.getVmid());
+        syncVmFirewallProtectionForVmhost(vmhost, CloudInitNetworkUtil.getFirewallCidrList(ipConfig));
+    }
+
+    private boolean isNatIpv6Scenario(Vmhost vmhost) {
+        return vmhost != null
+                && !isVpcNetwork(vmhost)
+                && Objects.equals(vmhost.getIfnat(), 1)
+                && !CloudInitNetworkUtil.getIpv6List(vmhost.getIpConfig()).isEmpty();
+    }
+
+    private String formatBandwidth(Integer bandwidth) {
+        if (bandwidth == null) {
+            return null;
+        }
+        return String.format(Locale.US, "%.2f", bandwidth / 8.0);
+    }
+
+    private void removeIndependentIpv6NicIfPresent(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                                   HashMap<String, String> cookieMap, Vmhost vmhost,
+                                                   JSONObject pveVmConfig) {
+        if (pveVmConfig == null || vmhost == null || vmhost.getVmid() == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(pveVmConfig.getString("ipconfig1"))) {
+            proxmoxApiUtil.deleteVmConfig(node, cookieMap, vmhost.getVmid(), "ipconfig1");
+        }
+        if (StringUtils.isNotBlank(pveVmConfig.getString("net1"))) {
+            proxmoxApiUtil.deleteVmConfig(node, cookieMap, vmhost.getVmid(), "net1");
+        }
     }
 
     private boolean isWindowsVm(Vmhost vmhost) {
@@ -3280,6 +3365,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             if (StringUtils.isNotBlank(desiredNet0Config) && !desiredNet0Config.equals(net0Config)) {
                 proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net0", desiredNet0Config);
                 vmhost.setNet0(desiredNet0Config);
+            }
+            if (isNatIpv6Scenario(vmhost)) {
+                String net1Config = pveVmConfig == null ? null : pveVmConfig.getString("net1");
+                String desiredNet1Config = CloudInitNetworkUtil.ensurePveNet0Rate(net1Config, rate);
+                if (StringUtils.isNotBlank(desiredNet1Config) && !desiredNet1Config.equals(net1Config)) {
+                    proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), "net1", desiredNet1Config);
+                }
             }
         } catch (Exception e) {
             throw new IllegalStateException("同步虚拟机带宽配置失败: vmid=" + vmhost.getVmid(), e);

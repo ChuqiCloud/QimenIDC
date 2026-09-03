@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
@@ -17,14 +18,15 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -54,13 +56,36 @@ public class CreateVmCron {
     private MasterService masterService;
     @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
+    @Resource(name = "createVmExecutor")
+    private TaskExecutor createVmExecutor;
+
+    private final Semaphore createVmSlots = new Semaphore(4);
 
     /**
      * 创建虚拟机
      */
-    @Async
     @Scheduled(fixedDelay = 2000)
     public void createVm() {
+        // Do not enqueue more workflows than the dedicated executor can safely run.
+        // Each workflow waits for child tasks, so its workers must stay isolated from them.
+        if (!createVmSlots.tryAcquire()) {
+            return;
+        }
+        try {
+            createVmExecutor.execute(() -> {
+                try {
+                    processCreateVm();
+                } finally {
+                    createVmSlots.release();
+                }
+            });
+        } catch (RuntimeException e) {
+            createVmSlots.release();
+            log.error("提交创建虚拟机任务失败", e);
+        }
+    }
+
+    private void processCreateVm() {
         // 获取TaskType为CREATE_VM的任务列表
         QueryWrapper<Task> queryWrap = new QueryWrapper<>();
         queryWrap.eq("type", TaskType.CREATE_VM);
@@ -71,9 +96,12 @@ public class CreateVmCron {
         if (taskPage.getRecords().size() > 0){
             // 获取任务
             Task task = taskPage.getRecords().get(0);
-            // 设置任务状态为1 1为正在执行
-            task.setStatus(1);
-            taskService.updateById(task);
+            // Atomically claim the task so concurrent scheduler invocations cannot process it twice.
+            UpdateWrapper<Task> claimWrapper = new UpdateWrapper<>();
+            claimWrapper.eq("id", task.getId()).eq("status", 0).set("status", 1);
+            if (!taskService.update(claimWrapper)) {
+                return;
+            }
             // 获取任务的参数
             Map<Object,Object> params = task.getParams();
             // 转换为VmParams
@@ -104,8 +132,7 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 return;
             }
-            Map<Object, Object> taskMap = new HashMap<>();
-            taskMap.put(String.valueOf(System.currentTimeMillis()), task.getId());
+            try {
             //vmParams.setTask(params);
             int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
             Master createNode = masterService.getById(vmParams.getNodeid());
@@ -232,31 +259,16 @@ public class CreateVmCron {
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 task.setError("创建导入操作系统任务失败");
-                taskService.updateById(importTask);
+                taskService.updateById(task);
                 return;
             }
             // 添加任务流程
             vmhostService.addVmHostTask(vmhostId, importTask.getId());
-            Task taskStatus;
             // 等待导入操作系统任务完成
-            do {
-                try {
-                    Thread.sleep(3000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(importTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
-                    vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(1);
-                    vmhostService.updateById(vmhost);
-                    return;
-                }
-            } while (taskStatus.getStatus() != 2);
+            if (!waitForTaskCompletion(importTask.getId(), 3000L, 30 * 60 * 1000L)) {
+                finishCreateVmFailed(task, vmhostId, vmParams, vmId, "导入系统盘任务失败或超时");
+                return;
+            }
             // 任务状态为2，任务成功
 
             // 修改系统盘IO限制
@@ -284,21 +296,10 @@ public class CreateVmCron {
             // 添加任务流程
             vmhostService.addVmHostTask(vmhostId, updateSystemDiskIOLimitTask.getId());
             // 等待修改系统盘IO限制任务完成
-            do {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(updateSystemDiskIOLimitTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
-                    return;
-                }
-            } while (taskStatus.getStatus() != 2);
+            if (!waitForTaskCompletion(updateSystemDiskIOLimitTask.getId(), 500L, 10 * 60 * 1000L)) {
+                finishCreateVmFailed(task, vmhostId, vmParams, vmId, "修改系统盘IO限制任务失败或超时");
+                return;
+            }
             // 任务状态为2，任务成功
             // 创建修改系统盘大小任务
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",vmParams.getNodeid(),vmId);
@@ -320,7 +321,7 @@ public class CreateVmCron {
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
                 task.setError("创建修改系统盘大小任务");
-                taskService.updateById(updateSystemDiskTask);
+                taskService.updateById(task);
                 return;
             }
             // 添加任务流程
@@ -328,24 +329,10 @@ public class CreateVmCron {
 
 
             // 等待修改系统盘大小任务完成
-            do {
-                try {
-                    Thread.sleep(20000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(updateSystemDiskTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
-                    vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(1);
-                    vmhostService.updateById(vmhost);
-                    return;
-                }
-            } while (taskStatus.getStatus() != 2);
+            if (!waitForTaskCompletion(updateSystemDiskTask.getId(), 3000L, 30 * 60 * 1000L)) {
+                finishCreateVmFailed(task, vmhostId, vmParams, vmId, "修改系统盘大小任务失败或超时");
+                return;
+            }
             // 任务状态为2，任务成功
             // 创建数据盘任务
             // 判断是否有数据盘或者数据盘大小是否为0
@@ -368,28 +355,17 @@ public class CreateVmCron {
                     // 修改任务状态为失败
                     task.setStatus(3);
                     task.setError("创建数据盘任务失败");
-                    taskService.updateById(createDataDiskTask);
+                    taskService.updateById(task);
                     return;
                 }
                 // 添加任务流程
                 vmhostService.addVmHostTask(vmhostId,createDataDiskTask.getId());
 
                 // 等待创建数据盘任务完成
-                do {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    // 获取任务
-                    taskStatus = taskService.getById(createDataDiskTask.getId());
-                    // 判断任务状态
-                    if (taskStatus.getStatus() == 3) {
-                        // 任务状态为3，任务失败
-                        // 结束任务
-                        return;
-                    }
-                } while (taskStatus.getStatus() != 2);
+                if (!waitForTaskCompletion(createDataDiskTask.getId(), 1000L, 10 * 60 * 1000L)) {
+                    finishCreateVmFailed(task, vmhostId, vmParams, vmId, "创建数据盘任务失败或超时");
+                    return;
+                }
             }
             // 任务状态为2，任务成功
             // 创建修改启动项任务
@@ -411,33 +387,20 @@ public class CreateVmCron {
                 // 修改任务状态为失败
                 task.setStatus(3);
                 task.setError("创建修改启动项任务失败");
-                taskService.updateById(updateBootDiskTask);
+                taskService.updateById(task);
                 vmhost = vmhostService.getById(vmhostId);
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
+                return;
             }
             // 添加任务流程
             vmhostService.addVmHostTask(vmhostId,updateBootDiskTask.getId());
 
             // 等待创建修改启动项任务完成
-            do {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(updateBootDiskTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
-                    vmhost = vmhostService.getById(vmhostId);
-                    vmhost.setStatus(1);
-                    vmhostService.updateById(vmhost);
-                    return;
-                }
-            } while (taskStatus.getStatus() != 2);
+            if (!waitForTaskCompletion(updateBootDiskTask.getId(), 1000L, 10 * 60 * 1000L)) {
+                finishCreateVmFailed(task, vmhostId, vmParams, vmId, "修改启动项任务失败或超时");
+                return;
+            }
 
             // 任务状态为2，任务成功
             // 创建开机任务
@@ -454,10 +417,11 @@ public class CreateVmCron {
                 // 修改任务状态为失败
                 task.setStatus(3);
                 task.setError("添加创建开机任务失败");
-                taskService.updateById(startTask);
+                taskService.updateById(task);
                 vmhost = vmhostService.getById(vmhostId);
                 vmhost.setStatus(1);
                 vmhostService.updateById(vmhost);
+                return;
             }
             // 添加任务流程
             vmhost = vmhostService.getById(vmhostId);
@@ -471,8 +435,13 @@ public class CreateVmCron {
                     vmParams.getInitScriptIds(),
                     "create");
             // 更新主线程任务task状态为2
-            task.setStatus(2);
-            taskService.updateById(task);
+                task.setStatus(2);
+                taskService.updateById(task);
+            } finally {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
 
         }
 
@@ -679,6 +648,38 @@ public class CreateVmCron {
             return "未知错误";
         }
         return e.getMessage();
+    }
+
+    /**
+     * Poll a child task with a finite timeout so a missing or stuck child cannot hold
+     * the creation workflow forever.
+     */
+    private boolean waitForTaskCompletion(Integer taskId, long intervalMillis, long timeoutMillis) {
+        if (taskId == null || intervalMillis <= 0 || timeoutMillis <= 0) {
+            return false;
+        }
+        long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
+        while (System.nanoTime() <= deadline) {
+            Task taskStatus = taskService.getById(taskId);
+            if (taskStatus == null || taskStatus.getStatus() == 3) {
+                return false;
+            }
+            if (taskStatus.getStatus() == 2) {
+                return true;
+            }
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0) {
+                break;
+            }
+            try {
+                long sleepMillis = Math.min(intervalMillis, Math.max(1L, remainingNanos / 1_000_000L));
+                Thread.sleep(sleepMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     private String getCreateVmStorage(String storage, Master node) {

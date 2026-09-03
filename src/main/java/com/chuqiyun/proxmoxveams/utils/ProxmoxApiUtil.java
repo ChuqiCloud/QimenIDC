@@ -66,7 +66,7 @@ public class ProxmoxApiUtil {
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.POST, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {
@@ -117,7 +117,7 @@ public class ProxmoxApiUtil {
 
     // 创建配置了表单支持的 RestTemplate
     private RestTemplate createRestTemplateWithFormSupport() {
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
 
         // 添加支持表单数据的消息转换器
         List<HttpMessageConverter<?>> messageConverters = new ArrayList<>();
@@ -150,7 +150,7 @@ public class ProxmoxApiUtil {
             // 忽略证书验证
             TrustSslUtil.initDefaultSsl();
             // 发送 POST 请求
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
             ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.GET, entity, String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
@@ -189,7 +189,7 @@ public class ProxmoxApiUtil {
         // 忽略证书验证
         TrustSslUtil.initDefaultSsl();
         // 发送 POST 请求
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.PUT, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {
@@ -221,7 +221,7 @@ public class ProxmoxApiUtil {
         TrustSslUtil.initDefaultSsl();
 
         // 发送 DELETE 请求
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(getNodeUrl(node) + url, HttpMethod.DELETE, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {
@@ -250,7 +250,7 @@ public class ProxmoxApiUtil {
 
         TrustSslUtil.initDefaultSsl();
 
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(URI.create(getNodeUrl(node) + encodedUrl), HttpMethod.DELETE, entity, String.class);
 
         if (response.getStatusCode().is2xxSuccessful()) {

@@ -128,7 +128,7 @@ public class DeleteVmCron {
         return vmhost != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType());
     }
 
-    @Async
+    @Async("workflowExecutor")
     @Scheduled(fixedDelay = 2000)
     public void deleteVm() {
         if (!deleteVmRunning.compareAndSet(false, true)) {
@@ -258,7 +258,7 @@ public class DeleteVmCron {
      * @Description: 15分钟运行一次 删除回收站虚拟机
      * @DateTime: 2026/5/23 23:25
      */
-    @Async
+    @Async("workflowExecutor")
     @Scheduled(fixedDelay = 15 * 60 * 1000)
     public void deleteRecycleVm() {
         QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();

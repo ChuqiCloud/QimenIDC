@@ -43,7 +43,13 @@ public class CloudInitNetworkUtil {
     }
 
     public static String buildStableMacAddress(Integer nodeId, Integer vmid) {
-        UUID uuid = UUID.nameUUIDFromBytes(("qimen-" + nodeId + "-" + vmid).getBytes(StandardCharsets.UTF_8));
+        return buildStableMacAddress(nodeId, vmid, 0);
+    }
+
+    public static String buildStableMacAddress(Integer nodeId, Integer vmid, int networkIndex) {
+        String seed = networkIndex == 0 ? "qimen-" + nodeId + "-" + vmid
+                : "qimen-" + nodeId + "-" + vmid + "-net-" + networkIndex;
+        UUID uuid = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
         long value = uuid.getLeastSignificantBits();
         return String.format(Locale.US, "02:%02x:%02x:%02x:%02x:%02x",
                 (value >> 32) & 0xff,
@@ -218,6 +224,20 @@ public class CloudInitNetworkUtil {
         return null;
     }
 
+    /**
+     * 返回指定 IP 版本的首个 PVE ipconfig 配置。IPv4/IPv6 在不同网卡时不能将两个版本
+     * 继续放在同一个 ipconfig 字段中，否则 PVE 会把 IPv6 绑定到 NAT 网卡。
+     */
+    public static String getPrimaryIpConfig(Map<String, String> ipConfig, boolean ipv6) {
+        for (Map.Entry<String, String> entry : getSortedIpConfigEntries(ipConfig)) {
+            String value = getIpConfigForVersion(entry.getValue(), ipv6);
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     public static List<String> getIpList(Map<String, String> ipConfig) {
         List<String> ipList = new ArrayList<>();
         for (CloudInitIpConfig item : parseIpConfigs(ipConfig)) {
@@ -378,6 +398,99 @@ public class CloudInitNetworkUtil {
     public static void uploadSingleNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,
                                                      List<String> nameservers) throws JSchException, SftpException {
         uploadSingleNicNetworkSnippet(node, vmid, ipConfig, nameservers, null);
+    }
+
+    /**
+     * 为 NAT IPv4 + 独立 IPv6 虚拟机生成双网卡 Cloud-Init 配置。
+     * eth0 对应 NAT 网卡，eth1 对应 vmbr0 上的独立 IPv6 网卡。
+     */
+    public static String buildDualNicNetworkConfig(Map<String, String> ipConfig, List<String> nameservers,
+                                                    String net0MacAddress, String net1MacAddress) {
+        List<CloudInitIpConfig> ipConfigs = parseIpConfigs(ipConfig);
+        List<CloudInitIpConfig> ipv4Configs = new ArrayList<>();
+        List<CloudInitIpConfig> ipv6Configs = new ArrayList<>();
+        for (CloudInitIpConfig item : ipConfigs) {
+            (item.ipv6 ? ipv6Configs : ipv4Configs).add(item);
+        }
+        if (ipv4Configs.isEmpty() || ipv6Configs.isEmpty()) {
+            throw new IllegalArgumentException("双网卡 cloud-init 配置必须同时包含 IPv4 和 IPv6");
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("version: 2\n");
+        builder.append("ethernets:\n");
+        appendEthernet(builder, "eth0", ipv4Configs, false, nameservers, net0MacAddress);
+        appendEthernet(builder, "eth1", ipv6Configs, true, null, net1MacAddress);
+        return builder.toString();
+    }
+
+    public static void uploadDualNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,
+                                                   List<String> nameservers, String net0MacAddress,
+                                                   String net1MacAddress) throws JSchException, SftpException {
+        if (node == null || StringUtils.isBlank(node.getHost()) || node.getSshPort() == null
+                || StringUtils.isBlank(node.getSshUsername()) || StringUtils.isBlank(node.getSshPassword())) {
+            throw new IllegalStateException("节点SSH配置不完整，无法写入cloud-init网络配置");
+        }
+        SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
+        try {
+            sshUtil.connect();
+            sshUtil.uploadTextFile(getNetworkSnippetPath(vmid),
+                    buildDualNicNetworkConfig(ipConfig, nameservers, net0MacAddress, net1MacAddress));
+        } finally {
+            sshUtil.disconnect();
+        }
+    }
+
+    private static String getIpConfigForVersion(String ipConfig, boolean ipv6) {
+        if (StringUtils.isBlank(ipConfig)) {
+            return null;
+        }
+        String addressKey = ipv6 ? "ip6" : "ip";
+        String gatewayKey = ipv6 ? "gw6" : "gw";
+        String address = null;
+        String gateway = null;
+        for (String token : ipConfig.split(",")) {
+            String item = token.trim();
+            if (item.startsWith(addressKey + "=")) {
+                address = item.substring(addressKey.length() + 1);
+            } else if (item.startsWith(gatewayKey + "=")) {
+                gateway = item.substring(gatewayKey.length() + 1);
+            }
+        }
+        if (StringUtils.isBlank(address)) {
+            return null;
+        }
+        return addressKey + "=" + address
+                + (StringUtils.isBlank(gateway) ? "" : "," + gatewayKey + "=" + gateway);
+    }
+
+    private static void appendEthernet(StringBuilder builder, String name, List<CloudInitIpConfig> ipConfigs,
+                                       boolean ipv6, List<String> nameservers, String macAddress) {
+        builder.append("  ").append(name).append(":\n");
+        if (StringUtils.isNotBlank(macAddress)) {
+            builder.append("    match:\n");
+            builder.append("      macaddress: \"").append(macAddress.toLowerCase()).append("\"\n");
+            builder.append("    set-name: ").append(name).append("\n");
+        }
+        builder.append("    dhcp4: false\n");
+        builder.append("    dhcp6: false\n");
+        builder.append("    addresses:\n");
+        for (CloudInitIpConfig item : ipConfigs) {
+            builder.append("      - ").append(item.address).append("\n");
+        }
+        String gateway = getPrimaryGateway(ipConfigs, ipv6);
+        if (StringUtils.isNotBlank(gateway)) {
+            builder.append("    ").append(ipv6 ? "gateway6" : "gateway4").append(": ").append(gateway).append("\n");
+        }
+        if (nameservers != null && !nameservers.isEmpty()) {
+            builder.append("    nameservers:\n");
+            builder.append("      addresses:\n");
+            for (String nameserver : nameservers) {
+                if (StringUtils.isNotBlank(nameserver)) {
+                    builder.append("        - ").append(nameserver.trim()).append("\n");
+                }
+            }
+        }
     }
 
     public static void uploadSingleNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,

@@ -609,9 +609,18 @@ public class CreateVmServiceImpl implements CreateVmService {
         // 设置kvm
         param.put("kvm", vmParams.getKvm());
 
-        String primaryIpConfig = CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig());
+        boolean dualNicIpv6 = isNatIpv6Scenario(vmParams);
+        String primaryIpConfig = dualNicIpv6
+                ? CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig(), false)
+                : CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig());
         if (primaryIpConfig != null) {
             param.put("ipconfig0", primaryIpConfig);
+        }
+        if (dualNicIpv6) {
+            String primaryIpv6Config = CloudInitNetworkUtil.getPrimaryIpConfig(vmParams.getIpConfig(), true);
+            if (primaryIpv6Config != null) {
+                param.put("ipconfig1", primaryIpv6Config);
+            }
         }
         //param.put("ipconfig0", "ip=23.94.247.39/28,gw=23.94.247.33");
         // 设置DNS
@@ -650,7 +659,21 @@ public class CreateVmServiceImpl implements CreateVmService {
         boolean linuxMultiIp = multiIp && !"windows".equals(vmParams.getOsType());
         String macAddress = linuxMultiIp ? CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId) : null;
         param.put("net0", buildNet0Config(node, vmParams, bandWidth, macAddress));
-        if (linuxMultiIp) {
+        if (dualNicIpv6) {
+            String net1MacAddress = CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId, 1);
+            param.put("net1", CloudInitNetworkUtil.buildPveNet0Config("vmbr0", net1MacAddress, bandWidth, false));
+        }
+        if (linuxMultiIp && dualNicIpv6) {
+            try {
+                CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmId, vmParams.getIpConfig(),
+                        getNameservers(vmParams), macAddress, CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId, 1));
+            } catch (Exception e) {
+                UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "写入双网卡IPv4/IPv6 cloud-init 配置失败: vmid=" + vmId);
+                e.printStackTrace();
+                return 0;
+            }
+            param.put("cicustom", "network=" + CloudInitNetworkUtil.getNetworkSnippetVolume(vmId));
+        } else if (linuxMultiIp) {
             try {
                 CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmId, vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
             } catch (Exception e) {
@@ -1278,6 +1301,13 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         return CloudInitNetworkUtil.buildPveNet0Config(
                 bridge, macAddress, bandWidth, shouldEnablePveAntiSpoof(vmParams));
+    }
+
+    private boolean isNatIpv6Scenario(VmParams vmParams) {
+        return vmParams != null
+                && !isVpcNetwork(vmParams)
+                && Objects.equals(vmParams.getIfnat(), 1)
+                && !CloudInitNetworkUtil.getIpv6List(vmParams.getIpConfig()).isEmpty();
     }
 
     private List<String> getNameservers(VmParams vmParams) {

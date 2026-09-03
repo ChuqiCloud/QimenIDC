@@ -30,7 +30,7 @@ public class VmLockCleaner {
             TimedLock timedLock = entry.getValue();
 
             // 超时未使用，安全移除
-            if (now - timedLock.getLastAccessTime() > EXPIRE_TIME) {
+            if (!timedLock.isLocked() && now - timedLock.getLastAccessTime() > EXPIRE_TIME) {
                 it.remove();
             }
         }

@@ -55,7 +55,7 @@ public class ResetSystemCron {
     /**
      * 重装系统
      */
-    @Async
+    @Async("workflowExecutor")
     @Scheduled(fixedDelay = 2000)
     public void reinstallSystemCron() {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
@@ -465,6 +465,11 @@ public class ResetSystemCron {
         }
 
         JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(node, authentications, vmhost.getVmid());
+        if (isNatIpv6Scenario(vmhost)) {
+            syncDualNicIpv6Network(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
+            return;
+        }
+        removeIndependentIpv6NicIfPresent(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
         syncVpcNet0Config(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
         proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "ipconfig0", primaryIpConfig);
         if ("windows".equalsIgnoreCase(vmhost.getOsType())) {
@@ -493,6 +498,77 @@ public class ResetSystemCron {
         }
         proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "cicustom", mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
         proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+    }
+
+    private void syncDualNicIpv6Network(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                        HashMap<String, String> authentications, Vmhost vmhost,
+                                        JSONObject pveVmConfig) {
+        String ipv4Config = CloudInitNetworkUtil.getPrimaryIpConfig(vmhost.getIpConfig(), false);
+        String ipv6Config = CloudInitNetworkUtil.getPrimaryIpConfig(vmhost.getIpConfig(), true);
+        if (StringUtils.isBlank(ipv4Config) || StringUtils.isBlank(ipv6Config)) {
+            throw new IllegalStateException("NAT IPv4/独立 IPv6 配置不完整: vmid=" + vmhost.getVmid());
+        }
+        proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "ipconfig0", ipv4Config);
+        proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "ipconfig1", ipv6Config);
+
+        String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
+        String net0Mac = CloudInitNetworkUtil.extractMacAddress(net0Config);
+        if (StringUtils.isBlank(net0Mac)) {
+            net0Mac = CloudInitNetworkUtil.buildStableMacAddress(vmhost.getNodeid(), vmhost.getVmid());
+        }
+        String net1Config = pveVmConfig == null ? null : pveVmConfig.getString("net1");
+        String net1Mac = CloudInitNetworkUtil.extractMacAddress(net1Config);
+        if (StringUtils.isBlank(net1Mac)) {
+            net1Mac = CloudInitNetworkUtil.buildStableMacAddress(vmhost.getNodeid(), vmhost.getVmid(), 1);
+        }
+        String net0Bridge = vmhost.getBridge();
+        if (StringUtils.isBlank(net0Bridge)) {
+            net0Bridge = node.getNatbridge();
+        }
+        String desiredNet0 = CloudInitNetworkUtil.ensurePveNet0Config(net0Config, net0Bridge, net0Mac,
+                formatBandwidth(vmhost.getBandwidth()), false);
+        if (StringUtils.isNotBlank(desiredNet0) && !StringUtils.equals(desiredNet0, net0Config)) {
+            proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "net0", desiredNet0);
+        }
+        String desiredNet1 = CloudInitNetworkUtil.buildPveNet0Config("vmbr0", net1Mac,
+                formatBandwidth(vmhost.getBandwidth()), false);
+        if (!StringUtils.equals(desiredNet1, net1Config)) {
+            proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "net1", desiredNet1);
+        }
+        if ("windows".equalsIgnoreCase(vmhost.getOsType())) {
+            removeCicustomNetworkConfig(proxmoxApiUtil, node, authentications, vmhost, pveVmConfig);
+            proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+            return;
+        }
+        try {
+            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmhost.getVmid(), vmhost.getIpConfig(),
+                    getNameservers(pveVmConfig), net0Mac, net1Mac);
+        } catch (Exception e) {
+            throw new IllegalStateException("写入重装系统cloud-init双网卡IPv4/IPv6配置失败: vmid=" + vmhost.getVmid(), e);
+        }
+        proxmoxApiUtil.resetVmConfig(node, authentications, vmhost.getVmid(), "cicustom",
+                mergeCicustomNetwork(pveVmConfig, vmhost.getVmid()));
+        proxmoxApiUtil.resetVmCloudinit(node, authentications, vmhost.getVmid());
+    }
+
+    private boolean isNatIpv6Scenario(Vmhost vmhost) {
+        return vmhost != null && !NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType())
+                && Integer.valueOf(1).equals(vmhost.getIfnat())
+                && !CloudInitNetworkUtil.getIpv6List(vmhost.getIpConfig()).isEmpty();
+    }
+
+    private void removeIndependentIpv6NicIfPresent(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                                   HashMap<String, String> authentications, Vmhost vmhost,
+                                                   JSONObject pveVmConfig) {
+        if (pveVmConfig == null || vmhost == null || vmhost.getVmid() == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(pveVmConfig.getString("ipconfig1"))) {
+            proxmoxApiUtil.deleteVmConfig(node, authentications, vmhost.getVmid(), "ipconfig1");
+        }
+        if (StringUtils.isNotBlank(pveVmConfig.getString("net1"))) {
+            proxmoxApiUtil.deleteVmConfig(node, authentications, vmhost.getVmid(), "net1");
+        }
     }
 
     private void syncVpcNet0Config(ProxmoxApiUtil proxmoxApiUtil, Master node,

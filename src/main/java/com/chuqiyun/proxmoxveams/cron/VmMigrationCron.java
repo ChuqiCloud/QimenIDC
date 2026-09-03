@@ -93,7 +93,7 @@ public class VmMigrationCron {
     @Resource
     private VncdataService vncdataService;
 
-    @Async
+    @Async("workflowExecutor")
     @Scheduled(fixedDelay = 5000)
     public void vmMigrationCron() {
         QueryWrapper<Task> queryWrapper = new QueryWrapper<>();

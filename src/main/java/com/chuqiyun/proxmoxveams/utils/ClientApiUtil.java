@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.annotation.Resource;
@@ -36,7 +37,7 @@ public class ClientApiUtil {
     * @Return
     */
     public static JSONObject getNetOs(String url){
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         //请求url获取内容
         String json = restTemplate.getForObject(url, String.class);
         //将json转换为JSONObject对象
@@ -49,7 +50,7 @@ public class ClientApiUtil {
     * @DateTime: 2023/7/11 17:37
     */
     public static JSONObject getControllerApi(String url, Map<String, Object> params, String token){
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
@@ -76,7 +77,7 @@ public class ClientApiUtil {
     * @Return JSONObject
     */
     public static JSONObject postControllerApi(String url,Map<String,Object> params,String token){
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
@@ -93,7 +94,7 @@ public class ClientApiUtil {
     public static JSONObject getControllerConnectStatus(String ip, Integer port,String token){
         String url = "http://"+ip+":"+port+"/status";
         Map<String, Object> paramMap = new HashMap<>();
-        RestTemplate restTemplate = new RestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createRestTemplate();
         // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);

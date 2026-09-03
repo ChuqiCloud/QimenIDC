@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.config;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.client.config.RequestConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -46,11 +47,30 @@ public class RestTemplateConfig {
         SSLContext sslContext = SSLContexts.custom().loadTrustMaterial(null, acceptingTrustStrategy).build();
         SSLConnectionSocketFactory connectionSocketFactory = new SSLConnectionSocketFactory(sslContext, new NoopHostnameVerifier());
 
-        HttpClientBuilder httpClientBuilder = HttpClients.custom();
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(15_000)
+                .setConnectionRequestTimeout(10_000)
+                .setSocketTimeout(30_000)
+                .build();
+        HttpClientBuilder httpClientBuilder = HttpClients.custom()
+                .setDefaultRequestConfig(requestConfig)
+                .disableAutomaticRetries();
         httpClientBuilder.setSSLSocketFactory(connectionSocketFactory);
         CloseableHttpClient httpClient = httpClientBuilder.build();
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
         factory.setHttpClient(httpClient);
         return factory;
+    }
+
+    /**
+     * Creates the same bounded-timeout client for utility classes that cannot use
+     * Spring's injected RestTemplate bean.
+     */
+    public static RestTemplate createRestTemplate() {
+        try {
+            return new RestTemplate(generateHttpRequestFactory());
+        } catch (NoSuchAlgorithmException | KeyManagementException | KeyStoreException e) {
+            throw new IllegalStateException("创建HTTP客户端失败", e);
+        }
     }
 }
