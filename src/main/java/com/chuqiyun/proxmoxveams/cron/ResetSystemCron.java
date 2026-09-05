@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
@@ -40,6 +41,11 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @EnableScheduling
 public class ResetSystemCron {
     private static final String NETWORK_TYPE_VPC = "vpc";
+    private static final long IMPORT_SYSTEM_DISK_TIMEOUT = 30 * 60 * 1000L;
+    private static final long UPDATE_SYSTEM_DISK_TIMEOUT = 30 * 60 * 1000L;
+    private static final long RESET_PASSWORD_TIMEOUT = 10 * 60 * 1000L;
+    private static final long CREATE_DATA_DISK_TIMEOUT = 10 * 60 * 1000L;
+    private static final long UPDATE_VM_BOOT_TIMEOUT = 10 * 60 * 1000L;
 
     @Resource
     private MasterService masterService;
@@ -61,23 +67,48 @@ public class ResetSystemCron {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", REINSTALL_VM);
         taskQueryWrapper.eq("status", 0);
+        taskQueryWrapper.orderByAsc("create_date");
+        taskQueryWrapper.last("LIMIT 1");
         Page<Task> taskPage = taskService.getTaskList(1, 1, taskQueryWrapper);
         // 判断是否没有任务
         if (taskPage.getRecords().size() == 0) {
             return;
         }
         Task task = taskPage.getRecords().get(0);
-        // 修改任务状态为1
+        // 原子领取任务，避免多个异步调度线程重复执行同一个重装任务。
+        UpdateWrapper<Task> claimWrapper = new UpdateWrapper<>();
+        claimWrapper.eq("id", task.getId()).eq("status", 0).set("status", 1);
+        if (!taskService.update(claimWrapper)) {
+            return;
+        }
         task.setStatus(1);
-        taskService.updateById(task);
+
+        try {
+            processReinstallSystem(task);
+        } catch (Exception e) {
+            failReinstallTask(task, "重装系统异常: " + getExceptionMessage(e));
+            UnifiedLogger.error(UnifiedLogger.LogType.TASK_RESET_SYSTEM,
+                    "重装系统任务异常: NodeID:{} VM-ID:{}", task.getNodeid(), task.getVmid());
+        } finally {
+            // 处理方法内部存在多个提前返回点，避免主任务永久停留在执行中。
+            Task latestTask = taskService.getById(task.getId());
+            if (latestTask != null && Integer.valueOf(1).equals(latestTask.getStatus())) {
+                failReinstallTask(latestTask, "重装系统任务异常结束");
+            }
+        }
+    }
+
+    private void processReinstallSystem(Task task) {
         // 获取node信息
         Master node = masterService.getById(task.getNodeid());
+        if (node == null) {
+            throw new IllegalStateException("重装系统节点不存在: nodeId=" + task.getNodeid());
+        }
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
         // 获取系统信息
         Map<Object, Object> systemMap = task.getParams();
-        // 判断是否为空
         if (systemMap == null) {
-            return;
+            throw new IllegalStateException("重装系统任务参数为空");
         }
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "执行重装系统任务: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
 
@@ -152,23 +183,10 @@ public class ResetSystemCron {
             vmhostService.updateById(vmhost);
             return;
         }
-        Task taskStatus;
         // 等待导入操作系统任务完成
-        do {
-            try {
-                Thread.sleep(3000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            // 获取任务
-            taskStatus = taskService.getById(importTask.getId());
-            // 判断任务状态
-            if (taskStatus.getStatus() == 3) {
-                // 任务状态为3，任务失败
-                // 结束任务
-                return;
-            }
-        } while (taskStatus.getStatus() != 2);
+        if (!waitForTaskCompletion(importTask.getId(), 3000L, IMPORT_SYSTEM_DISK_TIMEOUT)) {
+            return;
+        }
         // 任务状态为2，任务成功
         // 创建修改系统盘大小任务
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_UPDATE_SYSTEM_DISK,"添加创建修改系统盘大小任务: NodeID:{} VM-ID:{}",node.getId(), task.getVmid());
@@ -193,23 +211,9 @@ public class ResetSystemCron {
             return;
         }
         // 等待修改系统盘大小任务完成
-        do {
-            try {
-                Thread.sleep(20000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            // 获取任务
-            taskStatus = taskService.getById(updateSystemDiskTask.getId());
-            // 判断任务状态
-            if (taskStatus.getStatus() == 3) {
-                // 任务状态为3，任务失败
-                // 结束任务
-                vmhost.setStatus(1);
-                vmhostService.updateById(vmhost);
-                return;
-            }
-        } while (taskStatus.getStatus() != 2);
+        if (!waitForTaskCompletion(updateSystemDiskTask.getId(), 20000L, UPDATE_SYSTEM_DISK_TIMEOUT)) {
+            return;
+        }
         // 任务状态为2，任务成功
         // 判断是否需要重置数据盘
         if (!resetDataDisk){
@@ -244,23 +248,9 @@ public class ResetSystemCron {
                     return;
                 }
                 // 等待重置密码任务完成
-                do {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    // 获取任务
-                    taskStatus = taskService.getById(resetPasswordTask.getId());
-                    // 判断任务状态
-                    if (taskStatus.getStatus() == 3) {
-                        // 任务状态为3，任务失败
-                        // 结束任务
-                        vmhost.setStatus(1);
-                        vmhostService.updateById(vmhost);
-                        return;
-                    }
-                } while (taskStatus.getStatus() != 2);
+                if (!waitForTaskCompletion(resetPasswordTask.getId(), 1000L, RESET_PASSWORD_TIMEOUT)) {
+                    return;
+                }
             }
 
         }else {
@@ -287,23 +277,9 @@ public class ResetSystemCron {
                 return;
             }
             // 等待创建数据盘任务完成
-            do {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                // 获取任务
-                taskStatus = taskService.getById(createDataDiskTask.getId());
-                // 判断任务状态
-                if (taskStatus.getStatus() == 3) {
-                    // 任务状态为3，任务失败
-                    // 结束任务
-                    vmhost.setStatus(1);
-                    vmhostService.updateById(vmhost);
-                    return;
-                }
-            } while (taskStatus.getStatus() != 2);
+            if (!waitForTaskCompletion(createDataDiskTask.getId(), 1000L, CREATE_DATA_DISK_TIMEOUT)) {
+                return;
+            }
             // 任务状态为2，任务成功
             // 判断新密码是否为空
             if (!newPassword.equals("")){
@@ -334,22 +310,11 @@ public class ResetSystemCron {
                     return;
                 }
                 // 等待重置密码任务完成
-                do {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    // 获取任务
-                    taskStatus = taskService.getById(resetPasswordTask.getId());
-                    // 判断任务状态
-                    if (taskStatus.getStatus() == 3) {
-                        UnifiedLogger.warn(UnifiedLogger.LogType.TASK_RESET_PASSWORD, "重置密码任务失败: NodeID:{} VM-ID:{} 失败",node.getId(), task.getVmid());
-                        // 任务状态为3，任务失败
-                        // 结束任务
-                        //return;
-                    }
-                } while (taskStatus.getStatus() != 2);
+                if (!waitForTaskCompletion(resetPasswordTask.getId(), 1000L, RESET_PASSWORD_TIMEOUT)) {
+                    UnifiedLogger.warn(UnifiedLogger.LogType.TASK_RESET_PASSWORD,
+                            "重置密码任务失败: NodeID:{} VM-ID:{}", node.getId(), task.getVmid());
+                    return;
+                }
             }
         }
         // 任务状态为2，任务成功
@@ -373,25 +338,12 @@ public class ResetSystemCron {
             updateBootDiskTask.setStatus(3);
             updateBootDiskTask.setError("创建修改启动项任务失败");
             taskService.updateById(updateBootDiskTask);
+            return;
         }
         // 等待创建修改启动项任务完成
-        do {
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            // 获取任务
-            taskStatus = taskService.getById(updateBootDiskTask.getId());
-            // 判断任务状态
-            if (taskStatus.getStatus() == 3) {
-                // 任务状态为3，任务失败
-                // 结束任务
-                vmhost.setStatus(1);
-                vmhostService.updateById(vmhost);
-                return;
-            }
-        } while (taskStatus.getStatus() != 2);
+        if (!waitForTaskCompletion(updateBootDiskTask.getId(), 1000L, UPDATE_VM_BOOT_TIMEOUT)) {
+            return;
+        }
         // 任务状态为2，任务成功
         // 创建开机任务
         Task startTask = new Task();
@@ -410,6 +362,7 @@ public class ResetSystemCron {
             taskService.updateById(startTask);
             vmhost.setStatus(1);
             vmhostService.updateById(vmhost);
+            return;
         }
         vmhost.setStatus(0);
         vmhostService.updateById(vmhost);
@@ -422,6 +375,80 @@ public class ResetSystemCron {
         // 更新主线程任务task状态为2
         task.setStatus(2);
         taskService.updateById(task);
+    }
+
+    private void failReinstallTask(Task task, String error) {
+        if (task == null) {
+            return;
+        }
+        Task latestTask = task.getId() == null ? task : taskService.getById(task.getId());
+        if (latestTask != null && !Integer.valueOf(2).equals(latestTask.getStatus())
+                && !Integer.valueOf(3).equals(latestTask.getStatus())) {
+            latestTask.setStatus(3);
+            latestTask.setError(error);
+            taskService.updateById(latestTask);
+        }
+        Vmhost vmhost = task.getHostid() == null ? null : vmhostService.getById(task.getHostid());
+        if (vmhost == null) {
+            return;
+        }
+        Integer status = 1;
+        try {
+            Integer pveStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
+            if (pveStatus != null && pveStatus >= 0 && pveStatus <= 5) {
+                status = pveStatus;
+            }
+        } catch (Exception ignored) {
+            // PVE 状态查询失败时，默认恢复为关机，确保虚拟机不再被“重装中”锁住。
+        }
+        vmhost.setStatus(status);
+        vmhostService.updateById(vmhost);
+    }
+
+    private boolean waitForTaskCompletion(Integer taskId, long pollInterval, long timeout) {
+        if (taskId == null) {
+            return false;
+        }
+        long deadline = System.currentTimeMillis() + timeout;
+        while (System.currentTimeMillis() <= deadline) {
+            Task task = taskService.getById(taskId);
+            if (task == null) {
+                return false;
+            }
+            if (Integer.valueOf(2).equals(task.getStatus())) {
+                return true;
+            }
+            if (Integer.valueOf(3).equals(task.getStatus())) {
+                return false;
+            }
+            try {
+                Thread.sleep(pollInterval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                markTaskFailed(taskId, "等待子任务完成时被中断");
+                return false;
+            }
+        }
+        markTaskFailed(taskId, "子任务执行超时");
+        return false;
+    }
+
+    private void markTaskFailed(Integer taskId, String error) {
+        Task task = taskService.getById(taskId);
+        if (task == null || Integer.valueOf(2).equals(task.getStatus())
+                || Integer.valueOf(3).equals(task.getStatus())) {
+            return;
+        }
+        task.setStatus(3);
+        task.setError(error);
+        taskService.updateById(task);
+    }
+
+    private String getExceptionMessage(Exception e) {
+        if (e == null || e.getMessage() == null || e.getMessage().trim().isEmpty()) {
+            return "未知错误";
+        }
+        return e.getMessage();
     }
 
     private List<Integer> getInitScriptIds(Map<Object, Object> params) {

@@ -155,9 +155,15 @@ def get_vm_disk_usage(item):
     )
     data_disks = [disk for disk in measured_disks if disk["device"] != item.system_device]
     available_disks = [disk for disk in measured_disks if disk["available"]]
+    total_provisioned_bytes = sum(
+        disk["provisionedBytes"]
+        for disk in available_disks
+        if disk["provisionedBytes"] is not None
+    )
     return {
         "systemDisk": system_disk,
         "dataDisks": data_disks,
         "totalActualBytes": sum(disk["actualBytes"] for disk in available_disks),
+        "totalProvisionedBytes": total_provisioned_bytes,
         "complete": len(available_disks) == len(measured_disks),
     }

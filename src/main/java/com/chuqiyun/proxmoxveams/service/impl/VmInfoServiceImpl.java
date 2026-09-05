@@ -215,8 +215,9 @@ public class VmInfoServiceImpl implements VmInfoService {
             JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookieMap, vmhost.getVmid());
             if (vmConfig != null) {
                 JSONObject diskUsageRequest = VmDiskUsageUtil.buildRequest(vmConfig);
-                vmHostDto.setDiskUsage(ClientApiUtil.getVmDiskUsage(
-                        node.getHost(), configService.getToken(), node.getControllerPort(), diskUsageRequest));
+                JSONObject diskUsage = ClientApiUtil.getVmDiskUsage(
+                        node.getHost(), configService.getToken(), node.getControllerPort(), diskUsageRequest);
+                vmHostDto.setDiskUsage(diskUsage);
             }
         } catch (Exception e) {
             vmHostDto.setDiskUsage(null);

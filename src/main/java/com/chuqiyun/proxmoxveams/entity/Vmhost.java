@@ -221,6 +221,10 @@ public class Vmhost extends Model<Vmhost> {
     private Integer resetFlowTime;
     private Integer outFlow;
     private Integer deleteState;
+    /**
+     * 上次校正虚拟机磁盘显示容量的时间戳（毫秒）
+     */
+    private Long lastDiskReconcileTime;
 
 
 

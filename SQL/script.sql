@@ -379,7 +379,9 @@ create table vmhost
     extra_flow_limit      bigint       default 0                     not null comment '临时流量包',
     reset_flow_time       int       default 0                     not null comment '流量重置日 0开通日 1月初',
     out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
-    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除'
+    delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除',
+    last_disk_reconcile_time bigint default 0 not null comment '上次校正虚拟机磁盘显示容量时间戳（毫秒）',
+    index idx_vmhost_disk_reconcile (delete_state, last_disk_reconcile_time)
 );
 
 create table vpc_ip_binding

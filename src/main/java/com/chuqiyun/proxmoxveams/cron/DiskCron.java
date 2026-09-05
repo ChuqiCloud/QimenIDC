@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.SshUtil;
+import com.chuqiyun.proxmoxveams.utils.VmDiskUsageUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import com.jcraft.jsch.JSchException;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -36,6 +38,8 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class DiskCron {
     private static final long SYSTEM_DISK_RESIZE_VERIFY_TIMEOUT = 20000L;
     private static final long SYSTEM_DISK_RESIZE_VERIFY_INTERVAL = 3000L;
+    private static final long DISK_RECONCILE_COOLDOWN_MILLIS = 24L * 60L * 60L * 1000L;
+    private static final int DISK_RECONCILE_BATCH_SIZE = 50;
 
     @Resource
     private MasterService masterService;
@@ -47,6 +51,7 @@ public class DiskCron {
     private OsService osService;
     @Resource
     private ConfigService configService;
+    private final AtomicBoolean diskReconcileRunning = new AtomicBoolean(false);
     @Async
     @Scheduled(fixedDelay = 1000*60*10)  //每隔10分钟执行一次
     public void autoDiskName() {
@@ -70,6 +75,71 @@ public class DiskCron {
             masterService.updateById(node);
         }
 
+    }
+
+    /**
+     * 周期性对账虚拟磁盘逻辑容量，修复扩容请求超时但 PVE 配置未刷新导致的旧容量显示。
+     */
+    @Async("workflowExecutor")
+    @Scheduled(fixedDelay = 1000 * 60 * 30, initialDelay = 1000 * 60 * 2)
+    public void reconcileVmDiskDisplaySizeCron() {
+        if (!diskReconcileRunning.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            long now = System.currentTimeMillis();
+            long cutoff = now - DISK_RECONCILE_COOLDOWN_MILLIS;
+            QueryWrapper<Vmhost> vmQuery = new QueryWrapper<>();
+            vmQuery.eq("delete_state", 0)
+                    .and(wrapper -> wrapper.lt("last_disk_reconcile_time", cutoff)
+                            .or().isNull("last_disk_reconcile_time"))
+                    .orderByAsc("last_disk_reconcile_time")
+                    .last("limit " + DISK_RECONCILE_BATCH_SIZE);
+            List<Vmhost> vmhosts = vmhostService.list(vmQuery);
+            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            Map<Integer, Master> nodeCache = new HashMap<>();
+            Map<Integer, HashMap<String, String>> cookieCache = new HashMap<>();
+            for (Vmhost vmhost : vmhosts) {
+                if (!claimDiskReconcile(vmhost.getId(), cutoff, now)) {
+                    continue;
+                }
+                try {
+                    Master node = nodeCache.computeIfAbsent(vmhost.getNodeid(), masterService::getById);
+                    if (node == null) {
+                        continue;
+                    }
+                    HashMap<String, String> cookie = cookieCache.computeIfAbsent(
+                            node.getId(), masterService::getMasterCookieMap);
+                    JSONObject vmConfig = proxmoxApiUtil.getVmConfig(node, cookie, vmhost.getVmid());
+                    if (vmConfig == null) {
+                        continue;
+                    }
+                    JSONObject usage = ClientApiUtil.getVmDiskUsage(
+                            node.getHost(), configService.getToken(), node.getControllerPort(),
+                            VmDiskUsageUtil.buildRequest(vmConfig));
+                    if (usage != null) {
+                        proxmoxApiUtil.syncVmDiskDisplaySizes(node, cookie, vmhost.getVmid(), vmConfig, usage);
+                    }
+                } catch (Exception e) {
+                    log.warn("[Disk-Reconcile] 修正虚拟机磁盘显示容量失败: HostID:{} VM-ID:{}", vmhost.getId(), vmhost.getVmid());
+                }
+            }
+        } finally {
+            diskReconcileRunning.set(false);
+        }
+    }
+
+    private boolean claimDiskReconcile(Integer hostId, long cutoff, long now) {
+        if (hostId == null) {
+            return false;
+        }
+        QueryWrapper<Vmhost> claim = new QueryWrapper<>();
+        claim.eq("id", hostId)
+                .and(wrapper -> wrapper.lt("last_disk_reconcile_time", cutoff)
+                        .or().isNull("last_disk_reconcile_time"));
+        Vmhost update = new Vmhost();
+        update.setLastDiskReconcileTime(now);
+        return vmhostService.update(update, claim);
     }
 
     @Async

@@ -207,11 +207,17 @@ public class DeleteVmCron {
             }
             // 如果vmInfo不为空，才进行下一步操作
             if (vmInfo != null) {
-                // 判断虚拟机状态是否为1关机或2停止或4禁用
-                if (vmhost.getStatus() != 1 && vmhost.getStatus() != 2 && vmhost.getStatus() != 4) {
+                JSONObject vmStatusData = vmInfo.getJSONObject("data");
+                String pveStatus = vmStatusData == null ? vmInfo.getString("status") : vmStatusData.getString("status");
+                // 创建中状态也允许删除。若 PVE 仍在运行，先强制关机，下次轮询继续删除。
+                if ("running".equalsIgnoreCase(pveStatus)) {
+                    if (vmhost.getStatus() == 6) {
+                        proxmoxApiUtil.forceStopVm(node, authentications, vmhost.getVmid());
+                        vmhost.setStatus(9);
+                        vmhostService.updateById(vmhost);
+                    }
                     return;
                 }
-
             }
             else {
                 deleteSecurityGroups(vmhost);

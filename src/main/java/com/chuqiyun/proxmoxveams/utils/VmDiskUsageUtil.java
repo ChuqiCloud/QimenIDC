@@ -101,7 +101,14 @@ public final class VmDiskUsageUtil {
         return disks.isEmpty() ? null : disks.get(0).device;
     }
 
+    public static Long getDiskSizeBytes(String config) {
+        return parseSizeBytes(config);
+    }
+
     private static Long parseSizeBytes(String config) {
+        if (config == null || config.trim().isEmpty()) {
+            return null;
+        }
         Matcher matcher = SIZE_PATTERN.matcher(config);
         if (!matcher.find()) {
             return null;

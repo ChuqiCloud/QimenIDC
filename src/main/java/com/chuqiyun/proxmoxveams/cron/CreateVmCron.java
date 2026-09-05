@@ -108,7 +108,7 @@ public class CreateVmCron {
             VmParams vmParams;
             try {
                 vmParams = EntityHashMapConverterUtil.convertToEntity(params, VmParams.class);
-            } catch (IllegalAccessException | InstantiationException e) {
+            } catch (Exception e) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "创建虚拟机任务参数转换失败");
                 // 更新任务状态为3 3为失败
                 task.setStatus(3);
@@ -117,6 +117,12 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 e.printStackTrace();
                 // 结束任务
+                return;
+            }
+            if (vmParams == null || vmParams.getHostname() == null || vmParams.getHostname().trim().isEmpty()) {
+                task.setStatus(3);
+                task.setError("创建虚拟机任务参数缺少主机名");
+                taskService.updateById(task);
                 return;
             }
             String hostname = vmParams.getHostname();
@@ -132,9 +138,11 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 return;
             }
+            Integer vmhostId = null;
+            Integer vmIdInit = null;
             try {
             //vmParams.setTask(params);
-            int vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
+            vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
             Master createNode = masterService.getById(vmParams.getNodeid());
             if (createNode == null) {
                 finishCreateVmFailed(task, null, vmParams, vmIdInit, "创建基础虚拟机失败，节点不存在");
@@ -147,7 +155,7 @@ public class CreateVmCron {
             }
 
             // 将创建的虚拟机信息存入数据库
-            Integer vmhostId = vmhostService.addVmhost(vmIdInit, vmParams);
+            vmhostId = vmhostService.addVmhost(vmIdInit, vmParams);
             Vmhost vmhost;
             // 判断是否存入成功
             if (vmhostId == null) {
@@ -437,6 +445,17 @@ public class CreateVmCron {
             // 更新主线程任务task状态为2
                 task.setStatus(2);
                 taskService.updateById(task);
+            } catch (Exception e) {
+                String error = "创建虚拟机异常: " + getExceptionMessage(e);
+                try {
+                    finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, error);
+                } catch (Exception cleanupException) {
+                    // 清理流程自身异常时仍保证主任务和虚拟机状态可恢复，避免永久停留在创建中。
+                    log.error("创建虚拟机失败后的清理异常: HostId={}, VM-ID={}", vmhostId, vmIdInit, cleanupException);
+                    markCreateTaskFailed(task, vmhostId, error);
+                }
+                log.error("创建虚拟机任务异常: NodeID={}, VM-ID={}",
+                        vmParams.getNodeid(), vmIdInit, e);
             } finally {
                 if (lock.isHeldByCurrentThread()) {
                     lock.unlock();
@@ -580,6 +599,27 @@ public class CreateVmCron {
             return;
         }
         releaseCreatedIps(vmParams, vmId);
+    }
+
+    private void markCreateTaskFailed(Task task, Integer vmhostId, String error) {
+        try {
+            if (task != null) {
+                task.setStatus(3);
+                task.setError(error);
+                taskService.updateById(task);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (vmhostId != null) {
+                Vmhost vmhost = vmhostService.getById(vmhostId);
+                if (vmhost != null) {
+                    vmhost.setStatus(1);
+                    vmhostService.updateById(vmhost);
+                }
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void releaseCreatedVpcIps(VmParams vmParams, Integer vmId) {

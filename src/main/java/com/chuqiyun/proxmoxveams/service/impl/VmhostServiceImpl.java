@@ -58,6 +58,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
+    private static final long CREATE_VM_STALE_TIMEOUT = 15 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
     private static final long IP_CHANGE_RESTART_TIMEOUT = 3 * 60 * 1000L;
@@ -904,10 +905,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmhost.getStatus() == 5){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_EXPIRED, null);
         }
+        // 创建任务已失联或超时时立即恢复状态，避免只能等待定时巡检。
+        if (Integer.valueOf(6).equals(vmhost.getStatus()) && recoverStaleCreateStatus(vmhost)) {
+            vmhost = this.getById(vmHostId);
+        }
         // 判断虚拟机是否为创建/重装中
         if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
         }
+        String previousOsName = vmhost.getOsName();
+        String previousOsType = vmhost.getOsType();
+        String previousOs = vmhost.getOs();
+        String previousUsername = vmhost.getUsername();
         Os os = osService.isExistOs(osName);
         // 判断镜像是否存在
         if (os == null) {
@@ -1024,9 +1033,59 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM,"创建重置虚拟机系统任务成功，任务id为：" + task.getId());
             return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
         }
-        // 添加任务流程
-        this.addVmHostTask(vmhost.getId(), task.getId());
+        // 主任务创建失败时回滚“重装系统中”状态，避免虚拟机永久无法操作。
+        vmhost.setOsName(previousOsName);
+        vmhost.setOsType(previousOsType);
+        vmhost.setOs(previousOs);
+        vmhost.setUsername(previousUsername);
+        Integer status = 1;
+        try {
+            Integer pveStatus = masterService.getVmStatusCode(vmhost.getNodeid(), vmhost.getVmid());
+            if (pveStatus != null && pveStatus >= 0 && pveStatus <= 5) {
+                status = pveStatus;
+            }
+        } catch (Exception ignored) {
+            // PVE 状态查询失败时默认恢复为关机。
+        }
+        vmhost.setStatus(status);
+        this.updateById(vmhost);
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_RESET_SYSTEM_FAILED, null);
+    }
+
+    private boolean recoverStaleCreateStatus(Vmhost vmhost) {
+        if (vmhost == null || vmhost.getId() == null) {
+            return false;
+        }
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("hostid", vmhost.getId());
+        queryWrapper.eq("type", CREATE_VM);
+        queryWrapper.orderByDesc("create_date");
+        queryWrapper.last("LIMIT 1");
+        Task latestTask = taskService.list(queryWrapper).stream().findFirst().orElse(null);
+        long age = latestTask == null || latestTask.getCreateDate() == null
+                ? Long.MAX_VALUE : System.currentTimeMillis() - latestTask.getCreateDate();
+        boolean active = latestTask != null
+                && (Integer.valueOf(0).equals(latestTask.getStatus())
+                || Integer.valueOf(1).equals(latestTask.getStatus())
+                || Integer.valueOf(4).equals(latestTask.getStatus()));
+        if (active && age < CREATE_VM_STALE_TIMEOUT) {
+            return false;
+        }
+        if (active) {
+            latestTask.setStatus(3);
+            latestTask.setError("创建虚拟机任务已失联，自动恢复虚拟机状态");
+            taskService.updateById(latestTask);
+        }
+        Integer status = 1;
+        try {
+            Integer pveStatus = masterService.getVmStatusCode(vmhost.getNodeid(), vmhost.getVmid());
+            if (pveStatus != null && pveStatus >= 0 && pveStatus <= 5) {
+                status = pveStatus;
+            }
+        } catch (Exception ignored) {
+        }
+        vmhost.setStatus(status);
+        return this.updateById(vmhost);
     }
 
     /**

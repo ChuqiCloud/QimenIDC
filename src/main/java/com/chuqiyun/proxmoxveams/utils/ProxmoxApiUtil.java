@@ -636,17 +636,93 @@ public class ProxmoxApiUtil {
         if (vmConfig == null) {
             return false;
         }
+        HashMap<String, Object> params = new HashMap<>();
         String scsi0 = vmConfig.getString("scsi0");
         if (scsi0 == null || scsi0.trim().isEmpty()) {
             return false;
         }
-        String targetDiskConfig = VmUtil.upsertDiskOption(scsi0, "size", targetSize);
-        if (!targetDiskConfig.equals(scsi0)) {
-            resetVmConfig(node, cookie, vmid, "scsi0", targetDiskConfig);
+        Long currentBytes = VmDiskUsageUtil.getDiskSizeBytes(scsi0);
+        Long targetBytes = parseSizeBytes(targetSize);
+        if (targetBytes == null || (currentBytes != null && currentBytes >= targetBytes)) {
+            return true;
         }
+        params.put("scsi0", VmUtil.upsertDiskOption(scsi0, "size", targetSize));
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config", params);
         JSONObject refreshedVmConfig = getVmConfig(node, cookie, vmid);
         String refreshedScsi0 = refreshedVmConfig == null ? null : refreshedVmConfig.getString("scsi0");
-        return refreshedScsi0 != null && refreshedScsi0.contains("size=" + targetSize);
+        Long refreshedBytes = VmDiskUsageUtil.getDiskSizeBytes(refreshedScsi0);
+        return refreshedBytes != null && refreshedBytes >= targetBytes;
+    }
+
+    /**
+     * 根据被控端实际卷的逻辑容量，批量修正 PVE 各磁盘配置中的 size。
+     * thin 盘的 actualBytes 只是物理分配量，不能用于该修正。
+     */
+    public boolean syncVmDiskDisplaySizes(Master node, HashMap<String, String> cookie, Integer vmid,
+                                          JSONObject vmConfig, JSONObject diskUsage) throws UnauthorizedException {
+        if (vmConfig == null || diskUsage == null) {
+            return false;
+        }
+        HashMap<String, Object> params = new HashMap<>();
+        addDiskSizeCorrection(params, vmConfig, diskUsage.getJSONObject("systemDisk"));
+        com.alibaba.fastjson2.JSONArray dataDisks = diskUsage.getJSONArray("dataDisks");
+        if (dataDisks != null) {
+            for (int i = 0; i < dataDisks.size(); i++) {
+                addDiskSizeCorrection(params, vmConfig, dataDisks.getJSONObject(i));
+            }
+        }
+        if (params.isEmpty()) {
+            return true;
+        }
+        putNodeApi(node, cookie, "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config", params);
+        JSONObject refreshed = getVmConfig(node, cookie, vmid);
+        if (refreshed == null) {
+            return false;
+        }
+        for (String device : params.keySet()) {
+            String config = refreshed.getString(device);
+            String expected = (String) params.get(device);
+            Long expectedBytes = VmDiskUsageUtil.getDiskSizeBytes(expected);
+            Long actualBytes = VmDiskUsageUtil.getDiskSizeBytes(config);
+            if (expectedBytes == null || actualBytes == null || actualBytes < expectedBytes) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void addDiskSizeCorrection(HashMap<String, Object> params, JSONObject vmConfig, JSONObject disk) {
+        if (disk == null || !Boolean.TRUE.equals(disk.getBoolean("available"))) {
+            return;
+        }
+        String device = disk.getString("device");
+        Long provisionedBytes = disk.getLong("provisionedBytes");
+        if (device == null || provisionedBytes == null || provisionedBytes <= 0) {
+            return;
+        }
+        String currentConfig = vmConfig.getString(device);
+        if (currentConfig == null || currentConfig.trim().isEmpty()) {
+            return;
+        }
+        Long currentBytes = VmDiskUsageUtil.getDiskSizeBytes(currentConfig);
+        if (currentBytes != null && currentBytes >= provisionedBytes) {
+            return;
+        }
+        params.put(device, VmUtil.upsertDiskOption(currentConfig, "size", formatDiskSize(provisionedBytes)));
+    }
+
+    private String formatDiskSize(long bytes) {
+        long gib = 1024L * 1024L * 1024L;
+        long size = (bytes + gib - 1) / gib;
+        return Math.max(1, size) + "G";
+    }
+
+    private Long parseSizeBytes(String value) {
+        if (value == null) {
+            return null;
+        }
+        String config = "volume,size=" + value;
+        return VmDiskUsageUtil.getDiskSizeBytes(config);
     }
 
     /**

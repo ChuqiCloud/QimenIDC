@@ -497,3 +497,7 @@ build: # 内部构建版本信息
       - "alter table vmhost
                    add used_in_flow double default 0 not null comment '当月入站/下行流量（单位字节）' after used_flow,
                    add used_out_flow double default 0 not null comment '当月出站/上行流量（单位字节）' after used_in_flow;"
+    3:
+      - "alter table vmhost
+                   add last_disk_reconcile_time bigint default 0 not null comment '上次校正虚拟机磁盘显示容量时间戳（毫秒）' after delete_state,
+                   add index idx_vmhost_disk_reconcile (delete_state, last_disk_reconcile_time);"
