@@ -41,6 +41,10 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 public class CreateVmCron {
     private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
     private static final String NETWORK_TYPE_VPC = "vpc";
+    private static final int NAT_SOURCE_PORT_MIN = 1000;
+    private static final int NAT_SOURCE_PORT_MAX = 60050;
+    private static final int NAT_LEGACY_RESERVED_PORT_MIN = 5900;
+    private static final int NAT_LEGACY_RESERVED_PORT_MAX = 5999;
 
     @Resource
     private VmhostService vmhostService;
@@ -238,9 +242,9 @@ public class CreateVmCron {
                     return;
                 }
                 Master node = masterService.getById(vmParams.getNodeid());
-                int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                int s_port = nextNatSourcePort();
                 if (!vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId)){
-                    s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                    s_port = nextNatSourcePort();
                     vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId);
                 }
                 System.out.println("[NAT] 创建默认远程NAT: 虚拟机ID:" + vmhostId + " VM-ID:" + task.getHostid() + " 完成");
@@ -599,6 +603,15 @@ public class CreateVmCron {
             return;
         }
         releaseCreatedIps(vmParams, vmId);
+    }
+
+    private int nextNatSourcePort() {
+        int port;
+        do {
+            port = ThreadLocalRandom.current().nextInt(NAT_SOURCE_PORT_MIN, NAT_SOURCE_PORT_MAX + 1);
+        } while ((port >= NAT_LEGACY_RESERVED_PORT_MIN && port <= NAT_LEGACY_RESERVED_PORT_MAX)
+                || (port >= 59000 && port <= NAT_SOURCE_PORT_MAX));
+        return port;
     }
 
     private void markCreateTaskFailed(Task task, Integer vmhostId, String error) {

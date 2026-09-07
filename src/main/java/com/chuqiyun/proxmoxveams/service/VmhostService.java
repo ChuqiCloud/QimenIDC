@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmIpParams;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
@@ -106,6 +107,8 @@ public interface VmhostService extends IService<Vmhost> {
     Boolean syncVmhostVpcIpForward(int hostId);
     Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
     Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm);
+    NatOperationResult addVmhostNatWithResult(String source_ip, int source_port, String destination_ip, int destination_port, String protocol, int vm);
+    NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip, int destination_port, String protocol, int vm);
     Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
     Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
     Boolean clearVmhostVpcIpBinding(int hostId);

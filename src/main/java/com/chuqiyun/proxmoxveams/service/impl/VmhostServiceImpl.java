@@ -11,6 +11,7 @@ import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dao.VmhostDao;
 import com.chuqiyun.proxmoxveams.dto.IpDto;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.dto.RenewalParams;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.dto.VmIpParams;
@@ -58,6 +59,12 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
+    private static final int NAT_SOURCE_PORT_MIN = 1000;
+    private static final int NAT_SOURCE_PORT_MAX = 60050;
+    private static final int NAT_LEGACY_RESERVED_PORT_MIN = 5900;
+    private static final int NAT_LEGACY_RESERVED_PORT_MAX = 5999;
+    private static final int NAT_DESTINATION_PORT_MIN = 1;
+    private static final int NAT_DESTINATION_PORT_MAX = 65535;
     private static final long CREATE_VM_STALE_TIMEOUT = 15 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
@@ -999,9 +1006,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             if (StringUtils.isBlank(dest_ip)) {
                 return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "NAT重建失败: 未找到IPv4地址");
             }
-            int s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+            int s_port = nextNatSourcePort();
             if (!this.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhost.getId())) {
-                s_port = ThreadLocalRandom.current().nextInt(1000, 65536);
+                s_port = nextNatSourcePort();
                 this.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhost.getId());
             }
         }
@@ -3924,27 +3931,79 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+        return addVmhostNatWithResult(source_ip, source_port, destination_ip, destination_port, protocol, vm).isSuccess();
+    }
+
+    @Override
+    public NatOperationResult addVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
+                                                      int destination_port, String protocol, int vm) {
         String token = configService.getToken();
-        Master node = masterService.getById(this.getVmhostNodeId(vm));
         Vmhost vmhost = this.getById(vm);
-        if (node == null || vmhost == null || !Objects.equals(vmhost.getDeleteState(), 0)) {
-            return false;
+        if (vmhost == null) {
+            return NatOperationResult.failure("虚拟机不存在");
+        }
+        if (!Objects.equals(vmhost.getDeleteState(), 0)) {
+            return NatOperationResult.failure("虚拟机已删除或正在回收，无法操作 NAT");
+        }
+        Integer nodeId = this.getVmhostNodeId(vm);
+        Master node = nodeId == null ? null : masterService.getById(nodeId);
+        if (node == null) {
+            return NatOperationResult.failure("虚拟机所属宿主机不存在");
+        }
+        if (!Integer.valueOf(1).equals(node.getNaton())) {
+            return NatOperationResult.failure("该宿主机未开启 NAT");
         }
         String effectiveSourceIp = StringUtils.isBlank(source_ip) ? node.getHost() : source_ip.trim();
-        if(Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort()) || node.getNaton() == 0
-                || source_port < 1000 || source_port > 60050 || Objects.equals(source_port, node.getSshPort()) || source_port == 3128
-                || source_port == 5404 || source_port == 5405 || (source_port >= 5900 && source_port < 6000)
-                || (source_port >= 59000 && source_port <= 60050) || source_port == 6080
-        ) {return false;} //端口不符合要求和节点是否开启NAT 否则直接返回，缺点是没有写错误提示
-        //上述禁用端口说明：禁止<1000与>65535端口，禁止web端口、控制端口、ssh端口、禁止未开启NAT的机器使用该功能
+        protocol = StringUtils.lowerCase(StringUtils.trimToEmpty(protocol));
+        destination_ip = StringUtils.trimToNull(destination_ip);
+        if (source_port < NAT_SOURCE_PORT_MIN || source_port > NAT_SOURCE_PORT_MAX) {
+            return NatOperationResult.failure("源端口范围必须为 " + NAT_SOURCE_PORT_MIN + "-" + NAT_SOURCE_PORT_MAX);
+        }
+        if (destination_port < NAT_DESTINATION_PORT_MIN || destination_port > NAT_DESTINATION_PORT_MAX) {
+            return NatOperationResult.failure("目标端口范围必须为 " + NAT_DESTINATION_PORT_MIN + "-" + NAT_DESTINATION_PORT_MAX);
+        }
+        if (StringUtils.isBlank(destination_ip)) {
+            return NatOperationResult.failure("目标 IP 不能为空");
+        }
+        if (!Objects.equals(protocol, "tcp") && !Objects.equals(protocol, "udp") && !Objects.equals(protocol, "all")) {
+            return NatOperationResult.failure("协议只支持 tcp、udp 或 all");
+        }
+        if (Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort())
+                || Objects.equals(source_port, node.getSshPort())) {
+            return NatOperationResult.failure("源端口不能使用宿主机 Web、控制台或 SSH 端口");
+        }
+        if (source_port == 3128) {
+            return NatOperationResult.failure("源端口 3128 为 SPICE 代理保留端口");
+        }
+        if (source_port == 5404 || source_port == 5405) {
+            return NatOperationResult.failure("源端口 5404、5405 为集群通信保留端口");
+        }
+        if (source_port == 6080) {
+            return NatOperationResult.failure("源端口 6080 为 PVE WebSocket 保留端口");
+        }
+        if (source_port >= NAT_LEGACY_RESERVED_PORT_MIN && source_port <= NAT_LEGACY_RESERVED_PORT_MAX) {
+            return NatOperationResult.failure("源端口 5900-5999 为系统保留端口");
+        }
+        if (source_port >= 59000 && source_port <= 60050) {
+            return NatOperationResult.failure("源端口 59000-60050 为 VNC/迁移保留端口");
+        }
+        //源端口范围限制为1000-60050；同时禁止web端口、控制端口、ssh端口及系统保留端口。
+        //目标端口仅允许标准TCP/UDP端口范围1-65535，禁止未开启NAT的机器使用该功能。
         //corosync集群流量 5404 5405 UDP、实时迁移：60000-60050 TCP、SPICE代理：3128 TCP、vnc：59000-59999，6080 TCP/WEBSOCKET
         if (natForwardSyncService.countPortRules(vm) >= vmhost.getNatnum()) {
-            return false;
+            return NatOperationResult.failure("NAT 转发数量已达到虚拟机配额上限");
         }
-        Boolean remoteResult = ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm,
-                effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+        Boolean remoteResult;
+        try {
+            remoteResult = ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm,
+                    effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+        } catch (Exception e) {
+            log.warn("[NAT] 添加规则时连接宿主机失败 nodeId={}, vm={}, sourcePort={}, destinationIp={}, destinationPort={}",
+                    node.getId(), vm, source_port, destination_ip, destination_port, e);
+            return NatOperationResult.failure("连接宿主机失败: " + describeNatException(e));
+        }
         if (!Boolean.TRUE.equals(remoteResult)) {
-            return false;
+            return NatOperationResult.failure("宿主机拒绝或未响应 NAT 规则，请检查端口是否已占用及目标 IP 是否可达");
         }
         List<String> protocols = Objects.equals(protocol, "all")
                 ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
@@ -3956,10 +4015,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 for (String savedProtocol : protocols) {
                     natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, savedProtocol);
                 }
-                return false;
+                return NatOperationResult.failure("宿主机已添加 NAT，但本地保存失败，规则已回滚");
             }
         }
-        return true;
+        return NatOperationResult.success();
     }
     /**
      * @Author: 星禾
@@ -3969,19 +4028,61 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
+        return delVmhostNatWithResult(source_ip, source_port, destination_ip, destination_port, protocol, vm).isSuccess();
+    }
+
+    @Override
+    public NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
+                                                      int destination_port, String protocol, int vm) {
         String token = configService.getToken();
-        Master node = masterService.getById(this.getVmhostNodeId(vm));
+        Vmhost vmhost = this.getById(vm);
+        if (vmhost == null || !Objects.equals(vmhost.getDeleteState(), 0)) {
+            return NatOperationResult.failure("虚拟机不存在或已删除");
+        }
+        Integer nodeId = this.getVmhostNodeId(vm);
+        Master node = nodeId == null ? null : masterService.getById(nodeId);
         if (node == null) {
-            return false;
+            return NatOperationResult.failure("虚拟机所属宿主机不存在");
         }
         String effectiveSourceIp = StringUtils.isBlank(source_ip) ? node.getHost() : source_ip.trim();
+        protocol = StringUtils.lowerCase(StringUtils.trimToEmpty(protocol));
+        if (!Objects.equals(protocol, "tcp") && !Objects.equals(protocol, "udp") && !Objects.equals(protocol, "all")) {
+            return NatOperationResult.failure("协议只支持 tcp、udp 或 all");
+        }
         List<String> protocols = Objects.equals(protocol, "all")
                 ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
         for (String itemProtocol : protocols) {
             natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, itemProtocol);
         }
-        return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
-                effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+        Boolean result;
+        try {
+            result = ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
+                    effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
+        } catch (Exception e) {
+            log.warn("[NAT] 删除规则时连接宿主机失败 nodeId={}, vm={}, sourcePort={}, destinationIp={}, destinationPort={}",
+                    node.getId(), vm, source_port, destination_ip, destination_port, e);
+            return NatOperationResult.failure("连接宿主机失败: " + describeNatException(e));
+        }
+        return Boolean.TRUE.equals(result)
+                ? NatOperationResult.success()
+                : NatOperationResult.failure("宿主机删除 NAT 规则失败或规则不存在");
+    }
+
+    private String describeNatException(Exception exception) {
+        String message = exception.getMessage();
+        if (StringUtils.isBlank(message) && exception.getCause() != null) {
+            message = exception.getCause().getMessage();
+        }
+        return StringUtils.isBlank(message) ? exception.getClass().getSimpleName() : message;
+    }
+
+    private int nextNatSourcePort() {
+        int port;
+        do {
+            port = ThreadLocalRandom.current().nextInt(NAT_SOURCE_PORT_MIN, NAT_SOURCE_PORT_MAX + 1);
+        } while ((port >= NAT_LEGACY_RESERVED_PORT_MIN && port <= NAT_LEGACY_RESERVED_PORT_MAX)
+                || (port >= 59000 && port <= NAT_SOURCE_PORT_MAX));
+        return port;
     }
 
     @Override

@@ -3,6 +3,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.PublicSysApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -26,11 +27,15 @@ public class Nat {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/nat/add",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object addVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.addVmhostNat(getOptionalSourceIp(params),params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
-        if( result ) {
+        if (params == null || params.getInteger("source_port") == null
+                || params.getInteger("destination_port") == null) {
+            return ResponseResult.fail("源端口和目标端口不能为空");
+        }
+        NatOperationResult result = vmhostService.addVmhostNatWithResult(getOptionalSourceIp(params),params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        if (result.isSuccess()) {
             return ResponseResult.ok();
         } else {
-            return ResponseResult.fail();
+            return ResponseResult.fail(result.getMessage());
         }
     }
     /**
@@ -41,11 +46,15 @@ public class Nat {
     @PublicSysApiCheck
     @RequestMapping(value = "/pve/nat/del",method = {RequestMethod.POST,RequestMethod.PUT})
     public Object delVmNat(@RequestBody JSONObject params) throws UnauthorizedException {
-        Boolean result = vmhostService.delVmhostNat(getOptionalSourceIp(params), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
-        if( result ) {
+        if (params == null || params.getInteger("source_port") == null
+                || params.getInteger("destination_port") == null) {
+            return ResponseResult.fail("源端口和目标端口不能为空");
+        }
+        NatOperationResult result = vmhostService.delVmhostNatWithResult(getOptionalSourceIp(params), params.getInteger("source_port"), params.getString("destination_ip"), params.getInteger("destination_port"), params.getString("protocol") , params.getInteger("vm"));
+        if (result.isSuccess()) {
             return ResponseResult.ok();
         } else {
-            return ResponseResult.fail();
+            return ResponseResult.fail(result.getMessage());
         }
     }
     /**

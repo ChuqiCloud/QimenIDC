@@ -68,7 +68,6 @@ public class ResetSystemCron {
         taskQueryWrapper.eq("type", REINSTALL_VM);
         taskQueryWrapper.eq("status", 0);
         taskQueryWrapper.orderByAsc("create_date");
-        taskQueryWrapper.last("LIMIT 1");
         Page<Task> taskPage = taskService.getTaskList(1, 1, taskQueryWrapper);
         // 判断是否没有任务
         if (taskPage.getRecords().size() == 0) {

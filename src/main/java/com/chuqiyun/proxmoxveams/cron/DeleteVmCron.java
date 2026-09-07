@@ -63,6 +63,7 @@ public class DeleteVmCron {
     @Resource
     private ConfigService configService;
     private final AtomicBoolean deleteVmRunning = new AtomicBoolean(false);
+    private final AtomicBoolean deleteRecycleRunning = new AtomicBoolean(false);
 
     /**
     * @Author: mryunqi
@@ -128,7 +129,7 @@ public class DeleteVmCron {
         return vmhost != null && NETWORK_TYPE_VPC.equalsIgnoreCase(vmhost.getNetworkType());
     }
 
-    @Async("workflowExecutor")
+    @Async("deleteVmExecutor")
     @Scheduled(fixedDelay = 2000)
     public void deleteVm() {
         if (!deleteVmRunning.compareAndSet(false, true)) {
@@ -145,12 +146,19 @@ public class DeleteVmCron {
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         taskQueryWrapper.eq("type", DELETE_VM);
         taskQueryWrapper.eq("status", 0);
+        taskQueryWrapper.orderByAsc("create_date");
         Page<Task> taskPage = taskService.getTaskList(1, 1, taskQueryWrapper);
         // 判断是否没有任务
         if (taskPage.getRecords().size() == 0) {
             return;
         }
         Task task = taskPage.getRecords().get(0);
+        UpdateWrapper<Task> claimWrapper = new UpdateWrapper<>();
+        claimWrapper.eq("id", task.getId()).eq("status", 0).set("status", 1);
+        if (!taskService.update(claimWrapper)) {
+            return;
+        }
+        task.setStatus(1);
         try {
             // 获取虚拟机配置信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
@@ -203,60 +211,53 @@ public class DeleteVmCron {
             try {
                 vmInfo = proxmoxApiUtil.getVmStatus(node, authentications, vmhost.getVmid());
             } catch (Exception e) {
+                log.warn("[DeleteVmCron] 获取PVE虚拟机状态失败，直接尝试执行PVE删除: TaskId={}, NodeID={}, HostId={}, VmId={}, Error={}",
+                        task.getId(), task.getNodeid(), task.getHostid(), task.getVmid(), e.getMessage());
                 vmInfo = null;
             }
             // 如果vmInfo不为空，才进行下一步操作
             if (vmInfo != null) {
                 JSONObject vmStatusData = vmInfo.getJSONObject("data");
                 String pveStatus = vmStatusData == null ? vmInfo.getString("status") : vmStatusData.getString("status");
-                // 创建中状态也允许删除。若 PVE 仍在运行，先强制关机，下次轮询继续删除。
-                if ("running".equalsIgnoreCase(pveStatus)) {
-                    if (vmhost.getStatus() == 6) {
-                        proxmoxApiUtil.forceStopVm(node, authentications, vmhost.getVmid());
+                if (isPveStopped(pveStatus)) {
+                    log.info("[DeleteVmCron] PVE确认虚拟机已关机，继续删除: TaskId={}, HostId={}, VmId={}",
+                            task.getId(), task.getHostid(), task.getVmid());
+                } else if ("running".equalsIgnoreCase(pveStatus)) {
+                    log.info("[DeleteVmCron] PVE确认虚拟机运行中，创建或复用强制停止任务: TaskId={}, HostId={}, VmId={}",
+                            task.getId(), task.getHostid(), task.getVmid());
+                    ensureForceStopTask(vmhost);
+                    if (vmhost.getStatus() != 9) {
                         vmhost.setStatus(9);
                         vmhostService.updateById(vmhost);
                     }
+                    task.setStatus(0);
+                    taskService.updateById(task);
+                    return;
+                } else {
+                    log.info("[DeleteVmCron] PVE虚拟机处于过渡状态{}，等待下一轮确认，不创建强制停止任务: TaskId={}, HostId={}, VmId={}",
+                            pveStatus, task.getId(), task.getHostid(), task.getVmid());
+                    task.setStatus(0);
+                    taskService.updateById(task);
                     return;
                 }
             }
-            else {
-                deleteSecurityGroups(vmhost);
-                deleteVpcIpForwards(vmhost);
-                ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
-                releaseSubnetpoolByVmhost(vmhost);
-                vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
-                // 标记为已删除，保留记录供统计使用
-                vmhost.setDeleteState(2);
-                vmhost.setExpirationTime(System.currentTimeMillis());
-                vmhostService.updateById(vmhost);
-                // 修改任务状态为2
-                task.setStatus(2);
-                taskService.updateById(task);
+            if (vmInfo == null) {
+                deletePveVmOrIgnoreMissing(proxmoxApiUtil, node, authentications, task);
+                finishDeletedVm(task, vmhost);
                 return;
             }
             // 修改任务状态为1
             task.setStatus(1);
             taskService.updateById(task);
 
-            proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
-
-            deleteSecurityGroups(vmhost);
-            deleteVpcIpForwards(vmhost);
-            ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
-            releaseSubnetpoolByVmhost(vmhost);
-            vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
-            // 标记为已删除，保留记录供统计使用
-            vmhost.setDeleteState(2);
-            vmhost.setExpirationTime(System.currentTimeMillis());
-            vmhostService.updateById(vmhost);
-            // 修改任务状态为2
-            task.setStatus(2);
-            taskService.updateById(task);
+            deletePveVmOrIgnoreMissing(proxmoxApiUtil, node, authentications, task);
+            finishDeletedVm(task, vmhost);
         } catch (Exception e) {
-            e.printStackTrace(); // 输出完整堆栈信息
-            System.out.println("DeleteVm 异常"+ e);
-            task.setStatus(2);
+            task.setStatus(3);
+            task.setError(e.getMessage());
             taskService.updateById(task);
+            log.error("[DeleteVmCron] 删除任务执行失败: TaskId={}, NodeID={}, HostId={}, VmId={}",
+                    task.getId(), task.getNodeid(), task.getHostid(), task.getVmid(), e);
         }
     }
     /**
@@ -264,9 +265,65 @@ public class DeleteVmCron {
      * @Description: 15分钟运行一次 删除回收站虚拟机
      * @DateTime: 2026/5/23 23:25
      */
-    @Async("workflowExecutor")
+    @Async("deleteRecycleExecutor")
     @Scheduled(fixedDelay = 15 * 60 * 1000)
     public void deleteRecycleVm() {
+        if (!deleteRecycleRunning.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            processRecycleVm();
+        } finally {
+            deleteRecycleRunning.set(false);
+        }
+    }
+
+    private boolean isPveStopped(String pveStatus) {
+        return "stopped".equalsIgnoreCase(pveStatus);
+    }
+
+    private boolean isVmConfigMissing(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("Configuration file")
+                    && message.contains("does not exist"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void deletePveVmOrIgnoreMissing(ProxmoxApiUtil proxmoxApiUtil, Master node,
+                                            HashMap<String, String> authentications, Task task) throws Exception {
+        try {
+            proxmoxApiUtil.deleteVm(node, authentications, task.getVmid());
+        } catch (Exception e) {
+            if (isVmConfigMissing(e)) {
+                log.warn("[DeleteVmCron] PVE删除时配置已不存在，按删除成功处理: TaskId={}, NodeID={}, HostId={}, VmId={}",
+                        task.getId(), task.getNodeid(), task.getHostid(), task.getVmid());
+                return;
+            }
+            throw e;
+        }
+    }
+
+    private void finishDeletedVm(Task task, Vmhost vmhost) {
+        deleteSecurityGroups(vmhost);
+        deleteVpcIpForwards(vmhost);
+        ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
+        releaseSubnetpoolByVmhost(vmhost);
+        vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
+        vmhost.setDeleteState(2);
+        vmhost.setExpirationTime(System.currentTimeMillis());
+        vmhostService.updateById(vmhost);
+        task.setStatus(2);
+        task.setError(null);
+        taskService.updateById(task);
+    }
+
+    private void processRecycleVm() {
         QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
         // 筛选expirationTime小于等于当前时间
         queryWrap.le("expiration_time", System.currentTimeMillis());
@@ -274,58 +331,60 @@ public class DeleteVmCron {
         Page<Vmhost> page = vmhostService.selectPageByDelete(1,1000,queryWrap);
         List<Vmhost> vmList = page.getRecords();
         for (Vmhost vmhost : vmList){
-            // 判断是否正在运行
-            if (vmhost.getStatus() == 0){
-                // 如果正在运行则创建关机任务
-                Task vmStopTask = new Task();
-                vmStopTask.setNodeid(vmhost.getNodeid());
-                vmStopTask.setVmid(vmhost.getVmid());
-                vmStopTask.setHostid(vmhost.getId());
-                vmStopTask.setType(STOP_VM_FORCE);
-                vmStopTask.setStatus(0);
-                vmStopTask.setCreateDate(System.currentTimeMillis());
-                taskService.save(vmStopTask);
-                // 等待该任务执行完成
-                int count = 0;
-                while (true){
-                    // 如果超过60秒还没有完成，则跳出循环
-                    if (count >= 600) {
-                        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
-                        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-                            System.out.println(resultDto.getResultCode().getMessage());
-                        } else  {
-                            log.info("[DeleteVmCron] 创建删除回收站的虚拟机ID: 虚拟机ID:{} VM-ID:{}",vmhost.getId(),vmhost.getVmid());
-                        }
-                        break;
-                    }
-                    // 休眠1秒
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    Task task = taskService.getById(vmStopTask.getId());
-                    if (task == null || task.getStatus() == 0 || task.getStatus() == 3) {
-                        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
-                        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-                            System.out.println(resultDto.getResultCode().getMessage());
-                        } else  {
-                            log.info("[DeleteVmCron] 创建删除回收站的虚拟机ID: 虚拟机ID:{} VM-ID:{}",vmhost.getId(),vmhost.getVmid());
-                        }
-                        break;
-                    }
-                    count++;
-                }
-            }
-            // 如果不是正在运行则直接删除
-            else {
-                UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
-                if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-                    System.out.println(resultDto.getResultCode().getMessage());
-                } else  {
-                    log.info("[DeleteVmCron] 创建删除回收站的虚拟机ID: 虚拟机ID:{} VM-ID:{}",vmhost.getId(),vmhost.getVmid());
-                }
-            }
+            // 不依据主控数据库中的中间状态判断，由删除任务读取PVE实时状态。
+            // PVE stopped 直接删除，PVE running 才创建强制停止任务，其他过渡状态等待重试。
+            enqueueDeleteTask(vmhost);
         }
+    }
+
+    private void enqueueDeleteTask(Vmhost vmhost) {
+        QueryWrapper<Task> activeDeleteQuery = new QueryWrapper<>();
+        activeDeleteQuery.eq("type", DELETE_VM)
+                .eq("hostid", vmhost.getId())
+                .in("status", 0, 1)
+                .last("LIMIT 1");
+        if (taskService.getOne(activeDeleteQuery) != null) {
+            log.info("[DeleteVmCron] 删除任务已存在，跳过重复创建: HostId={}, VmId={}", vmhost.getId(), vmhost.getVmid());
+            return;
+        }
+        UnifiedResultDto<Object> resultDto = vmhostService.deleteVm(Long.valueOf(vmhost.getId()));
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            log.warn("[DeleteVmCron] 创建删除任务失败: HostId={}, VmId={}, Message={}",
+                    vmhost.getId(), vmhost.getVmid(), resultDto.getResultCode().getMessage());
+        } else {
+            log.info("[DeleteVmCron] 创建删除回收站的虚拟机任务: HostId={}, VmId={}", vmhost.getId(), vmhost.getVmid());
+        }
+    }
+
+    /**
+     * 获取或创建强制关机任务，避免删除流程只调用PVE接口却没有可追踪的停止任务。
+     */
+    private Task ensureForceStopTask(Vmhost vmhost) {
+        QueryWrapper<Task> stopQuery = new QueryWrapper<>();
+        stopQuery.eq("type", STOP_VM_FORCE)
+                .eq("hostid", vmhost.getId())
+                .eq("vmid", vmhost.getVmid())
+                .in("status", 0, 1)
+                .orderByAsc("create_date")
+                .last("LIMIT 1");
+        Task existing = taskService.getOne(stopQuery);
+        if (existing != null) {
+            log.info("[DeleteVmCron] 停止任务已存在: StopTaskId={}, HostId={}, VmId={}, Status={}",
+                    existing.getId(), vmhost.getId(), vmhost.getVmid(), existing.getStatus());
+            return existing;
+        }
+        Task stopTask = new Task();
+        stopTask.setNodeid(vmhost.getNodeid());
+        stopTask.setVmid(vmhost.getVmid());
+        stopTask.setHostid(vmhost.getId());
+        stopTask.setType(STOP_VM_FORCE);
+        stopTask.setStatus(0);
+        stopTask.setCreateDate(System.currentTimeMillis());
+        if (!taskService.save(stopTask)) {
+            return null;
+        }
+        log.info("[DeleteVmCron] 创建停止任务: StopTaskId={}, HostId={}, VmId={}",
+                stopTask.getId(), vmhost.getId(), vmhost.getVmid());
+        return stopTask;
     }
 }

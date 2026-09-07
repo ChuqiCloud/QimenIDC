@@ -13,6 +13,8 @@ import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,6 +24,7 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 
@@ -36,6 +39,9 @@ public class ErrorTaskCron {
     private static final long GENERAL_TASK_TIMEOUT = 10 * 60 * 1000L;
     private static final long CREATE_VM_TIMEOUT = 15 * 60 * 1000L;
     private static final long REINSTALL_VM_TIMEOUT = 15 * 60 * 1000L;
+    private static final long STARTUP_PROTECTION_MILLIS = 10 * 60 * 1000L;
+    private volatile long applicationStartTime;
+    private final AtomicBoolean startupProtectionLogged = new AtomicBoolean(false);
 
     @Resource
     private MasterService masterService;
@@ -46,6 +52,11 @@ public class ErrorTaskCron {
     @Resource
     private OsService osService;
 
+    @EventListener(ApplicationReadyEvent.class)
+    public void initializeStartupProtection() {
+        applicationStartTime = System.currentTimeMillis();
+    }
+
     /**
      * 异常任务监控
      * 普通任务超过10分钟、创建和重装主任务超过15分钟仍处于执行中，则进行异常处理
@@ -53,6 +64,13 @@ public class ErrorTaskCron {
     @Async
     @Scheduled(fixedDelay = 60000)
     public void errorTaskCron() {
+        if (!isStartupProtectionFinished()) {
+            if (startupProtectionLogged.compareAndSet(false, true)) {
+                UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
+                        "异常任务监控启动保护中，前{}分钟不处理历史异常任务", STARTUP_PROTECTION_MILLIS / 60000);
+            }
+            return;
+        }
         recoverStuckCreateVmhosts();
         recoverStuckReinstallVmhosts();
         if (failTimeoutApplyWindowsVmIpTask()) {
@@ -87,6 +105,11 @@ public class ErrorTaskCron {
         taskService.updateById(task);
         Integer nodeId = node == null ? task.getNodeid() : node.getId();
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_RESET_SYSTEM, "异常任务状态监控处理完成: NodeID:{} VM-ID:{} TASK-TYPE:{}", nodeId, task.getVmid(),task.getType());
+    }
+
+    private boolean isStartupProtectionFinished() {
+        long startTime = applicationStartTime;
+        return startTime > 0 && System.currentTimeMillis() - startTime >= STARTUP_PROTECTION_MILLIS;
     }
 
     private Integer getRecoverStatus(Task task) {

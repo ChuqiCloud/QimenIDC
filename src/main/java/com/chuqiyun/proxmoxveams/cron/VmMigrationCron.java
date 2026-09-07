@@ -725,7 +725,7 @@ public class VmMigrationCron {
                 && port != 5404
                 && port != 5405
                 && port != 6080
-                && !(port >= 5900 && port < 6000)
+                && !(port >= 5900 && port <= 5999)
                 && !(port >= 59000 && port <= 60050);
     }
 
