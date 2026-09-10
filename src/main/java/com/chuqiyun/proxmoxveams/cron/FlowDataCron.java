@@ -18,7 +18,8 @@ import javax.annotation.Resource;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.temporal.TemporalAdjusters;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -359,16 +360,14 @@ public class FlowDataCron {
             for (Vmhost vmhost : vmhostList) {
                 // 处理开通日重置逻辑
                 long createTime = vmhost.getCreateTime();
-                LocalDate createDate = Instant.ofEpochMilli(createTime)
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate();
-
-                // 计算有效重置日（自动处理31日等特殊情况）
-                LocalDate nextResetDate = calculateResetDate(createDate);
+                LocalDate createDate = toLocalDate(createTime);
                 LocalDate today = LocalDate.now();
+                LocalDate resetDate = calculateResetDate(createDate, today);
+                long resetDateStart = resetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                long lastResetTime = vmhost.getLastResetFlow();
 
                 // 仅在匹配日期执行重置
-                if (today.equals(nextResetDate)) {
+                if (!resetDate.isAfter(today) && (lastResetTime == 0 || lastResetTime < resetDateStart)) {
                     resetVmFlow(vmhost);
                 }
             }
@@ -403,16 +402,13 @@ public class FlowDataCron {
                     if (TimeUtil.isSameDay(createTime)) {
                         continue;
                     }
-                    LocalDate createDate = Instant.ofEpochMilli(createTime)
-                            .atZone(ZoneId.systemDefault())
-                            .toLocalDate();
-                    LocalDate nextResetDate = calculateResetDate(createDate);
+                    LocalDate createDate = toLocalDate(createTime);
                     LocalDate today = LocalDate.now();
-                    if (today.equals(nextResetDate)) {
-                        long lastResetTime = vmhost.getLastResetFlow();
-                        if (lastResetTime == 0 || !TimeUtil.isSameDay(lastResetTime)) {
-                            resetVmFlow(vmhost);
-                        }
+                    LocalDate resetDate = calculateResetDate(createDate, today);
+                    long resetDateStart = resetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                    long lastResetTime = vmhost.getLastResetFlow();
+                    if (!resetDate.isAfter(today) && (lastResetTime == 0 || lastResetTime < resetDateStart)) {
+                        resetVmFlow(vmhost);
                     }
                 }
                 if (i == vmhostPage.getPages()) {
@@ -429,19 +425,43 @@ public class FlowDataCron {
      * @Author: 星禾
      * @Description 计算有效重置日期（自动处理月末情况）
      * @param createDate 开通日期
-     * @return 次月有效重置日期
+     * @return 当前或下一个有效重置日期
      */
     private LocalDate calculateResetDate(LocalDate createDate) {
+        return calculateResetDate(createDate, LocalDate.now());
+    }
+
+    /**
+     * 计算当前周期内的有效重置日期（自动处理月末情况）
+     * @param createDate 开通日期
+     * @param referenceDate 参考日期
+     * @return 当前或下一个有效重置日期
+     */
+    private LocalDate calculateResetDate(LocalDate createDate, LocalDate referenceDate) {
         // 获取开通日（1-31）
         int dayOfMonth = createDate.getDayOfMonth();
-        // 特殊处理31日开通情况
-        if (dayOfMonth > 28) {
-            // 获取次月最后一天
-            LocalDate nextMonth = createDate.plusMonths(1);
-            return nextMonth.with(TemporalAdjusters.lastDayOfMonth());
+        LocalDate firstResetDate = normalizeResetDate(createDate.plusMonths(1), dayOfMonth);
+        if (referenceDate.isBefore(firstResetDate)) {
+            return firstResetDate;
         }
-        // 常规情况：次月同一天
-        return createDate.plusMonths(1).withDayOfMonth(dayOfMonth);
+
+        long months = ChronoUnit.MONTHS.between(firstResetDate, referenceDate);
+        LocalDate resetDate = normalizeResetDate(firstResetDate.plusMonths(months), dayOfMonth);
+        if (resetDate.isAfter(referenceDate)) {
+            resetDate = normalizeResetDate(firstResetDate.plusMonths(months - 1), dayOfMonth);
+        }
+        return resetDate;
+    }
+
+    private LocalDate normalizeResetDate(LocalDate resetDate, int createDay) {
+        int validDay = Math.min(createDay, YearMonth.from(resetDate).lengthOfMonth());
+        return resetDate.withDayOfMonth(validDay);
+    }
+
+    private LocalDate toLocalDate(long timestamp) {
+        return Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
     }
 
     private void resetVmFlow(Vmhost vmhost) {

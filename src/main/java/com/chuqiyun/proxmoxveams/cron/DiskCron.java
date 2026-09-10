@@ -59,20 +59,38 @@ public class DiskCron {
         try {
             Thread.sleep(1000*10);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Thread.currentThread().interrupt();
+            return;
         }
         QueryWrapper<Master> queryWrap = new QueryWrapper<>();
         queryWrap.eq("status",0);
         // 获取所有
         List<Master> nodeList = masterService.list(queryWrap);
+        if (nodeList == null || nodeList.isEmpty()) {
+            return;
+        }
         for (Master node : nodeList){
-            ArrayList<JSONObject> diskList = masterService.getDiskList(node.getId());
-            Optional<String> maxStorage = diskList.stream()
-                    .max(Comparator.comparingLong(disk -> disk.getLong("avail")))
-                    .map(disk -> disk.getString("storage"));
-            String maxStorageName = maxStorage.orElse(null);
-            node.setAutoStorage(maxStorageName);
-            masterService.updateById(node);
+            if (node == null) {
+                continue;
+            }
+            try {
+                ArrayList<JSONObject> diskList = masterService.getDiskList(node.getId());
+                if (diskList == null || diskList.isEmpty()) {
+                    continue;
+                }
+                Optional<String> maxStorage = diskList.stream()
+                        .filter(Objects::nonNull)
+                        .filter(disk -> disk.getLong("avail") != null && disk.getString("storage") != null)
+                        .max(Comparator.comparingLong(disk -> disk.getLongValue("avail")))
+                        .map(disk -> disk.getString("storage"));
+                if (maxStorage.isPresent()) {
+                    node.setAutoStorage(maxStorage.get());
+                    masterService.updateById(node);
+                }
+            } catch (Exception e) {
+                log.warn("[DiskCron] 获取节点磁盘列表失败，跳过本节点: NodeID:{} NodeName:{}",
+                        node.getId(), node.getNodeName(), e);
+            }
         }
 
     }

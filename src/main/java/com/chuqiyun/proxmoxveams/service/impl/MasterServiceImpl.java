@@ -101,18 +101,32 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     */
     @Override
     public ArrayList<JSONObject> getDiskList(Integer id) {
+        ArrayList<JSONObject> diskList = new ArrayList<>();
+        if (id == null) {
+            return diskList;
+        }
         // 获取master
         Master master = this.getById(id);
+        if (master == null || master.getNodeName() == null) {
+            return diskList;
+        }
         // 获取cookie
         HashMap<String, String> cookieMap = this.getMasterCookieMap(id);
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         JSONObject vmJson = proxmoxApiUtil.getNodeApi(master,cookieMap,"/nodes/"+master.getNodeName()+"/storage",new HashMap<>());
+        if (vmJson == null) {
+            return diskList;
+        }
         JSONArray jsonArray = vmJson.getJSONArray("data");
-        ArrayList<JSONObject> diskList = new ArrayList<>();
+        if (jsonArray == null) {
+            return diskList;
+        }
         // 将jsonArray转换为ArrayList<JSONObject>
         for (int i = 0; i < jsonArray.size(); i++) {
             JSONObject tempJsonObject = jsonArray.getJSONObject(i);
-            diskList.add(tempJsonObject);
+            if (tempJsonObject != null) {
+                diskList.add(tempJsonObject);
+            }
         }
         return diskList;
     }
