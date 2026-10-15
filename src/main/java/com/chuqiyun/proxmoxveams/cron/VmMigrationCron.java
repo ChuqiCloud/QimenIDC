@@ -114,6 +114,9 @@ public class VmMigrationCron {
     }
 
     private void execute(Task task) throws Exception {
+        if (!isLegacyQAgentMigrationAvailable()) {
+            throw new IllegalStateException("VM migration is disabled because the QAgent restore endpoint was retired");
+        }
         Map<Object, Object> params = ensureParams(task);
         Vmhost vmhost = vmhostService.getById(task.getHostid());
         if (vmhost == null) {
@@ -159,7 +162,7 @@ public class VmMigrationCron {
             JSONObject backupData = waitAgentStage(task, sourceNode, token, taskId, "BACKUP_DONE", 1, 35);
 
             String backupFileName = getFileName(backupData.getString("backup_file"));
-            String sourceUrl = "http://" + sourceNode.getHost() + ":" + sourceNode.getControllerPort()
+            String sourceUrl = "https://" + sourceNode.getHost() + ":" + sourceNode.getControllerPort()
                     + "/migration/file/" + taskId + "/" + encodePath(backupFileName);
             updateProgress(task, "RESTORE_START", 35, null);
             ClientApiUtil.startMigrationRestore(targetNode.getHost(), token, targetNode.getControllerPort(), taskId,
@@ -202,6 +205,10 @@ public class VmMigrationCron {
             }
             throw e;
         }
+    }
+
+    private boolean isLegacyQAgentMigrationAvailable() {
+        return false;
     }
 
     private NetworkMigrationResult allocateTargetNetwork(Vmhost vmhost, VmhostSnapshot sourceSnapshot, Master targetNode,

@@ -13,7 +13,11 @@ class Vnc:
     _port_states = {}
 
     def __init__(self, vnc_file_path, host, port, username, password, time, vmid):
-        self.vnc_file_path = vnc_file_path
+        expected_path = os.path.abspath(os.environ.get("QIMEN_VNC_TOKEN_FILE", "/home/software/vnc"))
+        requested_path = os.path.abspath(vnc_file_path)
+        if requested_path != expected_path:
+            raise ValueError("VNC token file path is not allowed")
+        self.vnc_file_path = expected_path
         self.host = host
         self.port = int(port)
         self.username = username
@@ -127,6 +131,7 @@ class Vnc:
         with state["lock"]:
             if state["generation"] == generation and not state["stop_event"].is_set():
                 self.kill_vnc_process()
+                self.vnc_file_editor.delete_entries_for_port(self.port)
                 state["monitor"] = None
 
     def restart_vnc(self):
@@ -140,6 +145,7 @@ class Vnc:
         with state["lock"]:
             state["stop_event"].set()
             self.kill_vnc_process()
+            self.vnc_file_editor.delete_entries_for_port(self.port)
             state["generation"] += 1
             state["monitor"] = None
         return True
@@ -177,16 +183,10 @@ class Vnc:
         return len(self.get_port_pids(listen_only=True)) > 0
 
     def insert_vnc_token(self):
-        vnc_list = self.vnc_file_editor.view_entries(self.username)
-        if len(vnc_list) > 0:
-            if len(vnc_list) > 1:
-                self.vnc_file_editor.delete_entry(self.username)
-                self.vnc_file_editor.add_entry(self.username, self.host, self.port)
-                return True
-            self.vnc_file_editor.update_entry(self.username, self.host, self.port)
-            return True
-        self.vnc_file_editor.add_entry(self.username, self.host, self.port)
-        return True
+        expires_at = time.time() + self.get_lifetime_seconds()
+        return self.vnc_file_editor.add_entry(
+            self.username, self.host, self.port, expires_at=expires_at
+        )
 
     def kill_vnc_process(self):
         pids = self.get_port_pids(listen_only=True)

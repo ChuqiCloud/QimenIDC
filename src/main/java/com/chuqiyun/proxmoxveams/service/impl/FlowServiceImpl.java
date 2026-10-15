@@ -192,25 +192,23 @@ public class FlowServiceImpl implements FlowService {
         if (totalUsedFlow.compareTo(BigDecimal.ZERO) > 0
                 || totalInFlow.compareTo(BigDecimal.ZERO) > 0
                 || totalOutFlow.compareTo(BigDecimal.ZERO) > 0) {
+            // 只累加用量，不能把采集时的旧流量包额度回写到虚拟机。
+            UpdateWrapper<Vmhost> counterUpdate = new UpdateWrapper<>();
+            counterUpdate.eq("id", newVmhost.getId());
             if (totalUsedFlow.compareTo(BigDecimal.ZERO) > 0) {
-                newVmhost.setUsedFlow(addFlow(newVmhost.getUsedFlow(), totalUsedFlow));
+                counterUpdate.setSql("used_flow = COALESCE(used_flow, 0) + " + totalUsedFlow.toPlainString());
             }
             if (totalInFlow.compareTo(BigDecimal.ZERO) > 0) {
-                newVmhost.setUsedInFlow(addFlow(newVmhost.getUsedInFlow(), totalInFlow));
+                counterUpdate.setSql("used_in_flow = COALESCE(used_in_flow, 0) + " + totalInFlow.toPlainString());
             }
             if (totalOutFlow.compareTo(BigDecimal.ZERO) > 0) {
-                newVmhost.setUsedOutFlow(addFlow(newVmhost.getUsedOutFlow(), totalOutFlow));
+                counterUpdate.setSql("used_out_flow = COALESCE(used_out_flow, 0) + " + totalOutFlow.toPlainString());
             }
-            if (!vmhostService.updateById(newVmhost)) {
+            if (!vmhostService.update(counterUpdate)) {
                 throw new IllegalStateException("同步虚拟机流量失败: hostId=" + newVmhost.getId());
             }
         }
         return true;
-    }
-
-    private Double addFlow(Double currentFlow, BigDecimal increment) {
-        BigDecimal current = currentFlow == null ? BigDecimal.ZERO : BigDecimal.valueOf(currentFlow);
-        return current.add(increment).doubleValue();
     }
 
     private long getMaxRrdTime(JSONArray hourHistoryDataArray) {

@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.FlowService;
@@ -163,29 +164,35 @@ public class FlowDataCron {
                         continue;
                     }
                     // 虚拟机流量上限
-                    long flowLimit = vmhost.getFlowLimit();
-                    long extraFlowLimit = vmhost.getExtraFlowLimit();
+                    long flowLimit = vmhost.getFlowLimit() == null ? 0L : vmhost.getFlowLimit();
+                    long extraFlowLimit = vmhost.getExtraFlowLimit() == null ? 0L : vmhost.getExtraFlowLimit();
                     // 如果为0，跳出循环
                     if (flowLimit == 0){
                         continue;
                     }
                     // 虚拟机已用流量
-                    double usedFlow = vmhost.getUsedFlow();
+                    double usedFlow = vmhost.getUsedFlow() == null ? 0D : vmhost.getUsedFlow();
                     // 如果已用流量大于流量上限
-                    if (usedFlow > (flowLimit + extraFlowLimit)){
-                        if (vmhost.getOutFlow() == 0){
+                    if (usedFlow > ((double) flowLimit + extraFlowLimit)){
+                        if (vmhost.getOutFlow() == null || vmhost.getOutFlow() == 0){
                             // 暂停虚拟机
                             vmhostService.power(vmhost.getId(),"qosPause",null);
                             // 修改虚拟机状态为流量超限
                             vmhost.setStatus(15);
                             vmhost.setPauseInfo("流量超限");
-                            vmhostService.updateById(vmhost);
+                            vmhostService.update(new UpdateWrapper<Vmhost>()
+                                    .eq("id", vmhost.getId())
+                                    .set("status", 15)
+                                    .set("pause_info", "流量超限"));
                         } else {
                             vmhost.setStatus(15);
                             vmhost.setPauseInfo("流量超限");
-                            vmhostService.updateById(vmhost);
+                            vmhostService.update(new UpdateWrapper<Vmhost>()
+                                    .eq("id", vmhost.getId())
+                                    .set("status", 15)
+                                    .set("pause_info", "流量超限"));
                             double bandWidthValue = vmhost.getOutFlow() / 1024.0 / 8.0;
-                            String bandWidth = String.format("%.3f", bandWidthValue);
+                            String bandWidth = String.format(java.util.Locale.US, "%.3f", bandWidthValue);
                             vmhostService.changeVmHostBandWidth(vmhost, bandWidth);
                         }
                     }
@@ -234,16 +241,17 @@ public class FlowDataCron {
                         continue;
                     }
                     // 虚拟机流量上限
-                    long flowLimit = vmhost.getFlowLimit();
-                    long extraFlowLimit = vmhost.getExtraFlowLimit();
+                    long flowLimit = vmhost.getFlowLimit() == null ? 0L : vmhost.getFlowLimit();
+                    long extraFlowLimit = vmhost.getExtraFlowLimit() == null ? 0L : vmhost.getExtraFlowLimit();
                     // 如果为0
                     if (flowLimit == 0){
                         outFlowIsZero(vmhost);
+                        continue;
                     }
                     // 虚拟机已用流量
-                    double usedFlow = vmhost.getUsedFlow();
+                    double usedFlow = vmhost.getUsedFlow() == null ? 0D : vmhost.getUsedFlow();
                     // 如果已用流量小于流量上限
-                    if (usedFlow < (flowLimit + extraFlowLimit)){
+                    if (usedFlow <= ((double) flowLimit + extraFlowLimit)){
                         outFlowIsZero(vmhost);
                     }
                 }
@@ -259,18 +267,26 @@ public class FlowDataCron {
     }
 
     private void outFlowIsZero(Vmhost vmhost) {
-        if (vmhost.getOutFlow() == 0){
-            vmhostService.power(vmhost.getId(),"unpause",null); // 恢复虚拟机
-            vmhost.setPauseInfo(null);
-            vmhost.setStatus(0);
-            vmhostService.updateById(vmhost);
+        if (vmhost.getOutFlow() == null || vmhost.getOutFlow() == 0){
+            // 保留恢复任务写入的状态，只在任务成功入队后清空暂停原因。
+            Map<String, Object> resumeResult = vmhostService.power(vmhost.getId(),"unpause",null);
+            if (resumeResult != null && Boolean.TRUE.equals(resumeResult.get("status"))) {
+                vmhostService.update(new UpdateWrapper<Vmhost>()
+                        .eq("id", vmhost.getId())
+                        .eq("status", 3)
+                        .set("pause_info", null));
+            }
         } else {
-            vmhost.setPauseInfo(null);
-            vmhost.setStatus(0);
-            vmhostService.updateById(vmhost);
-            double bandWidthValue = vmhost.getBandwidth() / 8.0;
-            String bandWidth = String.format("%.3f", bandWidthValue);
-            vmhostService.changeVmHostBandWidth(vmhost,bandWidth);
+            double bandWidthValue = vmhost.getBandwidth() == null ? 0D : vmhost.getBandwidth() / 8.0;
+            String bandWidth = String.format(java.util.Locale.US, "%.3f", bandWidthValue);
+            if (Boolean.TRUE.equals(vmhostService.changeVmHostBandWidth(vmhost, bandWidth))) {
+                vmhostService.update(new UpdateWrapper<Vmhost>()
+                        .eq("id", vmhost.getId())
+                        .eq("status", 15)
+                        .set("pause_info", null)
+                        .set("status", 0)
+                        .set("net0", vmhost.getNet0()));
+            }
         }
     }
 
@@ -465,12 +481,13 @@ public class FlowDataCron {
     }
 
     private void resetVmFlow(Vmhost vmhost) {
-        vmhost.setUsedFlow(0.00);
-        vmhost.setUsedInFlow(0.00);
-        vmhost.setUsedOutFlow(0.00);
-        vmhost.setExtraFlowLimit(0L);
-        vmhost.setLastResetFlow(System.currentTimeMillis());
-        vmhostService.updateById(vmhost);
+        vmhostService.update(new UpdateWrapper<Vmhost>()
+                .eq("id", vmhost.getId())
+                .set("used_flow", 0D)
+                .set("used_in_flow", 0D)
+                .set("used_out_flow", 0D)
+                .set("extra_flow_limit", 0L)
+                .set("last_reset_flow", System.currentTimeMillis()));
     }
 
     private boolean isNodeOnline(Integer nodeId, Map<Integer, Boolean> nodeOnlineCache) {

@@ -59,12 +59,16 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
+    private boolean isLegacyQAgentNatAvailable() {
+        return false;
+    }
     private static final int NAT_SOURCE_PORT_MIN = 1000;
     private static final int NAT_SOURCE_PORT_MAX = 60050;
     private static final int NAT_LEGACY_RESERVED_PORT_MIN = 5900;
     private static final int NAT_LEGACY_RESERVED_PORT_MAX = 5999;
     private static final int NAT_DESTINATION_PORT_MIN = 1;
     private static final int NAT_DESTINATION_PORT_MAX = 65535;
+    private static final long FLOW_GIB_BYTES = 1024L * 1024 * 1024;
     private static final long CREATE_VM_STALE_TIMEOUT = 15 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_TIMEOUT = 5 * 60 * 1000L;
     private static final long BACKUP_RESTORE_SHUTDOWN_WAIT = 2000L;
@@ -691,15 +695,16 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return result;
             }
             case "qosPause":{
-                // 设置虚拟机状态为11，表示暂停中
-                vmhost.setStatus(11);
-                // 判断data是否为空
+                UpdateWrapper<Vmhost> pauseUpdate = new UpdateWrapper<>();
+                pauseUpdate.eq("id", hostId).eq("status", vmStatus).set("status", 11);
                 if (data != null) {
-                    // 设置虚拟机暂停原因
-                    vmhost.setPauseInfo(data.getString("pauseInfo"));
+                    pauseUpdate.set("pause_info", data.getString("pauseInfo"));
                 }
-                // 更新虚拟机状态
-                this.updateById(vmhost);
+                if (!this.update(pauseUpdate)) {
+                    result.put("status", false);
+                    result.put("msg", "虚拟机状态已变化，无法创建超流暂停任务");
+                    return result;
+                }
                 Task vmPauseTask = new Task();
                 vmPauseTask.setNodeid(nodeId);
                 vmPauseTask.setVmid(vmId);
@@ -707,7 +712,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 vmPauseTask.setType(QOS_PAUSE);
                 vmPauseTask.setStatus(0);
                 vmPauseTask.setCreateDate(time);
-                if (taskService.save(vmPauseTask)) {
+                if (saveVmStatusTask(vmPauseTask, 11, vmStatus, vmhost.getPauseInfo())) {
                     log.info("[Task-PauseVm] 超流暂停任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                     result.put("status", true);
 
@@ -729,10 +734,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     return result;
                 }
                 else {
-                    // 设置虚拟机状态为3，表示恢复中
-                    vmhost.setStatus(3);
-                    // 更新虚拟机状态
-                    this.updateById(vmhost);
+                    // 恢复任务只修改状态，避免覆盖同时到账的流量包。
+                    if (!this.update(new UpdateWrapper<Vmhost>().eq("id", hostId)
+                            .eq("status", vmStatus).set("status", 3))) {
+                        result.put("status", false);
+                        result.put("msg", "虚拟机状态已变化，无法创建恢复任务");
+                        return result;
+                    }
                     Task vmUnpauseTask = new Task();
                     vmUnpauseTask.setNodeid(nodeId);
                     vmUnpauseTask.setVmid(vmId);
@@ -740,7 +748,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     vmUnpauseTask.setType(UNPAUSE_VM);
                     vmUnpauseTask.setStatus(0);
                     vmUnpauseTask.setCreateDate(time);
-                    if (taskService.save(vmUnpauseTask)) {
+                    Map<Object, Object> taskParams = new HashMap<>();
+                    taskParams.put("previousStatus", vmStatus);
+                    taskParams.put("previousPauseInfo", vmhost.getPauseInfo());
+                    vmUnpauseTask.setParams(taskParams);
+                    if (saveVmStatusTask(vmUnpauseTask, 3, vmStatus, vmhost.getPauseInfo())) {
                         log.info("[Task-UnpauseVm] 恢复任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                         result.put("status", true);
 
@@ -760,6 +772,23 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 result.put("status", false);
                 result.put("msg", "未知操作");
                 return result;
+            }
+        }
+    }
+
+    private boolean saveVmStatusTask(Task task, int pendingStatus, int previousStatus, String previousPauseInfo) {
+        boolean saved = false;
+        try {
+            saved = taskService.save(task);
+            return saved;
+        } finally {
+            if (!saved) {
+                try {
+                    this.update(new UpdateWrapper<Vmhost>().eq("id", task.getHostid()).eq("status", pendingStatus)
+                            .set("status", previousStatus).set("pause_info", previousPauseInfo));
+                } catch (Exception e) {
+                    log.warn("任务创建失败后无法恢复虚拟机状态: hostId={}, taskType={}", task.getHostid(), task.getType(), e);
+                }
             }
         }
     }
@@ -931,6 +960,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         if (!osService.isNodeOsDownloaded(os, vmhost.getNodeid())) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CLOUD_IMAGE_NOT_AVAILABLE, null);
+        }
+        if (!Objects.equals(vmhost.getOsType(), os.getType()) && Objects.equals(vmhost.getIfnat(), 1)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "QAgent NAT转发功能已停用，暂不能跨系统类型重装");
         }
         UnifiedResultDto<Object> initScriptCheck = vmInitScriptBusinessService.validateScripts(initScriptIds);
         if (initScriptCheck.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
@@ -1248,6 +1281,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public UnifiedResultDto<Object> updateVm(VmParams vmParams){
+        if (vmParams == null || vmParams.getHostid() == null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmParams.getHostid());
         // 判空
@@ -1262,13 +1298,22 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
                     "flowType只能是in、out或in+out");
         }
-        if (vmParams.getFlowLimit() != null ) vmhost.setFlowLimit(vmParams.getFlowLimit()*1024*1024*1024);
-        if (vmParams.getExtraFlowLimit() != null) vmhost.setExtraFlowLimit(vmParams.getExtraFlowLimit()*1024*1024*1024);
-        if (vmParams.getNatnum() != null ) vmhost.setNatnum(vmParams.getNatnum());
-        if (vmParams.getResetFlowTime() != null ) vmhost.setResetFlowTime(vmParams.getResetFlowTime());
-        if (vmParams.getOutFlow() != null ) vmhost.setOutFlow(vmParams.getOutFlow());
-        if (vmParams.getFlowType() != null) vmhost.setFlowType(FlowTypeUtil.normalize(vmParams.getFlowType()));
-        this.updateById(vmhost);
+        UpdateWrapper<Vmhost> settings = new UpdateWrapper<>();
+        settings.eq("id", vmhost.getId());
+        try {
+            if (vmParams.getFlowLimit() != null) settings.set("flow_limit", flowGiBToBytes(vmParams.getFlowLimit()));
+            // extraFlowLimit是本周期额外额度的总量，重复同步不会重复加额。
+            if (vmParams.getExtraFlowLimit() != null) settings.set("extra_flow_limit", flowGiBToBytes(vmParams.getExtraFlowLimit()));
+        } catch (IllegalArgumentException | ArithmeticException e) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "流量额度不能为负数或超出可存储范围");
+        }
+        if (vmParams.getNatnum() != null) settings.set("natnum", vmParams.getNatnum());
+        if (vmParams.getResetFlowTime() != null) settings.set("reset_flow_time", vmParams.getResetFlowTime());
+        if (vmParams.getOutFlow() != null) settings.set("out_flow", vmParams.getOutFlow());
+        if (vmParams.getFlowType() != null) settings.set("flow_type", FlowTypeUtil.normalize(vmParams.getFlowType()));
+        if (settings.getSqlSet() != null && !this.update(settings)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "保存虚拟机配置失败");
+        }
         if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
         || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
             // 判断状态，先关机
@@ -1331,6 +1376,22 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 changeVmHostBandWidth(vmhost, bandWidth);
                 vmhost.setBandwidth(vmParams.getBandwidth());
             }
+            // 只保存本次修改的硬件字段，避免回写读取时的流量包和用量快照。
+            Vmhost hardware = new Vmhost();
+            hardware.setId(vmhost.getId());
+            if (vmParams.getSockets() != null) hardware.setSockets(vmhost.getSockets());
+            if (vmParams.getCores() != null) hardware.setCores(vmhost.getCores());
+            if (vmParams.getThreads() != null) hardware.setThreads(vmhost.getThreads());
+            if (updateCpu && isCustomCpuVm(vmhost)) hardware.setArgs(vmhost.getArgs());
+            if (vmParams.getMemory() != null) hardware.setMemory(vmhost.getMemory());
+            if (vmParams.getSystemDiskSize() != null) hardware.setSystemDiskSize(vmhost.getSystemDiskSize());
+            if (vmParams.getBandwidth() != null) {
+                hardware.setBandwidth(vmhost.getBandwidth());
+                hardware.setNet0(vmhost.getNet0());
+            }
+            if (!this.updateById(hardware)) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "保存虚拟机配置失败");
+            }
             Task vmStartTask = new Task();
             vmStartTask.setNodeid(vmhost.getNodeid());
             vmStartTask.setVmid(vmhost.getVmid());
@@ -1342,8 +1403,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 log.info("[Task-StartVm] 改配-开机任务创建成功: NodeId: " + vmhost.getNodeid() + ",VmId: " + vmhost.getVmid() + ",HostId: " + vmhost.getId());
             }
         }
-        this.updateById(vmhost);
+        if (vmParams.getFlowLimit() != null || vmParams.getExtraFlowLimit() != null) {
+            recoverFlowLimitedVm(vmhost.getId());
+        }
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+
+    private long flowGiBToBytes(long flow) {
+        if (flow < 0) {
+            throw new IllegalArgumentException("流量额度不能为负数");
+        }
+        return Math.multiplyExact(flow, FLOW_GIB_BYTES);
     }
 
     private boolean isCustomCpuVm(Vmhost vmhost) {
@@ -3812,9 +3882,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         // 追加任务
         nowTask.put(System.currentTimeMillis(),taskId);
-        vmhost.setTask(nowTask);
+        Vmhost taskUpdate = new Vmhost();
+        taskUpdate.setId(vmhost.getId());
+        taskUpdate.setTask(nowTask);
         // 更新任务
-        return this.updateById(vmhost);
+        return this.updateById(taskUpdate);
     }
 
     /**
@@ -3937,6 +4009,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public NatOperationResult addVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
+        if (!isLegacyQAgentNatAvailable()) {
+            return NatOperationResult.failure("QAgent NAT 管理端点已停用");
+        }
         String token = configService.getToken();
         Vmhost vmhost = this.getById(vm);
         if (vmhost == null) {
@@ -4034,6 +4109,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
+        if (!isLegacyQAgentNatAvailable()) {
+            return NatOperationResult.failure("QAgent NAT 管理端点已停用");
+        }
         String token = configService.getToken();
         Vmhost vmhost = this.getById(vm);
         if (vmhost == null || !Objects.equals(vmhost.getDeleteState(), 0)) {
@@ -4051,9 +4129,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         List<String> protocols = Objects.equals(protocol, "all")
                 ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
-        for (String itemProtocol : protocols) {
-            natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, itemProtocol);
-        }
         Boolean result;
         try {
             result = ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
@@ -4063,9 +4138,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                     node.getId(), vm, source_port, destination_ip, destination_port, e);
             return NatOperationResult.failure("连接宿主机失败: " + describeNatException(e));
         }
-        return Boolean.TRUE.equals(result)
-                ? NatOperationResult.success()
-                : NatOperationResult.failure("宿主机删除 NAT 规则失败或规则不存在");
+        if (!Boolean.TRUE.equals(result)) {
+            return NatOperationResult.failure("宿主机删除 NAT 规则失败或规则不存在");
+        }
+        for (String itemProtocol : protocols) {
+            natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, itemProtocol);
+        }
+        return NatOperationResult.success();
     }
 
     private String describeNatException(Exception exception) {
@@ -4087,6 +4166,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     @Override
     public Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        if (!isLegacyQAgentNatAvailable()) {
+            return false;
+        }
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
         if (node == null || publicIp == null || privateIp == null) {
@@ -4109,6 +4191,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     @Override
     public Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        if (!isLegacyQAgentNatAvailable()) {
+            return false;
+        }
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
         if (node == null || publicIp == null || privateIp == null) {
@@ -4131,7 +4216,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         updateWrapper.eq("status", VPC_BINDING_STATUS_ACTIVE);
         updateWrapper.set("status", VPC_BINDING_STATUS_DELETED);
         updateWrapper.set("update_time", System.currentTimeMillis());
-        return vpcIpBindingService.update(updateWrapper);
+        vpcIpBindingService.update(updateWrapper);
+
+        QueryWrapper<VpcIpBinding> activeQuery = new QueryWrapper<>();
+        activeQuery.eq("host_id", hostId);
+        activeQuery.eq("status", VPC_BINDING_STATUS_ACTIVE);
+        return vpcIpBindingService.count(activeQuery) == 0;
     }
 
     @Override
@@ -4182,6 +4272,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     @Override
     public Boolean syncVmhostVpcIpForward(int hostId) {
+        if (!isLegacyQAgentNatAvailable()) {
+            return false;
+        }
         Vmhost vmhost = this.getById(hostId);
         if (!isVpcNetwork(vmhost) || vmhost.getIpList() == null || vmhost.getIpList().isEmpty()) {
             return false;
@@ -4422,10 +4515,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Boolean resetVmHostFlow (int hostId) {
         Vmhost vmhost = this.getById(hostId);
-        vmhost.setUsedFlow(0.0);
-        vmhost.setUsedInFlow(0.0);
-        vmhost.setUsedOutFlow(0.0);
-        return this.updateById(vmhost);
+        if (vmhost == null) {
+            return false;
+        }
+        return this.update(new UpdateWrapper<Vmhost>().eq("id", hostId)
+                .set("used_flow", 0D).set("used_in_flow", 0D).set("used_out_flow", 0D));
     }
     /**
      * @Author: 星禾
@@ -4448,10 +4542,79 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     public Boolean addVmHostFlow (int hostId, Long flow) {
         Vmhost vmhost = this.getById(hostId);
-        Long oldFlow = vmhost.getExtraFlowLimit();
-        Long newFlow = flow * 1024 * 1024 * 1024 + oldFlow;
-        vmhost.setExtraFlowLimit(newFlow);
-        return this.updateById(vmhost);
+        if (vmhost == null || flow == null || flow < 0) {
+            return false;
+        }
+        final long addedFlow;
+        try {
+            addedFlow = flowGiBToBytes(flow);
+        } catch (ArithmeticException e) {
+            log.warn("流量包额度超出可存储范围: hostId={}, flow={}", hostId, flow);
+            return false;
+        }
+        // 在数据库中累加，避免两个支付回调读取同一旧额度后相互覆盖。
+        if (addedFlow > 0 && !this.update(new UpdateWrapper<Vmhost>().eq("id", hostId)
+                .and(wrapper -> wrapper.isNull("extra_flow_limit").or()
+                        .le("extra_flow_limit", Long.MAX_VALUE - addedFlow))
+                .setSql("extra_flow_limit = COALESCE(extra_flow_limit, 0) + " + addedFlow))) {
+            return false;
+        }
+        recoverFlowLimitedVm(hostId);
+        return true;
+    }
+
+    private void recoverFlowLimitedVm(int hostId) {
+        final Vmhost vmhost;
+        try {
+            vmhost = this.getById(hostId);
+        } catch (Exception e) {
+            log.warn("流量额度已到账，读取虚拟机状态失败，等待恢复重试: hostId={}", hostId, e);
+            return;
+        }
+        if (vmhost == null || !Objects.equals(vmhost.getStatus(), 15)) {
+            return;
+        }
+        long flowLimit = vmhost.getFlowLimit() == null ? 0L : vmhost.getFlowLimit();
+        long extraFlowLimit = vmhost.getExtraFlowLimit() == null ? 0L : vmhost.getExtraFlowLimit();
+        double usedFlow = vmhost.getUsedFlow() == null ? 0D : vmhost.getUsedFlow();
+        if (flowLimit != 0 && usedFlow > (double) flowLimit + extraFlowLimit) {
+            return;
+        }
+        try {
+            if (vmhost.getOutFlow() == null || vmhost.getOutFlow() == 0) {
+                HashMap<String, Object> resumeResult = power(hostId, "unpause", null);
+                if (resumeResult != null && Boolean.TRUE.equals(resumeResult.get("status"))) {
+                    if (!this.update(new UpdateWrapper<Vmhost>().eq("id", hostId).eq("status", 3).set("pause_info", null))) {
+                        log.warn("流量额度已到账，但暂停原因未清除: hostId={}", hostId);
+                    }
+                } else {
+                    restoreFlowLimitStatus(hostId);
+                    log.warn("流量额度已到账，但虚拟机恢复任务未创建: hostId={}, result={}", hostId, resumeResult);
+                }
+            } else {
+                double bandwidthValue = vmhost.getBandwidth() == null ? 0D : vmhost.getBandwidth() / 8.0;
+                if (!Boolean.TRUE.equals(changeVmHostBandWidth(vmhost, String.format(Locale.US, "%.3f", bandwidthValue)))) {
+                    log.warn("流量额度已到账，但虚拟机带宽未恢复: hostId={}", hostId);
+                    return;
+                }
+                if (!this.update(new UpdateWrapper<Vmhost>().eq("id", hostId).eq("status", 15)
+                        .set("status", 0).set("pause_info", null).set("net0", vmhost.getNet0()))) {
+                    log.warn("流量额度已到账，但虚拟机恢复状态未保存: hostId={}", hostId);
+                }
+            }
+        } catch (Exception e) {
+            // 额度已经保存，恢复失败保留超限状态，让定时任务重试，避免支付方重复加额。
+            if (vmhost.getOutFlow() == null || vmhost.getOutFlow() == 0) restoreFlowLimitStatus(hostId);
+            log.warn("流量额度已到账，虚拟机恢复失败，等待重试: hostId={}", hostId, e);
+        }
+    }
+
+    private void restoreFlowLimitStatus(int hostId) {
+        try {
+            this.update(new UpdateWrapper<Vmhost>().eq("id", hostId).eq("status", 3).set("status", 15));
+        } catch (Exception e) {
+            log.warn("恢复任务失败后无法保存流量超限状态: hostId={}", hostId, e);
+        }
     }
     /**
      * @Author: 星禾
@@ -4461,9 +4624,15 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      */
     @Override
     public Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth){
+        if (vmhost == null || vmhost.getNodeid() == null || vmhost.getVmid() == null) {
+            return false;
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
+        if (node == null || cookieMap == null) {
+            return false;
+        }
         syncVmNet0Rate(vmhost, node, cookieMap, bandwidth);
         return true;
     }

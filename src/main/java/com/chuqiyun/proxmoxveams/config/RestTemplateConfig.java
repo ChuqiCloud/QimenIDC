@@ -73,4 +73,21 @@ public class RestTemplateConfig {
             throw new IllegalStateException("创建HTTP客户端失败", e);
         }
     }
+
+    public static RestTemplate createQAgentRestTemplate() {
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(15_000)
+                .setConnectionRequestTimeout(10_000)
+                .setSocketTimeout(30_000)
+                .build();
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setDefaultRequestConfig(requestConfig)
+                .disableAutomaticRetries()
+                .setSSLSocketFactory(new SSLConnectionSocketFactory(
+                        SSLContexts.createSystemDefault(),
+                        SSLConnectionSocketFactory.getDefaultHostnameVerifier()))
+                .build();
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        return new RestTemplate(factory);
+    }
 }

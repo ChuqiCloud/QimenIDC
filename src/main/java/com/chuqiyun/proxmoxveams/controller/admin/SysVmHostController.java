@@ -34,6 +34,10 @@ import java.util.Map;
 public class SysVmHostController {
     private static final String DEFAULT_CREATE_VM_STORAGE = "local-lvm";
 
+    private boolean isLegacyQAgentMigrationAvailable() {
+        return false;
+    }
+
     @Resource
     private VmhostService vmhostService;
     @Resource
@@ -89,6 +93,9 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/migrateVm", method = {RequestMethod.POST, RequestMethod.PUT})
     public Object migrateVm(@RequestBody VmMigrationParams params) throws UnauthorizedException {
+        if (!isLegacyQAgentMigrationAvailable()) {
+            return ResponseResult.fail("主机迁移已停用：QAgent 恢复端点已移除");
+        }
         if (params == null || params.getHostId() == null || params.getTargetNodeId() == null) {
             return ResponseResult.fail("hostId和targetNodeId不能为空");
         }
@@ -282,12 +289,12 @@ public class SysVmHostController {
             return ResponseResult.fail("虚拟机不存在");
         }
 
-        if (flow < 0 || flow > 1000000){
+        if (flow == null || flow < 0 || flow > 1000000){
             return ResponseResult.fail("流量包不能过大（1000000G）或小于0");
         }
 
         Boolean result = vmhostService.addVmHostFlow(hostId,flow);
-        if (result == null) {
+        if (!Boolean.TRUE.equals(result)) {
             return ResponseResult.fail("操作失败");
         }
         return ResponseResult.ok("操作成功");

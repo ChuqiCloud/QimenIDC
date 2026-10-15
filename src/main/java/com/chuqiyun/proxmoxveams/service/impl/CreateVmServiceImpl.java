@@ -249,6 +249,9 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setIfnat(0);
         }
         normalizeNetworkType(vmParams);
+        if (isVpcNetwork(vmParams) || Objects.equals(vmParams.getIfnat(), 1)) {
+            return invalidParam("QAgent NAT端点已停用，暂不支持 NAT/VPC 网络虚拟机创建");
+        }
         // 设置网桥
         if (isVpcNetwork(vmParams)) {
             Subnet subnet = resolveVpcSubnet(vmParams);

@@ -159,6 +159,12 @@ public class OsCron {
                             continue;
                         } catch (Exception e) {
                             System.out.println("获取下载进度异常" + e);
+                            downloadInfo = null;
+                        }
+                        if (downloadInfo == null) {
+                            osNodeStatus.setStatus(3);
+                            os.getNodeStatus().put(key, osNodeStatus);
+                            osService.updateById(os);
                             continue;
                         }
                         String progress = downloadInfo.getString("progress");

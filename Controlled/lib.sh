@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+umask 077
 
 find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
@@ -61,7 +63,7 @@ function download_websocketd(){
 
     url="https://mirror.chuqiyun.com/software/websocketd/$(check_system)/websocketd"
 
-    wget "$url" --no-check-certificate
+    wget "$url"
     chmod +x /home/software/websocketd/websocketd
 }
 
@@ -80,7 +82,7 @@ function download_noVNC(){
 
     url="https://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz"
 
-    wget "$url" --no-check-certificate
+    wget "$url"
     tar -zxvf noVNC.tar.gz
     rm -rf noVNC.tar.gz
     # 赋予start_novnc权限
@@ -107,15 +109,14 @@ if [ ! -d /home/software/noVNC ]; then
     install_websockify
 fi
 
-config_noVNC_service
-
 # 判断/home/software/QAgent/目录下是否存在port文件，不存在则创建
 if [ ! -f /home/software/QAgent/port ]; then
     # 将7600写入port文件中
     echo "7600" > /home/software/QAgent/port
 fi
 
+# 安装/更新共用同一套单位文件，保留已保存的白名单及证书。
+bash /home/software/QAgent/harden.sh --configure
+
 # 重启pve 服务
 systemctl restart pvedaemon.service
-
-bash /home/software/QAgent/update_forward_rules.sh

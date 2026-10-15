@@ -61,12 +61,7 @@ public class PveNetworkServiceImpl implements PveNetworkService {
     */
     @Override
     public String getPveInterfaces(long nodeId){
-        // 获取被控通讯token
-        String token = configService.getToken();
-        // 获取节点信息
-        Master node = masterService.getById(nodeId);
-
-        return ClientApiUtil.getNetworkInfo(node.getHost(),node.getControllerPort(), token).getJSONObject("data").getString("data");
+        throw new UnsupportedOperationException("读取节点网络配置文件已停用");
     }
 
     /**

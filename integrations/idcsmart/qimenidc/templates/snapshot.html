@@ -1,0 +1,412 @@
+<style>
+  .snapshot-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .snapshot-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--nq-text-1, #1f2937);
+  }
+
+  .snapshot-meta {
+    font-size: 13px;
+    color: var(--nq-text-3, #86909c);
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  .snapshot-table-container {
+    background: var(--nq-bg-1, #fff);
+    border: 1px solid var(--nq-fill-2, #ebeef5);
+    border-radius: var(--nq-radius, 6px);
+    overflow: hidden;
+  }
+
+  .snapshot-table {
+    width: 100%;
+    margin-bottom: 0;
+    color: var(--nq-text-1, #1f2937);
+    font-size: var(--nq-font-md, 14px);
+  }
+
+  .snapshot-table th {
+    padding: 10px 16px;
+    background: var(--nq-fill-2, #f5f7fa);
+    border-bottom: none;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .snapshot-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--nq-fill-3, #ebeef5);
+    vertical-align: middle;
+  }
+
+  .snapshot-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .snapshot-table tbody tr:hover td {
+    background: transparent;
+  }
+
+  .snapshot-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .snapshot-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--nq-text-3, #86909c);
+  }
+
+  .snapshot-empty i {
+    font-size: 42px;
+    color: var(--nq-text-4, #c9cdd4);
+  }
+
+  .snapshot-description {
+    max-width: 360px;
+    word-break: break-word;
+  }
+
+  @media screen and (max-width: 600px) {
+    .snapshot-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .snapshot-toolbar .btn {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="snapshot-toolbar">
+  <div class="snapshot-title">
+    快照
+    <span class="snapshot-meta">
+      <?php echo (int)($snapshot_count ?? 0); ?>/<?php echo (int)($snapshot_limit ?? 0) < 0 ? '不支持' : ((int)($snapshot_limit ?? 0) > 0 ? (int)$snapshot_limit : '不限'); ?>
+    </span>
+  </div>
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addModalsnapshot" <?php echo empty($snapshot_can_create) ? 'disabled' : ''; ?>>
+    <i class="ri-add-line" style="margin-right: 5px;"></i> 创建快照
+  </button>
+</div>
+
+<div id="snapshotTableWrapper">
+  <div class="snapshot-table-container">
+    <div class="table-responsive">
+      <table class="snapshot-table">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>创建时间</th>
+            <th>状态</th>
+            <th>说明</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($list)): ?>
+            <tr>
+              <td colspan="5">
+                <div class="snapshot-empty">
+                  <i class="ri-camera-lens-line"></i>
+                  <p>暂无快照</p>
+                </div>
+              </td>
+            </tr>
+          <?php else: ?>
+            <?php foreach ($list as $vo): ?>
+              <?php
+                $name = $vo['name'] ?? '';
+                $isCurrent = $name === 'current';
+                $timeText = '-';
+                if (!empty($vo['snaptime'])) {
+                    $timeText = date('Y-m-d H:i:s', (int)$vo['snaptime']);
+                }
+                $statusText = $isCurrent ? '当前状态' : (isset($vo['vmstate']) && (int)$vo['vmstate'] === 1 ? '包含内存状态' : '磁盘快照');
+              ?>
+              <tr>
+                <td><?php echo htmlspecialchars($name, ENT_QUOTES); ?></td>
+                <td><?php echo $timeText; ?></td>
+                <td>
+                  <?php if ($isCurrent): ?>
+                    <span class="badge badge-success"><?php echo $statusText; ?></span>
+                  <?php else: ?>
+                    <span class="badge badge-primary"><?php echo $statusText; ?></span>
+                  <?php endif; ?>
+                </td>
+                <td class="snapshot-description"><?php echo htmlspecialchars($vo['description'] ?? '-', ENT_QUOTES); ?></td>
+                <td>
+                  <div class="snapshot-actions">
+                    <?php if (!$isCurrent): ?>
+                      <button type="button" class="btn btn-sm btn-primary rollbackSnapshotsnapshot"
+                        data-name="<?php echo htmlspecialchars($name, ENT_QUOTES); ?>">
+                        <i class="ri-arrow-go-back-line"></i> 回滚
+                      </button>
+                      <button type="button" class="btn btn-sm btn-danger deleteSnapshotsnapshot"
+                        data-name="<?php echo htmlspecialchars($name, ENT_QUOTES); ?>">
+                        <i class="ri-delete-bin-line"></i> 删除
+                      </button>
+                    <?php else: ?>
+                      <span class="text-muted">不可操作</span>
+                    <?php endif; ?>
+                  </div>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="addModalsnapshot" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">创建快照</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="snapshotForm">
+          <div class="form-group">
+            <label for="snapshotName">快照名称</label>
+            <input name="snapname" type="text" class="form-control" id="snapshotName" maxlength="64" placeholder="留空则自动生成">
+            <div class="invalid-feedback" id="snapshotNameFeedback"></div>
+          </div>
+          <div class="form-group">
+            <div class="custom-control custom-checkbox">
+              <input type="checkbox" class="custom-control-input" id="snapshotVmstate" name="vmstate" value="1">
+              <label class="custom-control-label" for="snapshotVmstate">保存内存状态</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="snapshotDescription">说明</label>
+            <textarea name="description" class="form-control" id="snapshotDescription" rows="3" maxlength="255" placeholder="可选"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="confirmCreateSnapshotBtn">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="deleteModalsnapshot" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">确认删除</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>确定删除快照 <strong id="deleteSnapshotName"></strong> 吗？此操作不可恢复。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-danger" id="confirmDeleteSnapshotBtn">确认删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="rollbackModalsnapshot" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">确认回滚</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>确定回滚到快照 <strong id="rollbackSnapshotName"></strong> 吗？当前数据可能被覆盖。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="confirmRollbackSnapshotBtn">确认回滚</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentSnapshotName = '';
+
+  $(document).ready(function() {
+    $(document).on('click', '#confirmCreateSnapshotBtn', function() {
+      handleCreateSnapshot();
+    });
+
+    $(document).on('click', '.deleteSnapshotsnapshot', function() {
+      currentSnapshotName = $(this).data('name');
+      $('#deleteSnapshotName').text(currentSnapshotName);
+      $('#deleteModalsnapshot').modal('show');
+    });
+
+    $(document).on('click', '.rollbackSnapshotsnapshot', function() {
+      currentSnapshotName = $(this).data('name');
+      $('#rollbackSnapshotName').text(currentSnapshotName);
+      $('#rollbackModalsnapshot').modal('show');
+    });
+
+    $(document).on('click', '#confirmDeleteSnapshotBtn', function() {
+      handleSnapshotAction('deleteSnapshot', '#confirmDeleteSnapshotBtn', '#deleteModalsnapshot', '删除');
+    });
+
+    $(document).on('click', '#confirmRollbackSnapshotBtn', function() {
+      handleSnapshotAction('rollbackSnapshot', '#confirmRollbackSnapshotBtn', '#rollbackModalsnapshot', '回滚');
+    });
+  });
+
+  function reloadSnapshotTable() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id') || '{$Think.get.id}';
+    const requestUrl = '/provision/custom/content?id=' + id + '&key=snapshot&_t=' + Date.now();
+
+    $.ajax({
+      url: requestUrl,
+      type: 'GET',
+      dataType: 'html',
+      success: function(html) {
+        if (html && html.trim().length > 0) {
+          const $temp = $('<div>').html(html);
+          const $newTable = $temp.find('#snapshotTableWrapper');
+          if ($newTable.length > 0) {
+            $('#snapshotTableWrapper').html($newTable.html());
+          } else {
+            $('#snapshotTableWrapper').html(html);
+          }
+        } else {
+          window.location.reload();
+        }
+      },
+      error: function() {
+        window.location.reload();
+      }
+    });
+  }
+
+  function handleCreateSnapshot() {
+    const name = $('#snapshotName').val().trim();
+    const nameReg = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/;
+
+    $('#snapshotNameFeedback').text('').hide();
+    $('#snapshotName').removeClass('is-invalid');
+
+    if (name && !nameReg.test(name)) {
+      $('#snapshotNameFeedback').text('名称只能包含字母、数字、下划线、中划线，并且需以字母、数字或下划线开头').show();
+      $('#snapshotName').addClass('is-invalid');
+      return;
+    }
+
+    const formData = new URLSearchParams();
+    formData.append('func', 'addSnapshot');
+    formData.append('snapname', name);
+    formData.append('vmstate', $('#snapshotVmstate').is(':checked') ? '1' : '0');
+    formData.append('description', $('#snapshotDescription').val().trim());
+
+    const btn = $('#confirmCreateSnapshotBtn');
+    btn.prop('disabled', true);
+
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        btn.prop('disabled', false);
+        if (data.status == 200) {
+          $('#addModalsnapshot').modal('hide');
+          $('#snapshotForm')[0].reset();
+          showSnapshotSuccess(data.msg || '创建成功');
+          reloadSnapshotTable();
+        } else {
+          showSnapshotError(data.msg || '创建失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        btn.prop('disabled', false);
+        showSnapshotError('创建出错: ' + error);
+      }
+    });
+  }
+
+  function handleSnapshotAction(func, btnSelector, modalSelector, actionName) {
+    if (!currentSnapshotName) {
+      return;
+    }
+
+    const btn = $(btnSelector);
+    btn.prop('disabled', true);
+
+    const formData = new URLSearchParams();
+    formData.append('func', func);
+    formData.append('snapname', currentSnapshotName);
+
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        btn.prop('disabled', false);
+        $(modalSelector).modal('hide');
+        currentSnapshotName = '';
+        if (data.status == 200) {
+          showSnapshotSuccess(data.msg || actionName + '成功');
+          reloadSnapshotTable();
+        } else {
+          showSnapshotError(data.msg || actionName + '失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        btn.prop('disabled', false);
+        $(modalSelector).modal('hide');
+        showSnapshotError(actionName + '出错: ' + error);
+      }
+    });
+  }
+
+  function showSnapshotSuccess(message) {
+    if (window.toastr) {
+      toastr.success(message);
+    } else if (window.Swal) {
+      Swal.fire('成功', message, 'success');
+    } else {
+      alert(message);
+    }
+  }
+
+  function showSnapshotError(message) {
+    if (window.toastr) {
+      toastr.error(message);
+    } else if (window.Swal) {
+      Swal.fire('失败', message, 'error');
+    } else {
+      alert(message);
+    }
+  }
+</script>

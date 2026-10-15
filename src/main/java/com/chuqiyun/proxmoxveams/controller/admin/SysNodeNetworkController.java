@@ -52,7 +52,7 @@ public class SysNodeNetworkController {
         if (masterService.getById(nodeId) == null) {
             return ResponseResult.fail("该节点不存在！");
         }
-        return ResponseResult.ok(pveNetworkService.getPveInterfaces(nodeId));
+        return ResponseResult.fail("读取节点网络配置文件已停用");
     }
 
     /**
