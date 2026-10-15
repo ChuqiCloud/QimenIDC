@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+umask 077
 echo "##############################################"
 echo "#                                            #"
 echo "#        QimenIDC Controller Install         #"
@@ -41,7 +43,13 @@ function ensure_lsof(){
 # 初始化系统软件目录
 function init_system_dir(){
     mkdir -p /home/images
-    mkdir -p /home/software
+    [ ! -L /home/software ] || {
+        echo "Error: refusing symlink /home/software" >&2
+        exit 1
+    }
+    install -d -o root -g root -m 755 /home/software
+    chown root:root /home/software
+    chmod 755 /home/software
     mkdir -p /home/software/websocketd
     mkdir -p /home/software/noVNC
     mkdir -p /home/software/QAgent
@@ -62,7 +70,7 @@ function install_python(){
     else
         cd /home/software
         # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-        wget http://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz --no-check-certificate
+        wget https://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz
         tar -zxvf Python-3.10.5.tgz
         cd Python-3.10.5
         ./configure --prefix=/home/software/python3.10.5
@@ -79,7 +87,7 @@ function install_python(){
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
     cd /home/software
-    wget http://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz --no-check-certificate
+    wget https://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz
     tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
 }
 
@@ -90,11 +98,23 @@ function install_qimenidc_controller_source(){
 
 # 配置QimenIDC Controller token文件
 function config_qimenidc_controller_token(){
-    # 黄色字体
-    echo -e "\033[33m↓¯¯¯请输入QimenIDS Controlled token\033[0m"
-    echo -e "\033[33m--->Please input QimenIDS Controlled token:\033[0m"
-    read token
-    echo $token > /home/software/QAgent/token.key
+    /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py initialize
+    echo "Secure token saved in /home/software/QAgent/token.key (root:root, 600)."
+}
+
+function config_manager_whitelist(){
+    if [ -z "${QAGENT_MANAGER_IPS:-}" ]; then
+        read -r -p "Manager source IP/CIDRs (required, space-separated): " QAGENT_MANAGER_IPS
+    fi
+    export QAGENT_MANAGER_IPS
+    if [ -z "${QAGENT_CERT_HOSTS:-}" ]; then
+        read -r -p "Node IP/DNS used by manager API calls (space-separated SANs): " QAGENT_CERT_HOSTS
+    fi
+    export QAGENT_CERT_HOSTS
+    if [ -z "${QAGENT_VNC_PROXY_IPS:-}" ]; then
+        read -r -p "noVNC controller source IP/CIDRs allowed to connect to VNC proxy ports: " QAGENT_VNC_PROXY_IPS
+    fi
+    export QAGENT_VNC_PROXY_IPS
 }
 
 # 配置QimenIDC Controller端口
@@ -103,29 +123,25 @@ function config_qimenidc_controller_port(){
     echo -e "\033[33m↓¯¯¯请输入QimenIDS被控端口,直接回车默认7600端口\033[0m"
     echo -e "\033[33m--->Please input QimenIDS Controlled port(default 7600): \033[0m"
     # 默认端口为7600
-    read port
+    read -r port
     # 判断是否输入端口
-    if [ -z $port ];then
+    if [ -z "${port}" ];then
         port=7600
     fi
-    echo $port > /home/software/QAgent/port
+    [[ "${port}" =~ ^[0-9]{1,5}$ ]] && [ "${port}" -gt 0 ] && [ "${port}" -le 65535 ] || {
+        echo "Invalid controller TLS port" >&2
+        exit 1
+    }
+    [ "${port}" != 6080 ] || {
+        echo "Controller TLS port cannot collide with noVNC port 6080" >&2
+        exit 1
+    }
+    printf '%s\n' "${port}" > /home/software/QAgent/port
 }
 
 # 配置程序开机自启动以及systemd服务
 function config_qimenidc_controller_service(){
-    echo "[Unit]
-Description=QimenIDC Controller
-After=network.target
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3.10 /home/software/QAgent/main.py
-Restart=on-failure
-User=root
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/qagent.service
-    systemctl daemon-reload
-    systemctl enable qagent.service
-    systemctl start qagent.service
+    bash /home/software/QAgent/harden.sh --configure
 }
 
 # 删除安装文件
@@ -167,9 +183,9 @@ function check_system(){
 function download_websocketd(){
     cd /home/software/websocketd
 
-    url="http://mirror.chuqiyun.com/software/websocketd/$(check_system)/websocketd"
+    url="https://mirror.chuqiyun.com/software/websocketd/$(check_system)/websocketd"
 
-    wget "$url" --no-check-certificate
+    wget "$url"
     chmod +x /home/software/websocketd/websocketd
 }
 
@@ -177,9 +193,9 @@ function download_websocketd(){
 function download_noVNC(){
     cd /home/software/noVNC
 
-    url="http://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz"
+    url="https://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz"
 
-    wget "$url" --no-check-certificate
+    wget "$url"
     tar -zxvf noVNC.tar.gz
     rm -rf noVNC.tar.gz
     # 赋予start_novnc权限
@@ -217,12 +233,12 @@ function start_install(){
     install_qimenidc_controller_source
     config_qimenidc_controller_port
     config_qimenidc_controller_token
-    config_qimenidc_controller_service
+    config_manager_whitelist
     install_qa
     download_websocketd
     download_noVNC
     install_websockify
-    config_noVNC_service
+    config_qimenidc_controller_service
     delete_install_file
     systemctl status qagent.service
     replace_start_image

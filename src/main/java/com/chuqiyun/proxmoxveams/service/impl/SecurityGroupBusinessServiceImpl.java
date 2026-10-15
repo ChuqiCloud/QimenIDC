@@ -130,9 +130,12 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
             return false;
         }
         String hash = buildRuleHash(applyDto);
-        Boolean result = ClientApiUtil.applySecurityGroup(node.getHost(), configService.getToken(), node.getControllerPort(), applyDto);
-        saveSyncState(vmhost, hash, Boolean.TRUE.equals(result), Boolean.TRUE.equals(result) ? "同步成功" : "同步失败");
-        return result;
+        JSONObject agentResponse = ClientApiUtil.applySecurityGroupResult(
+                node.getHost(), configService.getToken(), node.getControllerPort(), applyDto);
+        boolean success = agentResponse != null && Objects.equals(agentResponse.getInteger("code"), 200);
+        String message = success ? "同步成功" : getAgentMessage(agentResponse, "同步失败");
+        saveSyncState(vmhost, hash, success, message);
+        return success;
     }
 
     @Override
@@ -175,11 +178,15 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
         if (node == null) {
             return false;
         }
-        Boolean result = ClientApiUtil.deleteSecurityGroup(node.getHost(), configService.getToken(), node.getControllerPort(), hostId);
-        if (Boolean.TRUE.equals(result)) {
+        JSONObject agentResponse = ClientApiUtil.deleteSecurityGroupResult(
+                node.getHost(), configService.getToken(), node.getControllerPort(), hostId);
+        boolean success = agentResponse != null && Objects.equals(agentResponse.getInteger("code"), 200);
+        if (success) {
             saveSyncState(vmhost, "", true, "已删除安全组规则");
+        } else {
+            saveSyncState(vmhost, "", false, getAgentMessage(agentResponse, "删除安全组规则失败"));
         }
-        return result;
+        return success;
     }
 
     @Override
@@ -213,7 +220,7 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
         bindingUpdateWrapper.set("status", STATUS_DELETED);
         bindingUpdateWrapper.set("update_time", now);
         securityGroupBindingService.update(bindingUpdateWrapper);
-        return Boolean.TRUE.equals(ruleDeleted) || !groupIds.isEmpty();
+        return Boolean.TRUE.equals(ruleDeleted);
     }
 
     @Override
@@ -228,16 +235,35 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
             result.put("message", "节点不存在");
             return result;
         }
-        JSONObject agentResult = ClientApiUtil.checkSecurityGroup(node.getHost(), configService.getToken(), node.getControllerPort(), hostId);
+        JSONObject agentResponse = ClientApiUtil.checkSecurityGroupResult(
+                node.getHost(), configService.getToken(), node.getControllerPort(), hostId);
+        boolean agentSuccess = agentResponse != null && Objects.equals(agentResponse.getInteger("code"), 200);
+        JSONObject agentResult = agentSuccess && agentResponse.getJSONObject("data") != null
+                ? agentResponse.getJSONObject("data") : null;
         String actualHash = agentResult == null ? null : agentResult.getString("ruleHash");
-        boolean inSync = StringUtils.equals(expectedHash, actualHash);
+        Set<String> expectedFamilies = getIpFamilies(applyDto == null ? Collections.emptyList() : applyDto.getTargetIps());
+        Set<String> actualFamilies = getAgentFamilies(agentResult);
+        boolean familyResultPresent = agentResult != null && agentResult.containsKey("families");
+        boolean familiesInSync = !familyResultPresent || Objects.equals(expectedFamilies, actualFamilies);
+        boolean complete = agentResult == null || !agentResult.containsKey("complete")
+                || Boolean.TRUE.equals(agentResult.getBoolean("complete"));
+        boolean inSync = StringUtils.equals(expectedHash, actualHash) && familiesInSync && complete;
         result.put("hostId", hostId);
         result.put("expectedHash", expectedHash);
         result.put("actualHash", actualHash);
+        result.put("expectedFamilies", expectedFamilies);
+        result.put("actualFamilies", actualFamilies);
         result.put("inSync", inSync);
-        result.put("agent", agentResult);
+        result.put("agent", agentResult == null ? agentResponse : agentResult);
+        String syncMessage;
+        if (!agentSuccess) {
+            syncMessage = getAgentMessage(agentResponse, "安全组查询失败");
+            result.put("message", syncMessage);
+        } else {
+            syncMessage = inSync ? "规则一致" : "规则哈希、完整性或地址族不一致";
+        }
         if (vmhost != null) {
-            saveSyncState(vmhost, expectedHash, inSync, inSync ? "规则一致" : "规则不一致");
+            saveSyncState(vmhost, expectedHash, inSync, syncMessage);
         }
         return result;
     }
@@ -409,6 +435,40 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
         return DigestUtils.sha256Hex(JSONObject.toJSONString(applyDto));
     }
 
+    private Set<String> getIpFamilies(List<String> ips) {
+        Set<String> families = new LinkedHashSet<>();
+        if (ips == null) {
+            return families;
+        }
+        for (String ip : ips) {
+            if (StringUtils.isBlank(ip)) {
+                continue;
+            }
+            families.add(ip.contains(":") ? "ipv6" : "ipv4");
+        }
+        return families;
+    }
+
+    private Set<String> getAgentFamilies(JSONObject agentResult) {
+        Set<String> families = new LinkedHashSet<>();
+        if (agentResult == null || agentResult.getJSONArray("families") == null) {
+            return families;
+        }
+        agentResult.getJSONArray("families").forEach(item -> {
+            if (item != null) {
+                families.add(String.valueOf(item));
+            }
+        });
+        return families;
+    }
+
+    private String getAgentMessage(JSONObject agentResponse, String defaultMessage) {
+        if (agentResponse == null) {
+            return defaultMessage;
+        }
+        return StringUtils.defaultIfBlank(agentResponse.getString("message"), defaultMessage);
+    }
+
     private void saveSyncState(Vmhost vmhost, String ruleHash, boolean inSync, String message) {
         QueryWrapper<SecurityGroupSync> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("host_id", vmhost.getId());
@@ -422,7 +482,7 @@ public class SecurityGroupBusinessServiceImpl implements SecurityGroupBusinessSe
         }
         sync.setRuleHash(ruleHash);
         sync.setInSync(inSync ? 1 : 0);
-        sync.setLastMessage(message);
+        sync.setLastMessage(StringUtils.abbreviate(message, 255));
         sync.setLastSyncTime(System.currentTimeMillis());
         if (sync.getId() == null) {
             securityGroupSyncService.save(sync);

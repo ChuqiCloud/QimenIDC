@@ -11,9 +11,8 @@ check_qagent_status() {
 
 # 重置/home/software/QAgent/token.key文件内容
 reset_token() {
-    echo -e "\033[33m--->Please input QimenIDS Master token:\033[0m"
-    read token
-    echo $token > /home/software/QAgent/token.key
+    sudo /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py rotate >/dev/null
+    echo "Rotated locally. Read the token securely from /home/software/QAgent/token.key and update the manager/shared nodes."
 }
 
 # 输出/home/software/QAgent/token.key文件内容
@@ -65,7 +64,7 @@ while true; do
             sudo systemctl status qagent.service
             ;;
         6)
-            cat_token
+            sudo cat /home/software/QAgent/token.key
             ;;
         7)
             reset_token
@@ -77,23 +76,17 @@ while true; do
         9)
             echo -e "\033[33m↓¯¯¯请输入QimenIDC被控端口,直接回车默认7600端口\033[0m"
             echo -e "\033[33m--->Please input QimenIDC Controlled port(default 7600): \033[0m"
-            read port
-            if [ -z $port ];then
+            read -r port
+            if [ -z "${port}" ];then
                 port=7600
             fi
-            echo $port > /home/software/QAgent/port
-
-            # 提示是否现在重启QAgent
-            echo -e "\033[33m↓¯¯¯是否现在重启QAgent？（输入y或n）\033[0m"
-            echo -e "\033[33m--->Do you want to restart QAgent now? (input y or n)\033[0m"
-
-            # 读取用户输入 如果为y,yes,Y,YES或不输入则重启QAgent
-            read choice
-            if [ -z $choice ] || [ $choice == "y" ] || [ $choice == "yes" ] || [ $choice == "Y" ] || [ $choice == "YES" ]; then
-                sudo systemctl restart qagent.service
-                echo "QAgent 重启中..."
-                sleep 2
-                check_qagent_status
+            if ! [[ "${port}" =~ ^[0-9]{1,5}$ ]] || [ "${port}" -lt 1 ] || [ "${port}" -gt 65535 ]; then
+                echo "Invalid port"
+            elif [ "${port}" = 6080 ]; then
+                echo "Controller TLS port cannot collide with noVNC port 6080"
+            else
+                printf '%s\n' "${port}" | sudo tee /home/software/QAgent/port >/dev/null
+                sudo bash /home/software/QAgent/harden.sh --configure
             fi
             ;;
         10)

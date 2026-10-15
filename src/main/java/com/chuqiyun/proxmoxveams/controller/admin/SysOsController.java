@@ -245,7 +245,7 @@ public class SysOsController {
                 return ResponseResult.ok("开始下载");
             }
         }
-        return ResponseResult.fail("下载失败");
+        return ResponseResult.fail("远程镜像下载端点已停用，请通过 Proxmox 管理方式上传镜像");
     }
 
     /**

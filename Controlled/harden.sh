@@ -1,0 +1,104 @@
+#!/bin/bash
+
+set -euo pipefail
+umask 077
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "${SCRIPT_DIR}/security.sh"
+
+# 默认执行泄露整改；常规安装和更新使用 --configure，不反复轮换凭据。
+mode=remediate
+clear_vnc=0
+token_stdin=0
+manager_ips="${QAGENT_MANAGER_IPS:-}"
+cert_hosts="${QAGENT_CERT_HOSTS:-}"
+vnc_proxy_ips="${QAGENT_VNC_PROXY_IPS:-}"
+backend_port="${QAGENT_BACKEND_PORT:-}"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --configure) mode=configure; shift ;;
+        --clear-vnc) clear_vnc=1; shift ;;
+        --token-stdin) mode=configure; token_stdin=1; shift ;;
+        --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; shift 2 ;;
+        --cert-hosts) cert_hosts="${2:?provide node IP/DNS identities used by the manager}"; shift 2 ;;
+        --vnc-proxy-ips) vnc_proxy_ips="${2:?provide noVNC controller source IP/CIDRs}"; shift 2 ;;
+        --backend-port) backend_port="${2:?provide internal backend port}"; shift 2 ;;
+        --help)
+            echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--configure|--token-stdin] [--clear-vnc]"
+            echo "Default: rotate QAgent token and revoke ALL noVNC sessions. --configure preserves credentials."
+            exit 0 ;;
+        *) security_fail "unknown option: $1"; exit 1 ;;
+    esac
+done
+
+security_require_root
+command -v /usr/bin/python3.10 >/dev/null || security_fail "install Python 3.10 first"
+security_load_config
+QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${manager_ips:-${QAGENT_MANAGER_IPS:-}}")
+QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${cert_hosts:-${QAGENT_CERT_HOSTS:-}}")
+QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${vnc_proxy_ips:-${QAGENT_VNC_PROXY_IPS:-}}")
+QAGENT_BACKEND_PORT="${backend_port:-${QAGENT_BACKEND_PORT:-17600}}"
+security_regular_file "${QAGENT_HOME}/port"
+QAGENT_TLS_PORT=$(cat "${QAGENT_HOME}/port")
+security_validate_port "${QAGENT_TLS_PORT}"
+security_validate_port "${QAGENT_BACKEND_PORT}"
+[ "${QAGENT_TLS_PORT}" != "${QAGENT_BACKEND_PORT}" ] || security_fail "TLS and backend ports must differ"
+[ "${QAGENT_TLS_PORT}" != 6080 ] || security_fail "QAgent TLS port cannot collide with noVNC port 6080"
+[ -f "${QAGENT_HOME}/service/VncTokenPlugin.py" ] || security_fail "deploy the updated QAgent code before hardening"
+[ -f "${NOVNC_HOME}/utils/websockify/run" ] || security_fail "install noVNC/websockify before hardening"
+security_install_dependencies
+security_init_directory
+security_ensure_novnc_user
+[ ! -L /home/software ] || security_fail "refusing symlink: /home/software"
+install -d -o root -g root -m 755 /home/software
+chown root:root /home/software
+chmod 755 /home/software
+
+for unit in qagent.service noVNC.service; do
+    if systemctl cat "${unit}" >/dev/null 2>&1; then
+        systemctl stop "${unit}"
+    fi
+done
+trap 'systemctl stop qagent.service noVNC.service >/dev/null 2>&1 || true; echo "Security remediation failed; QAgent and noVNC stay stopped. Fix the error and rerun harden.sh." >&2' ERR
+
+security_prepare_vnc_files
+security_prepare_novnc_certificate
+security_ensure_certificate "${SECURITY_DIR}/qagent" qimenidc-qagent root "${QAGENT_CERT_HOSTS}"
+security_write_nginx_config
+security_save_config
+
+if [ "${token_stdin}" = 1 ]; then
+    /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" set
+elif [ "${mode}" = remediate ]; then
+    /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" rotate >/dev/null
+    security_clear_vnc_tokens
+else
+    /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" initialize
+fi
+if [ "${mode}" = configure ] && [ "${clear_vnc}" = 1 ]; then
+    security_clear_vnc_tokens
+fi
+# 低权 noVNC 只能读取应用代码，不能修改 root 执行的脚本。
+chown -R root:root "${QAGENT_HOME}" "${NOVNC_HOME}"
+chmod -R go-w "${QAGENT_HOME}" "${NOVNC_HOME}"
+find "${QAGENT_HOME}" -type d -exec chmod 755 {} +
+# noVNC 需要导入 QAgent 的过期 token 插件，源文件只读开放，密钥单独保持 600。
+find "${QAGENT_HOME}" -type f -name '*.py' -exec chmod 644 {} +
+chmod -R a+rX "${NOVNC_HOME}"
+chown root:root "${QAGENT_HOME}/token.key"
+chmod 600 "${QAGENT_HOME}/token.key"
+security_write_qagent_unit
+security_write_novnc_unit
+systemctl daemon-reload
+systemctl enable qagent.service noVNC.service nginx.service
+systemctl restart nginx.service
+systemctl start qagent.service noVNC.service
+systemctl is-active --quiet nginx.service qagent.service noVNC.service
+trap - ERR
+echo "QAgent TLS whitelist enabled on port ${QAGENT_TLS_PORT}; backend is 127.0.0.1:${QAGENT_BACKEND_PORT}."
+echo "noVNC runs as ${VNC_TOKEN_USER}; tokens and metadata are mode 600."
+echo "Import ${SECURITY_DIR}/qagent/qimenidc-qagent.crt into the manager Java trust store."
+if [ "${mode}" = remediate ]; then
+    echo "Old QAgent token and all noVNC sessions were revoked. Synchronize the new token securely with the manager."
+elif [ "${token_stdin}" = 1 ]; then
+    echo "The supplied shared QAgent token was installed. Update the manager only after all nodes are synchronized."
+fi

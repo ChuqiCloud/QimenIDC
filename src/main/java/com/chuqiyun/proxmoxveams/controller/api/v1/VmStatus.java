@@ -129,7 +129,7 @@ public class VmStatus {
             return ResponseResult.fail("虚拟机不存在");
         }
         Boolean result = vmhostService.resetVmHostFlow(Math.toIntExact(hostId));
-        if (result == null) {
+        if (!Boolean.TRUE.equals(result)) {
             return ResponseResult.fail("操作失败");
         }
         return ResponseResult.ok("操作成功");
@@ -164,11 +164,11 @@ public class VmStatus {
         if (vmhostService.getById(hostId) == null) {
             return ResponseResult.fail("虚拟机不存在");
         }
-        if (flow < 0 || flow > 1000000){
+        if (flow == null || flow < 0 || flow > 1000000){
             return ResponseResult.fail("流量包不能过大（1000000G）或小于0");
         }
         Boolean result = vmhostService.addVmHostFlow(Math.toIntExact(hostId),flow);
-        if (result == null) {
+        if (!Boolean.TRUE.equals(result)) {
             return ResponseResult.fail("操作失败");
         }
         return ResponseResult.ok("操作成功");
@@ -183,9 +183,9 @@ public class VmStatus {
     public Object addVmHostFlow(@RequestBody VmParams vmParams) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.updateVm(vmParams);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getMessage());
         }
-        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+        return ResponseResult.ok(resultDto.getMessage());
     }
 
     /**

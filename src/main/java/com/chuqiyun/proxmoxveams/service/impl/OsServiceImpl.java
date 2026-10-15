@@ -249,16 +249,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public boolean downloadOs(Integer osId,Integer nodeId){
-        Os os = this.getById(osId);
-        Master node = masterService.getById(nodeId);
-        if (os==null||node==null){
-            return false;
-        }
-        String osUrl = os.getUrl();
-        String osPath = os.getPath();
-        String ip = node.getHost();
-        String token = configService.getToken();
-        return ClientApiUtil.downloadFile(ip,node.getControllerPort(),token,osUrl,osPath);
+        return false;
     }
 
     /**
@@ -270,16 +261,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public JSONObject getDownloadProgress(Integer osId,Integer nodeId){
-        Os os = this.getById(osId);
-        Master node = masterService.getById(nodeId);
-        if (os==null||node==null){
-            return null;
-        }
-        String osUrl = os.getUrl();
-        String osPath = os.getPath();
-        String ip = node.getHost();
-        String token = configService.getToken();
-        return ClientApiUtil.getDownloadProgress(ip,node.getControllerPort(),token,osUrl,osPath).getJSONObject("data");
+        return null;
     }
 
     /**
@@ -291,10 +273,7 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public boolean deleteNodeOs(String osName, Integer nodeId){
-        Master node = masterService.getById(nodeId);
-        String ip = node.getHost();
-        String token = configService.getToken();
-        return ClientApiUtil.deleteOsFile(ip,node.getControllerPort(),token,osName);
+        return false;
     }
     
     /**

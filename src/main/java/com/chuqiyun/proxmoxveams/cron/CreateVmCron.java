@@ -129,6 +129,15 @@ public class CreateVmCron {
                 taskService.updateById(task);
                 return;
             }
+            if (isVpcNetwork(vmParams) || Objects.equals(vmParams.getIfnat(), 1)) {
+                String error = "QAgent NAT端点已停用，暂不支持 NAT/VPC 网络虚拟机创建";
+                if (isVpcNetwork(vmParams)) {
+                    finishCreateVmFailed(task, null, vmParams, 0, error);
+                } else {
+                    markCreateTaskFailed(task, null, error);
+                }
+                return;
+            }
             String hostname = vmParams.getHostname();
             TimedLock timedLock = VmCreateLock.getTimedLock(hostname);
             ReentrantLock lock = timedLock.getLock();

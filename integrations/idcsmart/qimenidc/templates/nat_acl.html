@@ -1,0 +1,533 @@
+<style>
+  /* NAT 按钮区域 */
+  .NAT_btn {
+    margin-bottom: 16px;
+  }
+  
+  /* 协议选择器样式 */
+  .protocol-select-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  
+  .protocol-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 8px;
+    border: 2px solid var(--nq-fill-3);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+  }
+  
+  .protocol-option:hover {
+    border-color: var(--nq-fill-4);
+  }
+  
+  .protocol-option.active {
+    border-color: var(--nq-primary);
+    background: rgba(var(--arcoblue-6), 0.05);
+  }
+  
+  .protocol-option i {
+    font-size: 20px;
+    color: var(--nq-text-3);
+  }
+  
+  .protocol-option.active i {
+    color: var(--nq-primary);
+  }
+  
+  .protocol-option span {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--nq-text-1);
+  }
+  
+  /* 表格样式 */
+  .nat-table-container {
+    background: var(--nq-bg-1);
+    border: 1px solid var(--nq-fill-2);
+    border-radius: var(--nq-radius);
+    overflow: hidden;
+  }
+  
+  .nat-table {
+    width: 100%;
+    color: var(--nq-text-1);
+    font-size: var(--nq-font-md);
+    margin-bottom: 0;
+  }
+  
+  .nat-table thead th {
+    background: var(--nq-fill-2);
+    color: var(--nq-text-1);
+    font-weight: 500;
+    font-size: var(--nq-font-md);
+    border-bottom: none;
+    padding: 9px 16px;
+    white-space: nowrap;
+    line-height: 1.5715;
+  }
+  
+  .nat-table td {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--nq-fill-3);
+    vertical-align: middle;
+    line-height: 1.5715;
+    font-size: var(--nq-font-sm);
+  }
+  
+  .nat-table tbody tr:hover td {
+    background: transparent;
+  }
+  
+  /* 统计卡片 */
+  .nat-stats {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 24px;
+    padding: 0;
+  }
+  
+  .nat-stat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .nat-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--nq-primary), rgb(var(--arcoblue-5)));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+  }
+  
+  .nat-stat-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--nq-text-1);
+    margin-bottom: 4px;
+  }
+  
+  .nat-stat-label {
+    font-size: 12px;
+    color: var(--nq-text-3);
+  }
+  
+  /* 空状态 */
+  .nat-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--nq-text-3);
+  }
+  
+  .nat-empty i {
+    font-size: 48px;
+    color: var(--nq-text-4);
+    opacity: 0.5;
+  }
+</style>
+
+<div class="NAT_btn">
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addModalnatacl">
+    <i class="ri-add-line" style="margin-right: 5px;"></i> 创建NAT
+  </button>
+  <b>已创建NAT数量：<span id="natUseCount">{$natuse}</span>/<span id="natTotalCount">{$natnum}</span></b>
+</div>
+
+<!-- 统计信息 -->
+<div class="nat-stats" id="natStats" style="display: <?php echo empty($list) ? 'none' : 'flex'; ?>;">
+  <div class="nat-stat-item">
+    <div class="nat-stat-icon">
+      <i class="ri-server-line"></i>
+    </div>
+    <div>
+      <div class="nat-stat-value" id="natHostIp">{$natInfo.natAddr|default='未配置'}</div>
+      <div class="nat-stat-label">NAT主机IP</div>
+    </div>
+  </div>
+  <div class="nat-stat-item">
+    <div class="nat-stat-icon">
+      <i class="ri-list-check"></i>
+    </div>
+    <div>
+      <div class="nat-stat-value" id="natRuleCount"><?php echo count($list); ?></div>
+      <div class="nat-stat-label">转发规则</div>
+    </div>
+  </div>
+</div>
+
+<!-- 主内容区域 -->
+<div id="natTableWrapper">
+  <div class="nat-table-container">
+    <div class="table-responsive">
+      <table class="nat-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>规则名称</th>
+            <th>外网地址:端口</th>
+            <th>内网端口</th>
+            <th>协议</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($list)): ?>
+            <tr>
+              <td colspan="6">
+                <div class="nat-empty">
+                  <i class="ri-list-check"></i>
+                  <p>暂无NAT转发规则</p>
+                </div>
+              </td>
+            </tr>
+          <?php else: ?>
+            <?php foreach ($list as $key => $vo): ?>
+              <tr>
+                <td><?php echo $key + 1; ?></td>
+                <td><?php echo $vo['name'] ?? '-'; ?></td>
+                <td><?php echo $natInfo['natAddr']; ?>:<?php echo $vo['source_port']; ?></td>
+                <td><?php echo $vo['destination_port']; ?></td>
+                <td><span class="badge badge-primary"><?php echo $vo['protocol']; ?></span></td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-danger deleteNATnatacl"
+                    data-id="<?php echo $vo['id'] ?? ''; ?>"
+                    data-ext-port="<?php echo $vo['source_port']; ?>"
+                    data-int-port="<?php echo $vo['destination_port']; ?>"
+                    data-protocol="<?php echo $vo['protocol']; ?>">
+                    <i class="ri-delete-bin-line"></i> 删除
+                  </button>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 创建NAT转发模态框 -->
+<div class="modal fade" id="addModalnatacl" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">创建NAT转发</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="natAclForm">
+          <div class="form-group">
+            <label for="natName">
+              <span class="required" style="color: var(--nq-danger);">*</span>
+              规则名称
+            </label>
+            <input name="name" type="text" class="form-control" id="natName" maxlength="255" placeholder="请输入规则名称（如：Web服务、SSH访问等）">
+            <div class="invalid-feedback" id="name-feedbacknatacl"></div>
+          </div>
+          
+          <div class="form-group">
+            <label for="extPort">外网端口</label>
+            <input name="ext_port" type="number" class="form-control" id="extPort" min="1" max="65535" placeholder="留空则系统自动分配(1-65535)">
+            <div class="invalid-feedback" id="externalPort-feedbacknatacl"></div>
+          </div>
+          
+          <div class="form-group">
+            <label for="intPort">
+              <span class="required" style="color: var(--nq-danger);">*</span>
+              内网端口
+            </label>
+            <input name="int_port" type="number" class="form-control" id="intPort" min="1" max="65535" placeholder="请输入内部端口(1-65535)">
+            <div class="invalid-feedback" id="internalPort-feedbacknatacl"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>
+              <span class="required" style="color: var(--nq-danger);">*</span>
+              映射类型
+            </label>
+            <div class="protocol-select-container">
+              <div class="protocol-option active" data-value="1">
+                <i class="ri-exchange-line"></i>
+                <span>TCP</span>
+              </div>
+              <div class="protocol-option" data-value="2">
+                <i class="ri-wifi-fill"></i>
+                <span>UDP</span>
+              </div>
+              <div class="protocol-option" data-value="3">
+                <i class="ri-link"></i>
+                <span>TCP+UDP</span>
+              </div>
+            </div>
+            <input type="hidden" name="select-protocol" id="protocolSelect" value="1">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="confirmCreateBtn">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteModalnatacl" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">确认删除</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>确定要删除此NAT转发规则吗？此操作无法恢复。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-danger" id="confirmDeleteBtn">确认删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 全局变量存储当前要删除的数据
+  let currentDeleteData = null;
+  
+  $(document).ready(function() {
+    // 协议选择交互
+    $(document).on('click', '.protocol-option', function() {
+      $('.protocol-option').removeClass('active');
+      $(this).addClass('active');
+      $('#protocolSelect').val($(this).data('value'));
+    });
+    
+    // 绑定确认创建按钮
+    $(document).on('click', '#confirmCreateBtn', function() {
+      handleCreateNatAcl();
+    });
+    
+    // 绑定删除按钮事件 - 打开模态框
+    $(document).on('click', '.deleteNATnatacl', function() {
+      if ($(this).prop('disabled')) {
+        return;
+      }
+      
+      currentDeleteData = {
+        btn: $(this),
+        id: $(this).data('id'),
+        extPort: $(this).data('ext-port'),
+        intPort: $(this).data('int-port'),
+        protocol: $(this).data('protocol')
+      };
+      
+      $('#deleteModalnatacl').modal('show');
+    });
+    
+    // 绑定确认删除按钮
+    $(document).on('click', '#confirmDeleteBtn', function() {
+      if (!currentDeleteData) return;
+      
+      handleDeleteNatAcl(
+        currentDeleteData.btn,
+        currentDeleteData.id,
+        currentDeleteData.extPort,
+        currentDeleteData.intPort,
+        currentDeleteData.protocol
+      );
+    });
+  });
+  
+  // 重新加载表格内容 - 使用专门的 content API
+  function reloadNatTable() {
+    // 从当前URL获取id参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id') || '{$Think.get.id}';
+    
+    const requestUrl = '/provision/custom/content?id=' + id + '&key=nat_acl&_t=' + Date.now();
+    
+    $.ajax({
+      url: requestUrl,
+      type: 'GET',
+      dataType: 'html',
+      success: function(html) {
+        // 直接使用返回的HTML（这个API返回的就是表格片段）
+        if (html && html.trim().length > 0) {
+          // 检查返回的是否是完整HTML文档还是片段
+          if (html.indexOf('<!DOCTYPE') > -1 || html.indexOf('<html') > -1) {
+            // 返回的是完整页面，需要提取
+            var $temp = $('<div>').html(html);
+            var $newTable = $temp.find('#natTableWrapper');
+            if ($newTable.length > 0) {
+              $('#natTableWrapper').html($newTable.html());
+              updateStatsFromDOM();
+            } else {
+              toastr.error('无法找到表格数据');
+            }
+          } else {
+            // 返回的是HTML片段，直接替换
+            $('#natTableWrapper').html(html);
+            updateStatsFromDOM();
+          }
+        } else {
+          toastr.error('返回数据为空');
+        }
+      },
+      error: function(xhr, status, error) {
+        console.error('请求失败:', status, error);
+        toastr.error('更新表格失败: ' + error);
+      }
+    });
+  }
+  
+  // 从DOM更新统计信息
+  function updateStatsFromDOM() {
+    // 计算当前表格行数
+    const rowCount = $('#natTableWrapper tbody tr').length;
+    const hasData = $('#natTableWrapper tbody tr td[colspan]').length === 0;
+    const actualCount = hasData ? rowCount : 0;
+    
+    $('#natRuleCount').text(actualCount);
+    $('#natUseCount').text(actualCount);
+    
+    // 控制统计区域显示
+    $('#natStats').css('display', actualCount > 0 ? 'flex' : 'none');
+  }
+  
+  // 创建NAT转发规则
+  function handleCreateNatAcl() {
+    const name = $('#natName').val().trim();
+    const extPort = $('#extPort').val();
+    const intPort = $('#intPort').val();
+    const protocol = $('#protocolSelect').val();
+    
+    // 清除错误
+    $('.invalid-feedback').text('').hide();
+    $('.form-control').removeClass('is-invalid');
+    
+    // 验证
+    let isValid = true;
+    
+    if (!name) {
+      $('#name-feedbacknatacl').text('请填写规则名称').show();
+      $('#natName').addClass('is-invalid');
+      isValid = false;
+    }
+    
+    if (!intPort) {
+      $('#internalPort-feedbacknatacl').text('请填写内网端口').show();
+      $('#intPort').addClass('is-invalid');
+      isValid = false;
+    } else if (parseInt(intPort) < 1 || parseInt(intPort) > 65535) {
+      $('#internalPort-feedbacknatacl').text('请输入1-65535之间的端口号').show();
+      $('#intPort').addClass('is-invalid');
+      isValid = false;
+    }
+    
+    if (!isValid) return;
+    
+    // 准备表单数据
+    const formData = new URLSearchParams();
+    formData.append('func', 'addNatAcl');
+    formData.append('name', name);
+    if (extPort) {
+      formData.append('ext_port', extPort);
+    }
+    formData.append('int_port', intPort);
+    formData.append('select-protocol', protocol);
+    
+    const confirmBtn = $('#confirmCreateBtn');
+    confirmBtn.prop('disabled', true);
+    
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        confirmBtn.prop('disabled', false);
+        
+        if (data.status == 200) {
+          $('#addModalnatacl').modal('hide');
+          toastr.success(data.msg || '创建成功');
+          
+          // 重置表单
+          $('#natAclForm')[0].reset();
+          $('.protocol-option').removeClass('active');
+          $('.protocol-option[data-value="1"]').addClass('active');
+          $('#protocolSelect').val('1');
+          
+          // 重新加载表格
+          reloadNatTable();
+        } else {
+          toastr.error(data.msg || '创建失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        confirmBtn.prop('disabled', false);
+        toastr.error('创建出错: ' + error);
+      }
+    });
+  }
+  
+  // 删除NAT转发规则
+  function handleDeleteNatAcl(btn, id, extPort, intPort, protocol) {
+    const confirmBtn = $('#confirmDeleteBtn');
+    confirmBtn.prop('disabled', true);
+    
+    const formData = new URLSearchParams();
+    formData.append('func', 'delNatAcl');
+    formData.append('id', id);
+    formData.append('source_port', extPort);
+    formData.append('destination_port', intPort);
+    formData.append('protocol', protocol);
+    
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        confirmBtn.prop('disabled', false);
+        $('#deleteModalnatacl').modal('hide');
+        
+        // 清空当前数据
+        currentDeleteData = null;
+        
+        if (data.status == 200) {
+          toastr.success(data.msg || '删除成功');
+          
+          // 重新加载表格
+          reloadNatTable();
+        } else {
+          toastr.error(data.msg || '删除失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        confirmBtn.prop('disabled', false);
+        $('#deleteModalnatacl').modal('hide');
+        toastr.error('删除出错: ' + error);
+      }
+    });
+  }
+</script>

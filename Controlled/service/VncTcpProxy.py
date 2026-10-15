@@ -1,4 +1,5 @@
 import os
+import ipaddress
 import signal
 import socket
 import subprocess
@@ -8,6 +9,22 @@ import threading
 
 BUFFER_SIZE = 64 * 1024
 TICKET_ENV_NAME = "QIMEN_VNC_TICKET"
+PROXY_CIDRS_ENV_NAME = "QIMEN_VNC_PROXY_CIDRS"
+
+
+def is_allowed_proxy_peer(address, configured_networks=None):
+    configured_networks = os.environ.get(PROXY_CIDRS_ENV_NAME, "") if configured_networks is None else configured_networks
+    try:
+        peer = ipaddress.ip_address(address)
+        networks = [
+            ipaddress.ip_network(network, strict=True)
+            for network in configured_networks.replace(",", " ").split()
+        ]
+        if not networks or any(network.prefixlen == 0 for network in networks):
+            return False
+        return any(peer in network for network in networks)
+    except ValueError:
+        return False
 
 
 class VncTcpProxy:
@@ -49,11 +66,14 @@ class VncTcpProxy:
 
                 threading.Thread(
                     target=self.handle_client,
-                    args=(client,),
+                    args=(client, _address),
                     daemon=True,
                 ).start()
 
-    def handle_client(self, client):
+    def handle_client(self, client, address=None):
+        if address is None or not is_allowed_proxy_peer(address[0]):
+            client.close()
+            return
         environment = os.environ.copy()
         environment["LC_PVE_TICKET"] = self.ticket
         process = None

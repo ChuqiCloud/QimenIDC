@@ -3,8 +3,10 @@ package com.chuqiyun.proxmoxveams.cron;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
+import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
@@ -638,44 +640,27 @@ public class VmStatusCron {
             // 设置任务状态为1 1为正在执行
             task.setStatus(1);
             taskService.updateById(task);
-            // 获取node信息
-            Master node = masterService.getById(task.getNodeid());
-            log.info("[Task-PauseVm] 执行超流暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-            // 获取vm信息
-            Vmhost vmhost = vmhostService.getById(task.getHostid());
-            // 先获取虚拟机的状态码
-            int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
-            // 如果虚拟机状态为1或者 2
-            if (vmStatus ==1 || vmStatus == 2 || vmStatus == 15){
-                // 设置任务状态为2 2为执行完成
-                task.setStatus(2);
-                taskService.updateById(task);
-                log.info("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
-                return;
-            }
-            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-            HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-            HashMap<String,Object> params = new HashMap<>();
-            // 挂起虚拟机硬盘
-            //params.put("todisk",true);
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/stop", params);
+                Master node = masterService.getById(task.getNodeid());
+                Vmhost vmhost = vmhostService.getById(task.getHostid());
+                if (node == null || vmhost == null) {
+                    throw new IllegalStateException("超流暂停任务对应的节点或虚拟机不存在");
+                }
+                log.info("[Task-PauseVm] 执行超流暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+                // 付款可能发生在任务排队期间，执行前重新检查当前额度。
+                if (!isFlowLimitExceeded(vmhost)) {
+                    finishFlowPowerTask(task);
+                    return;
+                }
+                int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
+                if (vmStatus != 1 && vmStatus != 2 && vmStatus != 15) {
+                    submitFlowPowerCommand(node, task, "stop");
+                }
+                updateVmStatusOnly(vmhost, 15);
+                finishFlowPowerTask(task);
             } catch (Exception e) {
-                log.error("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                // 修改任务状态为3 3为执行失败
-                task.setStatus(3);
-                task.setError(e.getMessage());
-                taskService.updateById(task);
-                e.printStackTrace();
-                return;
+                failFlowPowerTask(task, e);
             }
-            // 设置数据库中的vm状态为4 4为暂停
-            vmhost.setStatus(15);
-            vmhostService.updateById(vmhost);
-            // 设置任务状态为2 2为执行完成
-            task.setStatus(2);
-            taskService.updateById(task);
-            log.info("[Task-PauseVm] 超流暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
         }
     }
 
@@ -697,35 +682,68 @@ public class VmStatusCron {
             // 设置任务状态为1 1为正在执行
             task.setStatus(1);
             taskService.updateById(task);
-            // 获取node信息
-            Master node = masterService.getById(task.getNodeid());
-            // 获取vm信息
-            Vmhost vmhost = vmhostService.getById(task.getHostid());
-            log.info("[Task-UnpauseVm] 执行恢复暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-            // 先获取虚拟机的状态码
-            int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
-            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
-            HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-            HashMap<String,Object> params = new HashMap<>();
-            // 执行开机操作
             try {
-                proxmoxApiUtil.postNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+task.getVmid()+"/status/start", params);
+                Master node = masterService.getById(task.getNodeid());
+                Vmhost vmhost = vmhostService.getById(task.getHostid());
+                if (node == null || vmhost == null) {
+                    throw new IllegalStateException("恢复任务对应的节点或虚拟机不存在");
+                }
+                log.info("[Task-UnpauseVm] 执行恢复暂停任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
+                int vmStatus = masterService.getVmStatusCode(task.getNodeid(), task.getVmid());
+                if (vmStatus != 0) {
+                    submitFlowPowerCommand(node, task, "start");
+                }
+                updateVmStatusOnly(vmhost, vmStatus == 0 ? 0 : 3);
+                finishFlowPowerTask(task);
             } catch (Exception e) {
-                log.error("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-                // 修改任务状态为3 3为执行失败
-                task.setStatus(3);
-                task.setError(e.getMessage());
-                taskService.updateById(task);
-                e.printStackTrace();
-                return;
+                restoreUnpauseState(task);
+                failFlowPowerTask(task, e);
             }
-            // 设置数据库中的vm状态为3 3为恢复中
-            vmhost.setStatus(3);
-            vmhostService.updateById(vmhost);
-            // 设置任务状态为2 2为执行完成
-            task.setStatus(2);
-            taskService.updateById(task);
-            log.info("[Task-UnpauseVm] 恢复暂停任务: NodeID:{} VM-ID:{} 完成",node.getId(),task.getVmid());
+        }
+    }
+
+    private boolean isFlowLimitExceeded(Vmhost vmhost) {
+        long limit = vmhost.getFlowLimit() == null ? 0L : vmhost.getFlowLimit();
+        long extra = vmhost.getExtraFlowLimit() == null ? 0L : vmhost.getExtraFlowLimit();
+        double used = vmhost.getUsedFlow() == null ? 0D : vmhost.getUsedFlow();
+        return limit != 0 && used > (double) limit + extra;
+    }
+
+    protected void submitFlowPowerCommand(Master node, Task task, String action) throws UnauthorizedException {
+        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
+        proxmoxApiUtil.postNodeApi(node, authentications,
+                "/nodes/" + node.getNodeName() + "/qemu/" + task.getVmid() + "/status/" + action,
+                new HashMap<>());
+    }
+
+    private void finishFlowPowerTask(Task task) {
+        task.setStatus(2);
+        taskService.updateById(task);
+    }
+
+    private void failFlowPowerTask(Task task, Exception error) {
+        task.setStatus(3);
+        task.setError(error.getMessage());
+        taskService.updateById(task);
+        log.error("流量电源任务执行失败: TaskID:{} HostID:{}", task.getId(), task.getHostid(), error);
+    }
+
+    private void restoreUnpauseState(Task task) {
+        Map<Object, Object> params = task.getParams();
+        if (params == null || !(params.get("previousStatus") instanceof Number)) {
+            return;
+        }
+        int previousStatus = ((Number) params.get("previousStatus")).intValue();
+        if (previousStatus != 4 && previousStatus != 15) {
+            return;
+        }
+        Object previousPauseInfo = params.get("previousPauseInfo");
+        try {
+            vmhostService.update(new UpdateWrapper<Vmhost>().eq("id", task.getHostid())
+                    .eq("status", 3).set("status", previousStatus).set("pause_info", previousPauseInfo));
+        } catch (Exception error) {
+            log.error("恢复任务失败后保存暂停状态失败: HostID:{}", task.getHostid(), error);
         }
     }
 

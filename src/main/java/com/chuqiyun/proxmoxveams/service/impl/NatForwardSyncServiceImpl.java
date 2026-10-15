@@ -125,6 +125,9 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
     @Override
     @Scheduled(initialDelay = 30_000, fixedDelay = 5 * 60 * 1000)
     public void syncAllNodes() {
+        if (!isLegacyQAgentNatAvailable()) {
+            return;
+        }
         for (Master node : masterService.list()) {
             if (node == null || node.getId() == null || StringUtils.isBlank(node.getHost()) || node.getControllerPort() == null) {
                 continue;
@@ -165,6 +168,10 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
             updateState(state, false, abbreviate(e.getMessage()), true);
             log.warn("[NAT-SYNC] 节点同步失败 nodeId={}, host={}", node.getId(), node.getHost(), e);
         }
+    }
+
+    private boolean isLegacyQAgentNatAvailable() {
+        return false;
     }
 
     private boolean importNodeRules(Master node) {

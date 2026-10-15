@@ -29,9 +29,11 @@ import lombok.extern.slf4j.Slf4j;
 import javax.annotation.Resource;
 
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -45,6 +47,7 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @EnableScheduling
 public class DeleteVmCron {
     private static final String NETWORK_TYPE_VPC = "vpc";
+    private static final int NAT_RULE_CLEANUP_PAGE_SIZE = 500;
 
     @Resource
     private MasterService masterService;
@@ -71,41 +74,129 @@ public class DeleteVmCron {
     * @DateTime: 2023/9/2 16:07
     */
     private void deleteVpcIpForwards(Vmhost vmhost) {
-        if (!isVpcNetwork(vmhost) || vmhost.getIpList() == null || vmhost.getIpList().isEmpty()) {
+        if (!isVpcNetwork(vmhost)) {
             return;
         }
         Object vmVpcForward = vmhostService.getVmhostVpcIpForward(vmhost.getId());
-        if (!(vmVpcForward instanceof ResponseResult)) {
-            return;
+        if (!(vmVpcForward instanceof ResponseResult<?>)) {
+            throw new IllegalStateException("读取虚拟机 VPC 转发列表失败，停止删除以保留 IP 分配");
         }
-        Object data = ((ResponseResult) vmVpcForward).getData();
-        if (!(data instanceof List)) {
-            return;
+        ResponseResult<?> response = (ResponseResult<?>) vmVpcForward;
+        if (!Objects.equals(response.getCode(), ResponseResult.RespCode.OK.getCode())) {
+            throw new IllegalStateException("读取虚拟机 VPC 转发列表失败，停止删除以保留 IP 分配");
         }
+        Object data = response.getData();
+        if (!(data instanceof List<?>)) {
+            throw new IllegalStateException("虚拟机 VPC 转发列表格式无效，停止删除以保留 IP 分配");
+        }
+
+        List<String[]> forwards = new ArrayList<>();
         for (Object item : (List<?>) data) {
-            if (!(item instanceof Map)) {
-                continue;
+            if (!(item instanceof Map<?, ?>)) {
+                throw new IllegalStateException("虚拟机 VPC 转发列表包含无效条目，停止删除以保留 IP 分配");
             }
             Map<?, ?> forward = (Map<?, ?>) item;
             Object publicIp = forward.get("publicIp");
             Object privateIp = forward.get("privateIp");
-            if (publicIp == null || privateIp == null) {
-                continue;
+            if (!(publicIp instanceof String) || ((String) publicIp).trim().isEmpty()
+                    || !(privateIp instanceof String) || ((String) privateIp).trim().isEmpty()) {
+                throw new IllegalStateException("虚拟机 VPC 转发列表缺少有效 IP，停止删除以保留 IP 分配");
             }
-            vmhostService.delVmhostVpcIpForward(vmhost.getId(), String.valueOf(publicIp), String.valueOf(privateIp));
+            forwards.add(new String[]{((String) publicIp).trim(), ((String) privateIp).trim()});
         }
+
+        for (String[] forward : forwards) {
+            if (!Boolean.TRUE.equals(vmhostService.delVmhostVpcIpForward(vmhost.getId(), forward[0], forward[1]))) {
+                throw new IllegalStateException("删除虚拟机 VPC 转发失败，停止删除以保留 IP 分配: " + forward[0]);
+            }
+        }
+    }
+
+    private void deletePortNatForwards(Task task, Master node) {
+        List<JSONObject> rules = new ArrayList<>();
+        for (int page = 1; ; page++) {
+            JSONArray pageRules = natForwardSyncService.getPortRulesByHost(
+                    task.getHostid(), page, NAT_RULE_CLEANUP_PAGE_SIZE);
+            if (pageRules == null) {
+                throw new IllegalStateException("读取虚拟机 NAT 转发列表失败，停止删除");
+            }
+            for (int index = 0; index < pageRules.size(); index++) {
+                JSONObject rule = pageRules.getJSONObject(index);
+                validatePortNatRule(rule, task.getHostid());
+                rules.add(rule);
+            }
+            if (pageRules.size() < NAT_RULE_CLEANUP_PAGE_SIZE) {
+                break;
+            }
+        }
+
+        for (JSONObject rule : rules) {
+            Integer sourcePort = rule.getInteger("source_port");
+            String sourceIp = rule.getString("source_ip");
+            String protocol = rule.getString("protocol");
+            if (!deletePortForwardOnNode(node, configService.getToken(), rule.getInteger("vm"),
+                    sourceIp, sourcePort, rule.getString("destination_ip"),
+                    rule.getInteger("destination_port"), protocol)) {
+                throw new IllegalStateException("宿主机拒绝删除 NAT 转发，停止删除以保留 IP 分配: " + sourceIp + ":" + sourcePort);
+            }
+            if (!natForwardSyncService.deletePortRule(node.getId(), sourceIp, sourcePort, protocol)) {
+                throw new IllegalStateException("删除本地 NAT 转发记录失败，停止删除以保留 IP 分配: " + sourceIp + ":" + sourcePort);
+            }
+        }
+    }
+
+    private void validatePortNatRule(JSONObject rule, Integer hostId) {
+        String protocol = rule == null ? null : rule.getString("protocol");
+        if (rule == null
+                || !Objects.equals(rule.getInteger("vm"), hostId)
+                || isBlank(rule.getString("source_ip"))
+                || isBlank(rule.getString("destination_ip"))
+                || !isValidPort(rule.getInteger("source_port"))
+                || !isValidPort(rule.getInteger("destination_port"))
+                || !("tcp".equalsIgnoreCase(protocol) || "udp".equalsIgnoreCase(protocol))) {
+            throw new IllegalStateException("虚拟机 NAT 转发列表包含无效条目，停止删除");
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private boolean isValidPort(Integer port) {
+        return port != null && port >= 1 && port <= 65535;
+    }
+
+    protected ProxmoxApiUtil createProxmoxApiUtil() {
+        return new ProxmoxApiUtil();
+    }
+
+    protected boolean deletePortForwardOnNode(Master node, String token, Integer vm, String sourceIp,
+                                              Integer sourcePort, String destinationIp, Integer destinationPort,
+                                              String protocol) {
+        return Boolean.TRUE.equals(ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(),
+                vm, sourceIp, sourcePort, destinationIp, destinationPort, protocol));
     }
 
     private void releaseSubnetpoolByVmhost(Vmhost vmhost) {
         if (!isVpcNetwork(vmhost) || vmhost.getNodeid() == null || vmhost.getVmid() == null) {
             return;
         }
+        QueryWrapper<com.chuqiyun.proxmoxveams.entity.Subnetpool> assignedQuery = new QueryWrapper<>();
+        assignedQuery.eq("node_id", vmhost.getNodeid());
+        assignedQuery.eq("vm_id", vmhost.getVmid());
+        if (subnetpoolService.count(assignedQuery) == 0) {
+            return;
+        }
+
         UpdateWrapper<com.chuqiyun.proxmoxveams.entity.Subnetpool> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("node_id", vmhost.getNodeid());
         updateWrapper.eq("vm_id", vmhost.getVmid());
         updateWrapper.set("status", 0);
         updateWrapper.set("vm_id", 0);
         subnetpoolService.update(updateWrapper);
+        if (subnetpoolService.count(assignedQuery) > 0) {
+            throw new IllegalStateException("释放虚拟机子网地址失败，停止释放公网 IP");
+        }
     }
 
     private void deleteSecurityGroups(Vmhost vmhost) {
@@ -181,32 +272,8 @@ public class DeleteVmCron {
                 return;
             }
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            ProxmoxApiUtil proxmoxApiUtil = createProxmoxApiUtil();
             JSONObject vmInfo;
-            //删除Nat转发
-            JSONArray dataList = natForwardSyncService.getPortRulesByHost(task.getHostid(), 1, 99999);
-            for (int i = 0; i < dataList.size(); i++) {
-                try {
-                    JSONObject item = dataList.getJSONObject(i);
-                    Integer destinationPort = item.getInteger("destination_port");
-                    Integer sourcePort = item.getInteger("source_port");
-                    String sourceIp = item.getString("source_ip");
-                    String destinationIp = item.getString("destination_ip");
-                    String protocol = item.getString("protocol");
-                    Integer vm = item.getInteger("vm");
-                    natForwardSyncService.deletePortRule(node.getId(), sourceIp, sourcePort, protocol);
-                    Boolean deleted = ClientApiUtil.deletePortForward(
-                            node.getHost(), configService.getToken(), node.getControllerPort(), vm,
-                            sourceIp, sourcePort, destinationIp, destinationPort, protocol);
-                    if (!Boolean.TRUE.equals(deleted)) {
-                        log.warn("[DeleteVmCron] 删除远程NAT失败: TaskId={}, HostId={}, SourcePort={}, Protocol={}",
-                                task.getId(), task.getHostid(), sourcePort, protocol);
-                    }
-                } catch (Exception e) {
-                    log.warn("[DeleteVmCron] 处理NAT规则异常: TaskId={}, HostId={}, Index={}, Error={}",
-                            task.getId(), task.getHostid(), i, e.getMessage());
-                }
-            }
             // 获取虚拟机实时信息
             try {
                 vmInfo = proxmoxApiUtil.getVmStatus(node, authentications, vmhost.getVmid());
@@ -241,15 +308,12 @@ public class DeleteVmCron {
                     return;
                 }
             }
-            if (vmInfo == null) {
-                deletePveVmOrIgnoreMissing(proxmoxApiUtil, node, authentications, task);
-                finishDeletedVm(task, vmhost);
-                return;
+            deletePortNatForwards(task, node);
+            deleteVpcIpForwards(vmhost);
+            if (vmInfo != null) {
+                task.setStatus(1);
+                taskService.updateById(task);
             }
-            // 修改任务状态为1
-            task.setStatus(1);
-            taskService.updateById(task);
-
             deletePveVmOrIgnoreMissing(proxmoxApiUtil, node, authentications, task);
             finishDeletedVm(task, vmhost);
         } catch (Exception e) {
@@ -311,10 +375,11 @@ public class DeleteVmCron {
 
     private void finishDeletedVm(Task task, Vmhost vmhost) {
         deleteSecurityGroups(vmhost);
-        deleteVpcIpForwards(vmhost);
-        ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
         releaseSubnetpoolByVmhost(vmhost);
-        vmhostService.clearVmhostVpcIpBinding(vmhost.getId());
+        if (!Boolean.TRUE.equals(vmhostService.clearVmhostVpcIpBinding(vmhost.getId()))) {
+            throw new IllegalStateException("清理虚拟机 VPC IP 绑定失败，停止释放公网 IP");
+        }
+        ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
         vmhost.setDeleteState(2);
         vmhost.setExpirationTime(System.currentTimeMillis());
         vmhostService.updateById(vmhost);

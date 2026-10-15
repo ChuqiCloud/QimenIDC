@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
+umask 077
 
 UPDATE_INDEX_URL="https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/update.txt"
 SOFTWARE_DIR="/home/software"
@@ -31,7 +32,8 @@ function get_download_url(){
 function download_package(){
     local url="$1"
     rm -f "${PACKAGE_PATH}"
-    wget -O "${PACKAGE_PATH}" "${url}" --no-check-certificate || fail "download package error"
+    case "${url}" in https://*) ;; *) fail "update package URL must use HTTPS" ;; esac
+    wget -O "${PACKAGE_PATH}" "${url}" || fail "download package error"
     if [ ! -s "${PACKAGE_PATH}" ]; then
         fail "downloaded package is empty"
     fi
@@ -43,6 +45,7 @@ function backup_old_config(){
 
     if [ -f "${QAGENT_DIR}/token.key" ]; then
         cp -f "${QAGENT_DIR}/token.key" "${BACKUP_DIR}/token.key"
+        chmod 600 "${BACKUP_DIR}/token.key"
     fi
     if [ -f "${QAGENT_DIR}/port" ]; then
         cp -f "${QAGENT_DIR}/port" "${BACKUP_DIR}/port"
@@ -54,7 +57,7 @@ function backup_old_config(){
 
 function restore_old_config(){
     if [ -f "${BACKUP_DIR}/token.key" ]; then
-        cp -f "${BACKUP_DIR}/token.key" "${QAGENT_DIR}/token.key"
+        install -o root -g root -m 600 "${BACKUP_DIR}/token.key" "${QAGENT_DIR}/token.key"
     fi
     if [ -f "${BACKUP_DIR}/port" ]; then
         cp -f "${BACKUP_DIR}/port" "${QAGENT_DIR}/port"
@@ -75,6 +78,11 @@ function install_package(){
     tar -zxvf "${PACKAGE_PATH}" -C "${QAGENT_DIR}/" || fail "extract package error"
     restore_old_config
     normalize_shell_scripts
+
+    if [ -f "${QAGENT_DIR}/token.key" ]; then
+        chown root:root "${QAGENT_DIR}/token.key"
+        chmod 600 "${QAGENT_DIR}/token.key"
+    fi
 
     chmod +x "${QAGENT_DIR}/lib.sh"
     bash "${QAGENT_DIR}/lib.sh"

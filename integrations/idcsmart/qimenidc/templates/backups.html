@@ -1,0 +1,424 @@
+<style>
+  .backup-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .backup-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--nq-text-1, #1f2937);
+  }
+
+  .backup-meta {
+    font-size: 13px;
+    color: var(--nq-text-3, #86909c);
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  .backup-table-container {
+    background: var(--nq-bg-1, #fff);
+    border: 1px solid var(--nq-fill-2, #ebeef5);
+    border-radius: var(--nq-radius, 6px);
+    overflow: hidden;
+  }
+
+  .backup-table {
+    width: 100%;
+    margin-bottom: 0;
+    color: var(--nq-text-1, #1f2937);
+    font-size: var(--nq-font-md, 14px);
+  }
+
+  .backup-table th {
+    padding: 10px 16px;
+    background: var(--nq-fill-2, #f5f7fa);
+    border-bottom: none;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .backup-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--nq-fill-3, #ebeef5);
+    vertical-align: middle;
+  }
+
+  .backup-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .backup-table tbody tr:hover td {
+    background: transparent;
+  }
+
+  .backup-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .backup-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--nq-text-3, #86909c);
+  }
+
+  .backup-empty i {
+    font-size: 42px;
+    color: var(--nq-text-4, #c9cdd4);
+  }
+
+  .backup-volid {
+    max-width: 360px;
+    word-break: break-all;
+  }
+
+  @media screen and (max-width: 600px) {
+    .backup-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .backup-toolbar .btn {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="backup-toolbar">
+  <div class="backup-title">
+    备份
+    <span class="backup-meta">
+      <?php echo (int)($backup_count ?? 0); ?>/<?php echo (int)($backup_limit ?? 0) < 0 ? '不支持' : ((int)($backup_limit ?? 0) > 0 ? (int)$backup_limit : '不限'); ?>
+    </span>
+  </div>
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addModalbackup" <?php echo empty($backup_can_create) ? 'disabled' : ''; ?>>
+    <i class="ri-add-line" style="margin-right: 5px;"></i> 创建备份
+  </button>
+</div>
+
+<div id="backupTableWrapper">
+  <div class="backup-table-container">
+    <div class="table-responsive">
+      <table class="backup-table">
+        <thead>
+          <tr>
+            <th>备注</th>
+            <th>创建时间</th>
+            <th>大小</th>
+            <th>格式</th>
+            <th>备份ID</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($list)): ?>
+            <tr>
+              <td colspan="6">
+                <div class="backup-empty">
+                  <i class="ri-database-2-line"></i>
+                  <p>暂无备份</p>
+                </div>
+              </td>
+            </tr>
+          <?php else: ?>
+            <?php foreach ($list as $vo): ?>
+              <?php
+                $volid = $vo['volid'] ?? '';
+                $timeText = '-';
+                if (!empty($vo['ctime'])) {
+                    $timeText = date('Y-m-d H:i:s', (int)$vo['ctime']);
+                }
+                $size = isset($vo['size']) ? (float)$vo['size'] : 0;
+                if ($size >= 1073741824) {
+                    $sizeText = round($size / 1073741824, 2).' GB';
+                } elseif ($size >= 1048576) {
+                    $sizeText = round($size / 1048576, 2).' MB';
+                } elseif ($size > 0) {
+                    $sizeText = round($size / 1024, 2).' KB';
+                } else {
+                    $sizeText = '-';
+                }
+              ?>
+              <tr>
+                <td><?php echo htmlspecialchars($vo['notes'] ?? '-', ENT_QUOTES); ?></td>
+                <td><?php echo $timeText; ?></td>
+                <td><?php echo $sizeText; ?></td>
+                <td>
+                  <span class="badge badge-primary"><?php echo htmlspecialchars($vo['format'] ?? '-', ENT_QUOTES); ?></span>
+                </td>
+                <td class="backup-volid"><?php echo htmlspecialchars($volid, ENT_QUOTES); ?></td>
+                <td>
+                  <div class="backup-actions">
+                    <button type="button" class="btn btn-sm btn-primary rollbackBackupbackup"
+                      data-volid="<?php echo htmlspecialchars($volid, ENT_QUOTES); ?>">
+                      <i class="ri-arrow-go-back-line"></i> 还原
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger deleteBackupbackup"
+                      data-volid="<?php echo htmlspecialchars($volid, ENT_QUOTES); ?>">
+                      <i class="ri-delete-bin-line"></i> 删除
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="addModalbackup" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">创建备份</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="backupForm">
+          <div class="form-group">
+            <label for="backupMode">备份模式</label>
+            <select class="form-control" id="backupMode" name="mode">
+              <option value="snapshot">快照</option>
+              <option value="suspend">挂起</option>
+              <option value="stop">停止</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="backupCompress">压缩模式</label>
+            <select class="form-control" id="backupCompress" name="compress">
+              <option value="zstd">zstd</option>
+              <option value="lzo">lzo</option>
+              <option value="gzip">gzip</option>
+              <option value="none">none</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="backupNotes">备注</label>
+            <input name="notes" type="text" class="form-control" id="backupNotes" maxlength="255" value="{{guestname}}">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="confirmCreateBackupBtn">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="deleteModalbackup" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">确认删除</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>确定删除该备份吗？此操作不可恢复。</p>
+        <p class="text-muted backup-volid" id="deleteBackupVolid"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-danger" id="confirmDeleteBackupBtn">确认删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="rollbackModalbackup" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">确认还原</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>确定还原该备份吗？当前数据可能被覆盖。</p>
+        <p class="text-muted backup-volid" id="rollbackBackupVolid"></p>
+        <div class="custom-control custom-checkbox">
+          <input type="checkbox" class="custom-control-input" id="backupForce" value="1" checked>
+          <label class="custom-control-label" for="backupForce">覆盖现有数据</label>
+        </div>
+        <div class="custom-control custom-checkbox" style="margin-top: 8px;">
+          <input type="checkbox" class="custom-control-input" id="backupStart" value="1">
+          <label class="custom-control-label" for="backupStart">还原后启动</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="confirmRollbackBackupBtn">确认还原</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentBackupVolid = '';
+
+  $(document).ready(function() {
+    $(document).on('click', '#confirmCreateBackupBtn', function() {
+      handleCreateBackup();
+    });
+
+    $(document).on('click', '.deleteBackupbackup', function() {
+      currentBackupVolid = $(this).data('volid');
+      $('#deleteBackupVolid').text(currentBackupVolid);
+      $('#deleteModalbackup').modal('show');
+    });
+
+    $(document).on('click', '.rollbackBackupbackup', function() {
+      currentBackupVolid = $(this).data('volid');
+      $('#rollbackBackupVolid').text(currentBackupVolid);
+      $('#rollbackModalbackup').modal('show');
+    });
+
+    $(document).on('click', '#confirmDeleteBackupBtn', function() {
+      handleBackupAction('deleteBackup', '#confirmDeleteBackupBtn', '#deleteModalbackup', '删除');
+    });
+
+    $(document).on('click', '#confirmRollbackBackupBtn', function() {
+      handleBackupAction('rollbackBackup', '#confirmRollbackBackupBtn', '#rollbackModalbackup', '还原');
+    });
+  });
+
+  function reloadBackupTable() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id') || '{$Think.get.id}';
+    const requestUrl = '/provision/custom/content?id=' + id + '&key=backups&_t=' + Date.now();
+
+    $.ajax({
+      url: requestUrl,
+      type: 'GET',
+      dataType: 'html',
+      success: function(html) {
+        if (html && html.trim().length > 0) {
+          const $temp = $('<div>').html(html);
+          const $newTable = $temp.find('#backupTableWrapper');
+          if ($newTable.length > 0) {
+            $('#backupTableWrapper').html($newTable.html());
+          } else {
+            $('#backupTableWrapper').html(html);
+          }
+        } else {
+          window.location.reload();
+        }
+      },
+      error: function() {
+        window.location.reload();
+      }
+    });
+  }
+
+  function handleCreateBackup() {
+    const formData = new URLSearchParams();
+    formData.append('func', 'addBackup');
+    formData.append('mode', $('#backupMode').val());
+    formData.append('compress', $('#backupCompress').val());
+    formData.append('notes', $('#backupNotes').val().trim());
+
+    const btn = $('#confirmCreateBackupBtn');
+    btn.prop('disabled', true);
+
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        btn.prop('disabled', false);
+        if (data.status == 200) {
+          $('#addModalbackup').modal('hide');
+          $('#backupForm')[0].reset();
+          $('#backupNotes').val('{{guestname}}');
+          showBackupSuccess(data.msg || '创建成功');
+          reloadBackupTable();
+        } else {
+          showBackupError(data.msg || '创建失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        btn.prop('disabled', false);
+        showBackupError('创建出错: ' + error);
+      }
+    });
+  }
+
+  function handleBackupAction(func, btnSelector, modalSelector, actionName) {
+    if (!currentBackupVolid) {
+      return;
+    }
+
+    const btn = $(btnSelector);
+    btn.prop('disabled', true);
+
+    const formData = new URLSearchParams();
+    formData.append('func', func);
+    formData.append('volid', currentBackupVolid);
+
+    if (func === 'rollbackBackup') {
+      formData.append('force', $('#backupForce').is(':checked') ? '1' : '0');
+      formData.append('start', $('#backupStart').is(':checked') ? '1' : '0');
+    }
+
+    $.ajax({
+      url: "{$MODULE_CUSTOM_API}",
+      type: 'POST',
+      data: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      success: function(data) {
+        btn.prop('disabled', false);
+        $(modalSelector).modal('hide');
+        currentBackupVolid = '';
+        if (data.status == 200) {
+          showBackupSuccess(data.msg || actionName + '成功');
+          reloadBackupTable();
+        } else {
+          showBackupError(data.msg || actionName + '失败');
+        }
+      },
+      error: function(xhr, status, error) {
+        btn.prop('disabled', false);
+        $(modalSelector).modal('hide');
+        showBackupError(actionName + '出错: ' + error);
+      }
+    });
+  }
+
+  function showBackupSuccess(message) {
+    if (window.toastr) {
+      toastr.success(message);
+    } else if (window.Swal) {
+      Swal.fire('成功', message, 'success');
+    } else {
+      alert(message);
+    }
+  }
+
+  function showBackupError(message) {
+    if (window.toastr) {
+      toastr.error(message);
+    } else if (window.Swal) {
+      Swal.fire('失败', message, 'error');
+    } else {
+      alert(message);
+    }
+  }
+</script>

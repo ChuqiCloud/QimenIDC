@@ -5,8 +5,8 @@ from fastapi.responses import FileResponse
 
 from common.CodeEnum import CodeEnum
 from common.ResponseResult import common_response
-from entity.Migration import MigrationBackup, MigrationCleanup, MigrationRestore
-from service.Migration import cleanup_source_vm, get_backup_file, read_status, start_backup, start_restore
+from entity.Migration import MigrationBackup, MigrationCleanup
+from service.Migration import cleanup_source_vm, get_backup_file, read_status, start_backup
 
 
 migration_router = APIRouter()
@@ -15,12 +15,6 @@ migration_router = APIRouter()
 @migration_router.post("/migration/backup")
 async def migration_backup(item: MigrationBackup):
     start_backup(item)
-    return common_response(CodeEnum.SUCCESS, "success", read_status(item.task_id))
-
-
-@migration_router.post("/migration/restore")
-async def migration_restore(item: MigrationRestore):
-    start_restore(item)
     return common_response(CodeEnum.SUCCESS, "success", read_status(item.task_id))
 
 
