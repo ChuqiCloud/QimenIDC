@@ -49,11 +49,11 @@ public class ControllerApiSchema {
                 "defaultIngressAction", "defaultEgressAction", "rules");
         put("/security-group/delete", "hostId");
         put("/security-group/check", "hostId");
-        // 迁移
-        put("/migration/backup", "task_id", "vmid", "backup_dir", "shutdown_timeout");
-        put("/migration/restore", "task_id", "source_url", "source_token", "target_vmid",
-                "target_storage", "backup_dir");
-        put("/migration/cleanup-source", "task_id", "vmid", "purge");
+        // 迁移（阶段化接口，主控按步骤调用并可单步重试）
+        put("/migrationAction/backup", "task_id", "action", "vmid", "backup_dir", "shutdown_timeout");
+        put("/migrationAction/run", "task_id", "action", "vmid", "backup_dir", "shutdown_timeout",
+                "source_url", "source_token", "target_vmid", "target_storage");
+        put("/migrationAction/cleanup-source", "task_id", "vmid", "purge");
     }
 
     private static void put(String path, String... fields) {

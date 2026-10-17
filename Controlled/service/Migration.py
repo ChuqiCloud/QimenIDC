@@ -66,6 +66,38 @@ def append_log(task_id, message):
         file.write(message.rstrip() + "\n")
 
 
+def log_size(task_id):
+    log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
+    try:
+        return os.path.getsize(log_path)
+    except OSError:
+        return 0
+
+
+def read_log(task_id, offset=0, limit=64 * 1024):
+    """按字节偏移增量读取日志，主控据此做日志轮询。"""
+    ensure_dirs()
+    log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
+    if not os.path.exists(log_path):
+        return {"offset": 0, "next_offset": 0, "content": ""}
+    size = os.path.getsize(log_path)
+    offset = max(0, min(int(offset), size))
+    with open(log_path, "rb") as file:
+        file.seek(offset)
+        chunk = file.read(max(0, int(limit)))
+    return {
+        "offset": offset,
+        "next_offset": offset + len(chunk),
+        "content": chunk.decode("utf-8", errors="replace"),
+    }
+
+
+def read_log_tail(task_id, limit=64 * 1024):
+    """主控未带偏移量时直接返回尾部日志，避免一次拉全量。"""
+    size = log_size(task_id)
+    return read_log(task_id, max(0, size - int(limit)), limit)
+
+
 def parse_progress_percent(text):
     if not text:
         return None
@@ -361,21 +393,63 @@ def find_backup_file(vmid, backup_dir):
         return None
     return max(files, key=os.path.getmtime)
 
+def backup_ready(status):
+    backup_file = status.get("backup_file")
+    return bool(backup_file) and os.path.exists(backup_file)
+
+
+def restore_ready(status):
+    return status.get("status") == "SUCCESS" and status.get("stage") == "RESTORE_DONE"
+
+
+def backup_file_candidates(item):
+    """下载文件名单调推进：被控重启、backup_dir 变更后仍能定位到已完成下载的镜像。"""
+    candidates = []
+    status_backup = read_status(item.task_id).get("backup_file")
+    if status_backup:
+        # 源端与被控端 backup_dir 可能不同，同名字段在两边含义不同，按 basename 对齐
+        candidates.append(os.path.join(item.backup_dir, os.path.basename(status_backup)))
+        candidates.append(status_backup)
+    source_name = os.path.basename((item.source_url or "").split("?")[0])
+    if source_name:
+        candidates.append(os.path.join(item.backup_dir, source_name))
+    candidates.append(os.path.join(item.backup_dir, f"{item.task_id}.vma.zst"))
+    result = []
+    for candidate in candidates:
+        if candidate and candidate not in result:
+            result.append(candidate)
+    return result
+
+
+def resolve_restore_file(item):
+    for candidate in backup_file_candidates(item):
+        if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    return backup_file_candidates(item)[0]
+
+
+def restore_file_ready(item):
+    backup_file = resolve_restore_file(item)
+    if not os.path.exists(backup_file):
+        return None
+    return backup_file if os.path.getsize(backup_file) > 0 else None
+
 
 def run_backup(item):
     ensure_dirs(item.backup_dir)
     task_id = item.task_id
     original_networks = {}
     try:
+        # 阶段幂等：已经产出可用镜像时直接拿现成文件，避免从头重新打包
         existing = read_status(task_id)
-        if existing.get("status") == "SUCCESS" and existing.get("backup_file") and os.path.exists(existing.get("backup_file")):
-            return
-        backup_file = existing.get("backup_file")
-        if backup_file and os.path.exists(backup_file):
-            write_status(task_id, status="SUCCESS", stage="BACKUP_DONE", progress=100, backup_file=backup_file)
+        if backup_ready(existing):
+            append_log(task_id, f"reuse existing backup file: {existing.get('backup_file')}")
+            write_status(task_id, status="SUCCESS", stage="BACKUP_DONE", progress=100,
+                         backup_file=existing.get("backup_file"), resumed=True)
             return
 
-        write_status(task_id, status="RUNNING", stage="CHECKING", progress=5, vmid=item.vmid, backup_dir=item.backup_dir)
+        write_status(task_id, status="RUNNING", stage="CHECKING", progress=5, vmid=item.vmid,
+                     backup_dir=item.backup_dir, resumed=False)
         shutdown_vm(task_id, item.vmid, item.shutdown_timeout)
         original_networks = patch_invalid_vm_bridges(task_id, item.vmid)
         update_backup_progress = progress_writer(task_id, "BACKUP", 20, 99, "running vzdump")
@@ -407,13 +481,23 @@ def run_restore(item):
     task_id = item.task_id
     try:
         existing = read_status(task_id)
-        if existing.get("status") == "SUCCESS" and existing.get("stage") == "RESTORE_DONE":
+        if restore_ready(existing):
+            append_log(task_id, "restore already finished, skip")
             return
-        backup_file = os.path.join(item.backup_dir, os.path.basename(item.source_url.split("?")[0]))
-        if not backup_file.endswith(".vma") and ".vma" not in backup_file:
-            backup_file = os.path.join(item.backup_dir, f"{task_id}.vma.zst")
+        backup_file = resolve_restore_file(item)
+        resumed = False
+        downloaded = restore_file_ready(item)
+        if downloaded:
+            # 断点续跑：上一轮已经把镜像拉完整，直接进入校验与导入
+            backup_file = downloaded
+            resumed = True
+            append_log(task_id, f"reuse downloaded backup file: {backup_file}, size={os.path.getsize(backup_file)}")
+            write_status(task_id, status="RUNNING", stage="TRANSFER", progress=56, backup_file=backup_file,
+                         message="backup file already downloaded", resumed=True)
+        else:
+            append_log(task_id, "no complete backup file on target, download from source")
+            download_file_with_progress(task_id, item.source_url, item.source_token, backup_file, 1, 55)
 
-        download_file_with_progress(task_id, item.source_url, item.source_token, backup_file, 1, 55)
         if not os.path.exists(backup_file) or os.path.getsize(backup_file) <= 0:
             raise RuntimeError("downloaded backup file is empty")
         validate_restore_archive(task_id, backup_file)
@@ -423,7 +507,8 @@ def run_restore(item):
             f"qmrestore {shlex.quote(backup_file)} {int(item.target_vmid)} --storage {shlex.quote(item.target_storage)} --force",
             update_restore_progress
         )
-        write_status(task_id, status="SUCCESS", stage="RESTORE_DONE", progress=100, target_vmid=item.target_vmid, target_storage=item.target_storage)
+        write_status(task_id, status="SUCCESS", stage="RESTORE_DONE", progress=100, backup_file=backup_file,
+                     target_vmid=item.target_vmid, target_storage=item.target_storage, resumed=resumed)
     except Exception as error:
         write_status(task_id, status="FAILED", stage="RESTORE_FAILED", progress=0, error=str(error))
         append_log(task_id, str(error))
@@ -439,12 +524,37 @@ def start_restore(item):
 def cleanup_source_vm(item):
     try:
         write_status(item.task_id, status="RUNNING", stage="CLEANUP_SOURCE", progress=95)
+        if vm_status(item.vmid) == "stopped":
+            append_log(item.task_id, f"VM {item.vmid} already stopped, purge config and disks")
         purge = "--purge" if item.purge else ""
         run_command(item.task_id, f"qm destroy {int(item.vmid)} {purge}")
         write_status(item.task_id, status="SUCCESS", stage="CLEANUP_DONE", progress=100)
     except Exception as error:
         write_status(item.task_id, status="FAILED", stage="CLEANUP_FAILED", progress=95, error=str(error))
         append_log(item.task_id, str(error))
+
+
+def run_action(item):
+    """主控显式指定阶段时只做一件事，主控因此可以把迁移切成可重试的小步。"""
+    action = (item.action or "").strip().lower()
+    append_log(item.task_id, f"run migration action: {action}")
+    if action == "cleanup-source":
+        cleanup_source_vm(item)
+        return
+    if action == "backup":
+        if item.vmid is None:
+            write_status(item.task_id, status="FAILED", stage="BACKUP_FAILED", progress=0, error="vmid is required")
+            return
+        run_backup(item)
+        return
+    if action == "restore":
+        if not item.source_url or item.target_vmid is None or not item.target_storage:
+            write_status(item.task_id, status="FAILED", stage="RESTORE_FAILED", progress=0,
+                         error="source_url, target_vmid and target_storage are required")
+            return
+        run_restore(item)
+        return
+    write_status(item.task_id, status="FAILED", stage="UNKNOWN_ACTION", progress=0, error=f"unknown action: {item.action}")
 
 
 def get_backup_file(task_id):

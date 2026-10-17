@@ -38,6 +38,10 @@ public class ErrorTaskCron {
     private static final long APPLY_WINDOWS_VM_IP_TIMEOUT = 60 * 60 * 1000L;
     private static final long GENERAL_TASK_TIMEOUT = 10 * 60 * 1000L;
     private static final long CREATE_VM_TIMEOUT = 15 * 60 * 1000L;
+    /**
+     * 迁移包含打包、传输、导入与网络重建，按进度停滞判断，而不是按总时长
+     */
+    private static final long MIGRATE_VM_STALL_TIMEOUT = 2 * 60 * 60 * 1000L;
     private static final long REINSTALL_VM_TIMEOUT = 15 * 60 * 1000L;
     private static final long STARTUP_PROTECTION_MILLIS = 10 * 60 * 1000L;
     private volatile long applicationStartTime;
@@ -76,10 +80,13 @@ public class ErrorTaskCron {
         if (failTimeoutApplyWindowsVmIpTask()) {
             return;
         }
+        if (failStalledMigrateVmTask()) {
+            return;
+        }
         QueryWrapper<Task> taskQueryWrapper = new QueryWrapper<>();
         long now = System.currentTimeMillis();
         taskQueryWrapper.eq("status", 1).and(wrapper -> wrapper
-                .and(item -> item.ne("type", REINSTALL_VM).ne("type", CREATE_VM)
+                .and(item -> item.ne("type", REINSTALL_VM).ne("type", CREATE_VM).ne("type", MIGRATE_VM)
                         .apply("create_date <= {0}", now - GENERAL_TASK_TIMEOUT))
                 .or(item -> item.eq("type", REINSTALL_VM)
                         .apply("create_date <= {0}", now - REINSTALL_VM_TIMEOUT))
@@ -185,6 +192,48 @@ public class ErrorTaskCron {
             }
             vmhost.setStatus(getRecoverStatus(vmhost.getNodeid(), vmhost.getVmid()));
             vmhostService.updateById(vmhost);
+        }
+    }
+
+    /**
+     * 迁移任务只按进度停滞判定超时，避免还在正常打包的大机器被判成异常任务
+     */
+    private boolean failStalledMigrateVmTask() {
+        QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("type", MIGRATE_VM);
+        queryWrapper.eq("status", 1);
+        queryWrapper.orderByAsc("id");
+        for (Task task : taskService.list(queryWrapper)) {
+            Map<Object, Object> params = task.getParams() == null ? new HashMap<>() : task.getParams();
+            Long updateTime = longValue(params.get("updateTime"));
+            long lastActive = updateTime == null ? (task.getCreateDate() == null ? System.currentTimeMillis() : task.getCreateDate()) : updateTime;
+            if (System.currentTimeMillis() - lastActive < MIGRATE_VM_STALL_TIMEOUT) {
+                continue;
+            }
+            params.put("stage", "FAILED");
+            params.put("lastFailedStep", params.get("checkpointStage"));
+            task.setParams(params);
+            task.setStatus(3);
+            task.setError("迁移任务长时间无进度，已标记为失败，可从断点继续");
+            taskService.updateTask(task);
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM,
+                    "迁移任务停滞处理: NodeID:{} VM-ID:{} TASK-ID:{}", task.getNodeid(), task.getVmid(), task.getId());
+            return true;
+        }
+        return false;
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

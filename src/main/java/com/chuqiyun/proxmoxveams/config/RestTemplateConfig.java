@@ -75,10 +75,18 @@ public class RestTemplateConfig {
     }
 
     public static RestTemplate createQAgentRestTemplate() {
+        return createQAgentRestTemplate(30_000);
+    }
+
+    /**
+     * 迁移等长耗时阶段需要比默认 30s 更长的读超时，按调用方传入的毫秒数构造。
+     */
+    public static RestTemplate createQAgentRestTemplate(int readTimeoutMillis) {
+        int socketTimeout = Math.max(1_000, readTimeoutMillis);
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(15_000)
                 .setConnectionRequestTimeout(10_000)
-                .setSocketTimeout(30_000)
+                .setSocketTimeout(socketTimeout)
                 .build();
         CloseableHttpClient httpClient = HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)

@@ -44,6 +44,21 @@ public class ClientApiUtil {
     private static final String AGENT_SCHEME = "https://";
 
     /**
+     * 默认读超时，与历史实现保持一致
+     */
+    private static final int DEFAULT_TIMEOUT_MILLIS = 30_000;
+
+    /**
+     * 迁移阶段接口是同步执行后返回，vzdump/qmrestore 可能跑很久，单独放宽超时
+     */
+    private static final int MIGRATION_ACTION_TIMEOUT_MILLIS = 24 * 60 * 60 * 1000;
+
+    /**
+     * 单次拉取的迁移日志上限，避免日志过大撑爆响应
+     */
+    private static final int MIGRATION_LOG_CHUNK_BYTES = 64 * 1024;
+
+    /**
      * 主控版本，随请求头下发给被控端，便于两侧对齐版本排查问题
      */
     private static String masterVersion = "";
@@ -74,7 +89,11 @@ public class ClientApiUtil {
     * @Description: 通用GET请求（请求参数随URL明文传输，响应体按协商结果解密）
     */
     public static JSONObject getControllerApi(String url, Map<String, Object> params, String token){
-        return request("GET", url, params, token, false);
+        return request("GET", url, params, token, false, DEFAULT_TIMEOUT_MILLIS);
+    }
+
+    public static JSONObject getControllerApi(String url, Map<String, Object> params, String token, int timeoutMillis){
+        return request("GET", url, params, token, false, timeoutMillis);
     }
 
     /**
@@ -82,7 +101,11 @@ public class ClientApiUtil {
     * @Description: 通用POST请求（请求体加密，响应体解密）
     */
     public static JSONObject postControllerApi(String url, Map<String, Object> params, String token){
-        return request("POST", url, params, token, true);
+        return request("POST", url, params, token, true, DEFAULT_TIMEOUT_MILLIS);
+    }
+
+    public static JSONObject postControllerApi(String url, Map<String, Object> params, String token, int timeoutMillis){
+        return request("POST", url, params, token, true, timeoutMillis);
     }
 
     /**
@@ -97,7 +120,8 @@ public class ClientApiUtil {
      * @Params: encryptBody 是否加密请求体
     * @Return JSONObject 被控端响应，失败返回null
     */
-    private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token, boolean encryptBody){
+    private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token,
+                                     boolean encryptBody, int timeoutMillis){
         if (ClientPayloadUtil.isFieldWhitelistEnabled()) {
             filterJsonFields(params, rawUrl);
         }
@@ -106,7 +130,7 @@ public class ClientApiUtil {
         String timestamp = String.valueOf(System.currentTimeMillis() / 1000L);
         String nonce = UUID.randomUUID().toString().replace("-", "");
         UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromHttpUrl(rawUrl);
-        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
+        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate(timeoutMillis);
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
         headers.add("X-QimenIDC-Version", getMasterVersion());
@@ -115,14 +139,17 @@ public class ClientApiUtil {
         try {
             ResponseEntity<String> response;
             if ("GET".equals(method)) {
+                // 模板变量的值必须与占位的 key 同名，否则 exchange 的 varargs 无法解析
+                Map<String, Object> uriVariables = new HashMap<>();
                 if (params != null && !params.isEmpty()) {
-                    for (String key : params.keySet()) {
-                        urlBuilder.queryParam(key, "{" + key + "}");
+                    for (Map.Entry<String, Object> entry : params.entrySet()) {
+                        urlBuilder.queryParam(entry.getKey(), "{" + entry.getKey() + "}");
+                        uriVariables.put(entry.getKey(), entry.getValue());
                     }
                 }
                 HttpEntity<Object> entity = new HttpEntity<>(null, headers);
                 response = restTemplate.exchange(urlBuilder.build(false).encode().toUriString(),
-                        HttpMethod.GET, entity, String.class, params);
+                        HttpMethod.GET, entity, String.class, uriVariables);
             } else {
                 String body;
                 if (encryptBody && ClientPayloadUtil.isEncryptEnabled()) {
@@ -476,21 +503,21 @@ public class ClientApiUtil {
     }
 
     public static JSONObject startMigrationBackup(String ip, String token, Integer controllerPort, String taskId, Integer vmid, String backupDir) {
-        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/backup";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
+        paramMap.put("action", "backup");
         paramMap.put("vmid", vmid);
         if (backupDir != null && !backupDir.trim().isEmpty()) {
             paramMap.put("backup_dir", backupDir);
         }
-        return postControllerApi(url, paramMap, token);
+        return postMigrationAction(ip, token, controllerPort, paramMap);
     }
 
     public static JSONObject startMigrationRestore(String ip, String token, Integer controllerPort, String taskId, String sourceUrl,
                                                    String sourceToken, Integer targetVmid, String targetStorage, String backupDir) {
-        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/restore";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
+        paramMap.put("action", "restore");
         paramMap.put("source_url", sourceUrl);
         paramMap.put("source_token", sourceToken);
         paramMap.put("target_vmid", targetVmid);
@@ -498,17 +525,36 @@ public class ClientApiUtil {
         if (backupDir != null && !backupDir.trim().isEmpty()) {
             paramMap.put("backup_dir", backupDir);
         }
-        return postControllerApi(url, paramMap, token);
+        return postMigrationAction(ip, token, controllerPort, paramMap);
+    }
+
+    /**
+     * 同步执行被控端单个迁移阶段（backup / restore），失败可直接用同一 taskId 重试。
+     * 被控端会在阶段完成后返回，因此超时时间按最长迁移场景放宽。
+     */
+    private static JSONObject postMigrationAction(String ip, String token, Integer controllerPort, Map<String, Object> paramMap) {
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/run";
+        return postControllerApi(url, paramMap, token, MIGRATION_ACTION_TIMEOUT_MILLIS);
     }
 
     public static JSONObject getMigrationStatus(String ip, String token, Integer controllerPort, String taskId) {
-        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/status/" + taskId;
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/status/" + taskId;
+        Map<String, Object> paramMap = new HashMap<>();
+        return getControllerApi(url, paramMap, token);
+    }
+
+    /**
+     * 增量拉取被控端迁移日志，offset 为上次返回的 nextOffset。
+     */
+    public static JSONObject getMigrationLog(String ip, String token, Integer controllerPort, String taskId, long offset) {
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/log/" + taskId
+                + "?offset=" + offset + "&limit=" + MIGRATION_LOG_CHUNK_BYTES;
         Map<String, Object> paramMap = new HashMap<>();
         return getControllerApi(url, paramMap, token);
     }
 
     public static JSONObject cleanupMigrationSource(String ip, String token, Integer controllerPort, String taskId, Integer vmid) {
-        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/cleanup-source";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/cleanup-source";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
         paramMap.put("vmid", vmid);

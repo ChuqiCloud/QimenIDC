@@ -55,6 +55,18 @@ class RetiredEndpointTest(unittest.TestCase):
         for path in ("/update", "/readFile", "/deleteFile", "/wget", "/migration/restore", "/migration/backup", "/migration/cleanup-source", "/nat/add"):
             self.assertNotIn(path, response.json()["paths"])
 
+    def test_migration_action_routes_are_registered_but_require_authentication(self):
+        registered = {route.path for route in main.app.routes}
+        self.assertTrue({
+            "/migrationAction/backup",
+            "/migrationAction/status/{task_id}",
+            "/migrationAction/log/{task_id}",
+            "/migrationAction/file/{task_id}",
+            "/migrationAction/run",
+        }.issubset(registered))
+        self.assertEqual(401, self.client.get("/migrationAction/status/task-1").status_code)
+        self.assertEqual(401, self.client.get("/migrationAction/log/task-1").status_code)
+
     def test_nonretired_endpoint_still_requires_authentication(self):
         self.assertEqual(401, self.client.get("/status").status_code)
         self.assertEqual(200, self.client.get("/status", headers={"Authorization": "a" * 64}).status_code)

@@ -42,6 +42,8 @@ public class UnifiedLogger {
         SYSTEM("[System]"),
         // 更新虚拟机系统盘IO限制
         UpdateSystemDiskIOLimit("[Task-UpdateSystemDiskIOLimit]"),
+        // 虚拟机迁移
+        TASK_MIGRATE_VM("[Task-MigrateVm]"),
         ;
 
         private final String type;

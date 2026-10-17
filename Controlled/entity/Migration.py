@@ -19,6 +19,20 @@ class MigrationRestore(BaseModel):
     backup_dir: Optional[str] = "/home/software/QAgent/migration/backups"
 
 
+class MigrationStart(BaseModel):
+    """从指定阶段开始（断点续跑）的一次性迁移动作。"""
+    task_id: str
+    action: str
+    vmid: Optional[int] = None
+    backup_dir: Optional[str] = "/home/software/QAgent/migration/backups"
+    shutdown_timeout: Optional[int] = 180
+    source_url: Optional[str] = None
+    source_token: Optional[str] = None
+    target_vmid: Optional[int] = None
+    target_storage: Optional[str] = None
+    purge: Optional[bool] = True
+
+
 class MigrationCleanup(BaseModel):
     task_id: str
     vmid: int

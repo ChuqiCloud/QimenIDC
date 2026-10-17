@@ -51,7 +51,7 @@ app=FastAPI(
 )
 
 # 路由
-from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk
+from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk,migration
 
 # 挂载路由
 app.include_router(changePassword.changePassword_router,tags=["changePassword"])
@@ -62,6 +62,8 @@ app.include_router(vnc.vnc_router,tags=["vnc"])
 app.include_router(netWork.netWork_router,tags=["netWork"])
 app.include_router(securityGroup.security_group_router,tags=["securityGroup"])
 app.include_router(disk.disk_router,tags=["disk"])
+# 迁移阶段接口：主控逐步调用，仅节点间鉴权后可访问
+app.include_router(migration.migration_router,tags=["migration"])
 
 # 无需鉴权的接口：接口文档，以及只返回固定值的版本号，均不含节点信息
 PUBLIC_PATHS = ('/docs', '/openapi.json', '/redoc', '/version')
