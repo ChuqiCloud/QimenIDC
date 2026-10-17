@@ -170,7 +170,6 @@ public class SysGroupController {
             master.setPassword("**********");
             master.setCsrfToken("**********");
             master.setTicket("**********");
-            master.setSshPassword("**********");
         }
         return ResponseResult.ok(masterPage);
     }

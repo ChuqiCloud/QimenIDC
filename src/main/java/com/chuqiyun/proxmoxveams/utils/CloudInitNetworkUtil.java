@@ -1,8 +1,6 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import com.chuqiyun.proxmoxveams.entity.Master;
-import com.jcraft.jsch.JSchException;
-import com.jcraft.jsch.SftpException;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
@@ -395,9 +393,9 @@ public class CloudInitNetworkUtil {
         return builder.toString();
     }
 
-    public static void uploadSingleNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,
-                                                     List<String> nameservers) throws JSchException, SftpException {
-        uploadSingleNicNetworkSnippet(node, vmid, ipConfig, nameservers, null);
+    public static void uploadSingleNicNetworkSnippet(Master node, String token, Integer vmid,
+                                                     Map<String, String> ipConfig, List<String> nameservers) {
+        uploadSingleNicNetworkSnippet(node, token, vmid, ipConfig, nameservers, null);
     }
 
     /**
@@ -424,21 +422,11 @@ public class CloudInitNetworkUtil {
         return builder.toString();
     }
 
-    public static void uploadDualNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,
-                                                   List<String> nameservers, String net0MacAddress,
-                                                   String net1MacAddress) throws JSchException, SftpException {
-        if (node == null || StringUtils.isBlank(node.getHost()) || node.getSshPort() == null
-                || StringUtils.isBlank(node.getSshUsername()) || StringUtils.isBlank(node.getSshPassword())) {
-            throw new IllegalStateException("节点SSH配置不完整，无法写入cloud-init网络配置");
-        }
-        SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
-        try {
-            sshUtil.connect();
-            sshUtil.uploadTextFile(getNetworkSnippetPath(vmid),
-                    buildDualNicNetworkConfig(ipConfig, nameservers, net0MacAddress, net1MacAddress));
-        } finally {
-            sshUtil.disconnect();
-        }
+    public static void uploadDualNicNetworkSnippet(Master node, String token, Integer vmid,
+                                                   Map<String, String> ipConfig, List<String> nameservers,
+                                                   String net0MacAddress, String net1MacAddress) {
+        writeNetworkSnippet(node, token, vmid,
+                buildDualNicNetworkConfig(ipConfig, nameservers, net0MacAddress, net1MacAddress));
     }
 
     private static String getIpConfigForVersion(String ipConfig, boolean ipv6) {
@@ -493,18 +481,27 @@ public class CloudInitNetworkUtil {
         }
     }
 
-    public static void uploadSingleNicNetworkSnippet(Master node, Integer vmid, Map<String, String> ipConfig,
-                                                     List<String> nameservers, String macAddress) throws JSchException, SftpException {
-        if (node == null || StringUtils.isBlank(node.getHost()) || node.getSshPort() == null
-                || StringUtils.isBlank(node.getSshUsername()) || StringUtils.isBlank(node.getSshPassword())) {
-            throw new IllegalStateException("节点SSH配置不完整，无法写入cloud-init网络配置");
+    public static void uploadSingleNicNetworkSnippet(Master node, String token, Integer vmid,
+                                                     Map<String, String> ipConfig, List<String> nameservers,
+                                                     String macAddress) {
+        writeNetworkSnippet(node, token, vmid, buildSingleNicNetworkConfig(ipConfig, nameservers, macAddress));
+    }
+
+    /**
+     * 通过被控端写入cloud-init网络配置，主控不再依赖节点SSH。
+     */
+    private static void writeNetworkSnippet(Master node, String token, Integer vmid, String content) {
+        if (node == null || node.getId() == null || StringUtils.isBlank(node.getHost())
+                || node.getControllerPort() == null) {
+            throw new IllegalStateException("节点被控配置不完整，无法写入cloud-init网络配置");
         }
-        SshUtil sshUtil = new SshUtil(node.getHost(), node.getSshPort(), node.getSshUsername(), node.getSshPassword());
-        try {
-            sshUtil.connect();
-            sshUtil.uploadTextFile(getNetworkSnippetPath(vmid), buildSingleNicNetworkConfig(ipConfig, nameservers, macAddress));
-        } finally {
-            sshUtil.disconnect();
+        if (StringUtils.isBlank(token)) {
+            throw new IllegalStateException("被控端token为空，无法写入cloud-init网络配置");
+        }
+        boolean success = ClientApiUtil.writeFile(node.getHost(), node.getControllerPort(), token,
+                SNIPPET_DIR, getNetworkSnippetFileName(vmid), content);
+        if (!success) {
+            throw new IllegalStateException("被控端写入cloud-init网络配置失败: nodeId=" + node.getId() + ", vmid=" + vmid);
         }
     }
 

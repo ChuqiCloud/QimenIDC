@@ -3297,7 +3297,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         String net0Config = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
         String macAddress = CloudInitNetworkUtil.extractMacAddress(net0Config);
         try {
-            CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmhost.getVmid(), ipConfig, nameservers, macAddress);
+            CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, configService.getToken(), vmhost.getVmid(), ipConfig, nameservers, macAddress);
         } catch (Exception e) {
             throw new IllegalStateException("写入cloud-init单网卡多IP配置失败: vmid=" + vmhost.getVmid(), e);
         }
@@ -3347,8 +3347,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             return;
         }
         try {
-            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmhost.getVmid(), ipConfig, nameservers,
-                    net0Mac, net1Mac);
+            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, configService.getToken(), vmhost.getVmid(),
+                    ipConfig, nameservers, net0Mac, net1Mac);
         } catch (Exception e) {
             throw new IllegalStateException("写入cloud-init双网卡IPv4/IPv6配置失败: vmid=" + vmhost.getVmid(), e);
         }
@@ -4043,9 +4043,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (!Objects.equals(protocol, "tcp") && !Objects.equals(protocol, "udp") && !Objects.equals(protocol, "all")) {
             return NatOperationResult.failure("协议只支持 tcp、udp 或 all");
         }
-        if (Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort())
-                || Objects.equals(source_port, node.getSshPort())) {
-            return NatOperationResult.failure("源端口不能使用宿主机 Web、控制台或 SSH 端口");
+        if (Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort())) {
+            return NatOperationResult.failure("源端口不能使用宿主机 Web 或控制台端口");
         }
         if (source_port == 3128) {
             return NatOperationResult.failure("源端口 3128 为 SPICE 代理保留端口");
@@ -4062,7 +4061,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (source_port >= 59000 && source_port <= 60050) {
             return NatOperationResult.failure("源端口 59000-60050 为 VNC/迁移保留端口");
         }
-        //源端口范围限制为1000-60050；同时禁止web端口、控制端口、ssh端口及系统保留端口。
+        //源端口范围限制为1000-60050；同时禁止web端口、控制端口及系统保留端口。
         //目标端口仅允许标准TCP/UDP端口范围1-65535，禁止未开启NAT的机器使用该功能。
         //corosync集群流量 5404 5405 UDP、实时迁移：60000-60050 TCP、SPICE代理：3128 TCP、vnc：59000-59999，6080 TCP/WEBSOCKET
         if (natForwardSyncService.countPortRules(vm) >= vmhost.getNatnum()) {

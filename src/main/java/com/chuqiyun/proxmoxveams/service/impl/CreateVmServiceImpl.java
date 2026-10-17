@@ -680,8 +680,9 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         if (linuxMultiIp && dualNicIpv6) {
             try {
-                CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmId, vmParams.getIpConfig(),
-                        getNameservers(vmParams), macAddress, CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId, 1));
+                CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, configService.getToken(), vmId,
+                        vmParams.getIpConfig(), getNameservers(vmParams), macAddress,
+                        CloudInitNetworkUtil.buildStableMacAddress(vmParams.getNodeid(), vmId, 1));
             } catch (Exception e) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "写入双网卡IPv4/IPv6 cloud-init 配置失败: vmid=" + vmId);
                 e.printStackTrace();
@@ -690,7 +691,8 @@ public class CreateVmServiceImpl implements CreateVmService {
             param.put("cicustom", "network=" + CloudInitNetworkUtil.getNetworkSnippetVolume(vmId));
         } else if (linuxMultiIp) {
             try {
-                CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, vmId, vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
+                CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(node, configService.getToken(), vmId,
+                        vmParams.getIpConfig(), getNameservers(vmParams), macAddress);
             } catch (Exception e) {
                 UnifiedLogger.error(UnifiedLogger.LogType.TASK_CREATE_VM, "写入单网卡多IP cloud-init 配置失败: vmid=" + vmId);
                 e.printStackTrace();

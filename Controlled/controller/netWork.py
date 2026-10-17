@@ -1,7 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from common.CodeEnum import CodeEnum
-from common.ResponseResult import common_response
+from common.ResponseResult import secured_response
 
 from service.NetWork import restart_network
 
@@ -12,6 +12,6 @@ netWork_router = APIRouter()
 restart network
 '''
 @netWork_router.post('/restartNetwork')
-async def restart():
+async def restart(request: Request):
     process = restart_network()
-    return common_response(CodeEnum.SUCCESS, 'success', {'pid':process.pid})
+    return secured_response(request, CodeEnum.SUCCESS, 'success', {'pid':process.pid})

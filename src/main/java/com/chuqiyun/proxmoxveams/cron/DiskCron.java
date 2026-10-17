@@ -12,10 +12,8 @@ import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
-import com.chuqiyun.proxmoxveams.utils.SshUtil;
 import com.chuqiyun.proxmoxveams.utils.VmDiskUsageUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
-import com.jcraft.jsch.JSchException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -198,20 +196,6 @@ public class DiskCron {
             path = path.substring(0,path.length()-1);
         }
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"执行导入系统盘任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
-        /*SshUtil sshUtil = new SshUtil(node.getHost(),node.getSshPort(),node.getSshUsername(),node.getSshPassword());
-        try {
-            sshUtil.connect();
-            sshUtil.executeCommand("qm importdisk "+task.getVmid()+" "+path+"/"+os+" "+vmhost.getStorage());
-            sshUtil.disconnect();
-        } catch (JSchException | InterruptedException e) {
-            UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,"导入系统盘任务: NodeID:{} VM-ID:{} 失败",node.getId(),task.getVmid());
-            // 更新任务状态
-            task.setStatus(3);
-            // 添加错误信息
-            task.setError(e.getMessage());
-            taskService.updateById(task);
-            e.printStackTrace();
-        }*/
         // 调用被控api导入系统盘
         try {
             boolean result = ClientApiUtil.importDisk(node.getHost(),node.getControllerPort(),configService.getToken(), Long.valueOf(task.getVmid()),path+"/"+os,vmhost.getStorage());

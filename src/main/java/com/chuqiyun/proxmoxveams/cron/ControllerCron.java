@@ -7,7 +7,9 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import com.chuqiyun.proxmoxveams.utils.ClientPayloadUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,6 +31,11 @@ public class ControllerCron {
     private MasterService masterService;
     @Resource
     private ConfigService configService;
+    /**
+     * 主控版本，用于与被控端做一致性校验
+     */
+    @Value("${info.application.version}")
+    private String masterVersion;
 
     @Async
     @Scheduled(fixedDelay = 1000*30)
@@ -70,9 +77,29 @@ public class ControllerCron {
             }
             node.setControllerStatus(0);
             masterService.updateById(node);
+            syncAgentSecurity(node, config.getToken());
             if (Objects.equals(node.getStatus(), 1)) {
                 masterService.updateNodeCookie(node.getId());
             }
+        }
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 读取被控端版本，仅用于版本不一致时告警。
+     * 读写路径类接口已下线，加密负载是被控端API的唯一约定，不再做运行时能力协商，
+     * 避免协商结果被中间人利用降级到明文。
+    */
+    private void syncAgentSecurity(Master node, String token) {
+        String agentVersion = ClientApiUtil.getAgentVersion(node.getHost(), node.getControllerPort(), token);
+        if (agentVersion == null) {
+            log.warn("无法获取节点[{}]被控端版本信息: nodeId={}", node.getName(), node.getId());
+            return;
+        }
+        ClientPayloadUtil.setEncryptEnabled(true);
+        if (!Objects.equals(agentVersion, masterVersion)) {
+            log.warn("节点[{}]被控端版本与主控不一致: 主控={}, 被控={}, nodeId={}",
+                    node.getName(), masterVersion, agentVersion, node.getId());
         }
     }
 

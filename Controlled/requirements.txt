@@ -3,3 +3,4 @@ uvicorn == 0.22.0
 numpy == 1.26.0
 sqlalchemy == 2.0.25
 APScheduler == 3.10.4
+cryptography == 41.0.7

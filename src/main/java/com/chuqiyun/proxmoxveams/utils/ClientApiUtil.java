@@ -1,11 +1,15 @@
 package com.chuqiyun.proxmoxveams.utils;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.dto.SecurityGroupApplyDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import io.swagger.models.auth.In;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -18,16 +22,37 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.annotation.Resource;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * @author mryunqi
  * @date 2023/7/8
  */
+@Component
 public class ClientApiUtil {
+    private static final Logger log = LoggerFactory.getLogger(ClientApiUtil.class);
+
+    /**
+     * 被控端协议，被控端只监听回环端口，由 nginx 终止 TLS 并提供管理源地址白名单
+     */
+    private static final String AGENT_SCHEME = "https://";
+
+    /**
+     * 主控版本，随请求头下发给被控端，便于两侧对齐版本排查问题
+     */
+    private static String masterVersion = "";
+
+    @Value("${info.application.version:}")
+    public void setMasterVersion(String version){
+        ClientApiUtil.masterVersion = version;
+    }
+
     // get请求https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
     /**
     * @Author: mryunqi
@@ -45,45 +70,155 @@ public class ClientApiUtil {
     }
 
     /**
-    * @Author: mryunqi
-    * @Description: 通用GET请求
-    * @DateTime: 2023/7/11 17:37
+    * @Author: 星禾
+    * @Description: 通用GET请求（请求参数随URL明文传输，响应体按协商结果解密）
     */
     public static JSONObject getControllerApi(String url, Map<String, Object> params, String token){
-        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
-        // 将token放入header
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.AUTHORIZATION, token);
-        // url拼接参数
-        StringBuilder urlBuilder = new StringBuilder(url);
-        if (params != null && params.size() > 0) {
-            urlBuilder.append("?");
-            for (String key : params.keySet()) {
-                urlBuilder.append(key).append("={").append(key).append("}&");
-            }
-            urlBuilder.deleteCharAt(urlBuilder.length() - 1);
-        }
-        HttpEntity<Object> entity = new HttpEntity<>(params,headers);
-        ResponseEntity<JSONObject> result = restTemplate.exchange(urlBuilder.toString(), HttpMethod.GET, entity, JSONObject.class, params);
-        return result.getBody();
+        return request("GET", url, params, token, false);
     }
+
     /**
-    * @Author: mryunqi
-    * @Description: 通用POST请求
-    * @DateTime: 2023/7/16 17:12
-    * @Params: url 请求地址
-     * @Params: params 请求参数
-     * @Params: token 请求token
-    * @Return JSONObject
+    * @Author: 星禾
+    * @Description: 通用POST请求（请求体加密，响应体解密）
     */
-    public static JSONObject postControllerApi(String url,Map<String,Object> params,String token){
+    public static JSONObject postControllerApi(String url, Map<String, Object> params, String token){
+        return request("POST", url, params, token, true);
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 被控端请求统一入口
+     * 业务参数只允许在提供方声明的字段集合内传递，额外字段直接丢弃，
+     * 目标分支已将路径类接口下线，所有请求走TLS通道并由nginx做管理源地址白名单。
+    * @Params: method 请求方法
+     * @Params: rawUrl 被控端接口地址
+     * @Params: params 业务参数
+     * @Params: token 被控端token
+     * @Params: encryptBody 是否加密请求体
+    * @Return JSONObject 被控端响应，失败返回null
+    */
+    private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token, boolean encryptBody){
+        if (ClientPayloadUtil.isFieldWhitelistEnabled()) {
+            filterJsonFields(params, rawUrl);
+        }
+        String path = URI.create(rawUrl).getRawPath();
+        // 防重放参数放请求头，避免落到被控端与中间设备的访问日志里
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000L);
+        String nonce = UUID.randomUUID().toString().replace("-", "");
+        UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromHttpUrl(rawUrl);
         RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
-        // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
-        headers.add("Content-Type","application/json");
-        HttpEntity<Object> entity = new HttpEntity<>(params, headers);
-        return restTemplate.postForObject(url, entity,JSONObject.class);
+        headers.add("X-QimenIDC-Version", getMasterVersion());
+        headers.add("X-QimenIDC-Timestamp", timestamp);
+        headers.add("X-QimenIDC-Nonce", nonce);
+        try {
+            ResponseEntity<String> response;
+            if ("GET".equals(method)) {
+                if (params != null && !params.isEmpty()) {
+                    for (String key : params.keySet()) {
+                        urlBuilder.queryParam(key, "{" + key + "}");
+                    }
+                }
+                HttpEntity<Object> entity = new HttpEntity<>(null, headers);
+                response = restTemplate.exchange(urlBuilder.build(false).encode().toUriString(),
+                        HttpMethod.GET, entity, String.class, params);
+            } else {
+                String body;
+                if (encryptBody && ClientPayloadUtil.isEncryptEnabled()) {
+                    body = ClientPayloadUtil.encrypt(token, JSON.toJSONString(params == null ? new HashMap<>() : params),
+                            method, path, timestamp, nonce);
+                    headers.add("Content-Type", "text/plain; charset=UTF-8");
+                } else {
+                    body = ClientPayloadUtil.buildPlainPayload(new JSONObject(params == null ? new HashMap<>() : params));
+                    headers.add("Content-Type", "application/json");
+                }
+                HttpEntity<String> entity = new HttpEntity<>(body, headers);
+                response = restTemplate.exchange(urlBuilder.build(false).encode().toUriString(),
+                        HttpMethod.POST, entity, String.class);
+            }
+            return parseResponse(response.getBody(), token, method, path, timestamp, nonce);
+        } catch (RestClientException e) {
+            log.error("调用被控端接口失败: url={}, error={}", rawUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 解析被控端响应，密文负载解密后再解析
+    * @Return JSONObject 响应体，解密失败返回null
+    */
+    private static JSONObject parseResponse(String body, String token, String method, String path, String timestamp, String nonce){
+        if (body == null || body.trim().isEmpty()) {
+            return null;
+        }
+        JSONObject response = JSON.parseObject(body);
+        if (response == null || !response.containsKey("_encrypted")) {
+            return response;
+        }
+        String plain = ClientPayloadUtil.decrypt(token, response.getString("_encrypted"), method, path, timestamp, nonce);
+        if (plain == null) {
+            log.error("被控端响应解密失败，可能存在中间人篡改: path={}", path);
+            return null;
+        }
+        return JSON.parseObject(plain);
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 丢弃被控端未声明的参数，避免伪造字段被下发给节点
+    */
+    private static void filterJsonFields(Map<String, Object> params, String rawUrl){
+        if (params == null || params.isEmpty()) {
+            return;
+        }
+        Set<String> allowed = ControllerApiSchema.getAllowedFields(rawUrl);
+        if (allowed == null || allowed.isEmpty()) {
+            return;
+        }
+        List<String> unknown = new ArrayList<>();
+        for (String key : params.keySet()) {
+            if (!allowed.contains(key)) {
+                unknown.add(key);
+            }
+        }
+        if (!unknown.isEmpty()) {
+            log.warn("[SECURITY] 被控端请求 {} 携带未声明参数，已忽略: {}", rawUrl, String.join(",", unknown));
+            for (String key : unknown) {
+                params.remove(key);
+            }
+        }
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 读取被控端版本文件，用于判定被控端是否具备新接口能力（免鉴权接口，仅返回固定值）
+    * @Return String 被控端版本，不可用时返回null
+    */
+    public static String getAgentVersion(String ip, Integer port, String token){
+        String url = AGENT_SCHEME + ip + ":" + port + "/version";
+        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.AUTHORIZATION, token);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET,
+                    new HttpEntity<>(headers), String.class);
+            JSONObject body = JSON.parseObject(response.getBody());
+            JSONObject data = body == null ? null : body.getJSONObject("data");
+            return data == null ? null : data.getString("version");
+        } catch (RestClientException e) {
+            log.error("获取被控端版本失败: ip={}, port={}, error={}", ip, port, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 主控版本，随请求头下发给被控做一致性校验
+    */
+    private static String getMasterVersion(){
+        return masterVersion;
     }
 
     /**
@@ -92,34 +227,13 @@ public class ClientApiUtil {
     * @DateTime: 2023/7/11 17:45
     */
     public static JSONObject getControllerConnectStatus(String ip, Integer port,String token){
-        String url = "https://"+ip+":"+port+"/status";
-        Map<String, Object> paramMap = new HashMap<>();
+        String url = AGENT_SCHEME + ip + ":" + port + "/status";
         RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
-        // 将token放入header
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
-        HttpEntity<Object> entity = new HttpEntity<>(paramMap,headers);
-        ResponseEntity<JSONObject> result = restTemplate.exchange(url, HttpMethod.GET, entity, JSONObject.class, paramMap);
-        return result.getBody();
-    }
-    
-    /**
-    * @Author: mryunqi
-    * @Description: 下载指定url文件到指定路径
-    * @DateTime: 2023/7/16 17:16
-    * @Params: ip 被控端ip
-     * @Params: token 被控端token
-     * @Params: fileUrl 文件url
-     * @Params: path 文件下载路径
-    * @Return Boolean
-    */
-    public static Boolean downloadFile(String ip, Integer port, String token, String fileUrl,String path){
-        String url = "https://"+ip+":"+port+"/wget";
-        Map<String, Object> paramMap = new HashMap<>();
-        paramMap.put("url",fileUrl);
-        paramMap.put("path",path);
-        JSONObject result = getControllerApi(url, paramMap, token);
-        return result != null && result.getInteger("code") == 200;
+        HttpEntity<Object> entity = new HttpEntity<>(headers);
+        ResponseEntity<String> result = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        return parseResponse(result.getBody(), token, "GET", "/status", null, null);
     }
 
     /**
@@ -133,11 +247,7 @@ public class ClientApiUtil {
     * @Return JSONObject 下载进度
     */
     public static JSONObject getDownloadProgress(String ip, Integer port, String token, String fileUrl,String path){
-        String url = "https://"+ip+":"+port+"/wget";
-        Map<String, Object> paramMap = new HashMap<>();
-        paramMap.put("url",fileUrl);
-        paramMap.put("path",path);
-        return getControllerApi(url, paramMap, token);
+        return null;
     }
 
     /**
@@ -150,7 +260,7 @@ public class ClientApiUtil {
     * @Return Boolean 是否删除成功
     */
     public static Boolean deleteOsFile(String ip, Integer port, String token, String osName){
-        String url = "https://"+ip+":"+port+"/deleteFile";
+        String url = AGENT_SCHEME + ip + ":" + port + "/deleteFile";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("path","/home/images/");
         paramMap.put("file",osName);
@@ -165,15 +275,38 @@ public class ClientApiUtil {
     * @Return JSONArray 文件名列表，失败返回null
     */
     public static JSONArray getPathFileList(String ip, Integer port, String token, String path){
-        String url = "https://"+ip+":"+port+"/pathFile";
+        String url = AGENT_SCHEME + ip + ":" + port + "/pathFile";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("path", path);
-        JSONObject result = getControllerApi(url, paramMap, token);
+        // 走加密POST，路径不落到URL与访问日志里
+        JSONObject result = postControllerApi(url, paramMap, token);
         if (result == null || result.getInteger("code") != 200){
             return null;
         }
         JSONObject data = result.getJSONObject("data");
         return data == null ? null : data.getJSONArray("files");
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 通过被控端写入文本文件，目录不存在时由被控端创建
+    * @DateTime: 2026/7/18 10:00
+    * @Params: ip 被控端ip
+     * @Params: token 被控端token
+     * @Params: controllerPort 被控端端口
+     * @Params: path 文件目录
+     * @Params: filename 文件名
+     * @Params: content 文件内容
+    * @Return Boolean 是否写入成功
+    */
+    public static Boolean writeFile(String ip, Integer controllerPort, String token, String path, String filename, String content){
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/writeFile";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("path",path);
+        paramMap.put("filename",filename);
+        paramMap.put("content",content);
+        JSONObject result = postControllerApi(url, paramMap, token);
+        return result != null && result.getInteger("code") == 200;
     }
 
     /**
@@ -184,7 +317,7 @@ public class ClientApiUtil {
     * @Return
     */
     public static Boolean resetPassword(String ip,Integer port, String token, Integer vmId, String username, String password){
-        String url = "https://"+ip+":"+port+"/changePassword";
+        String url = AGENT_SCHEME + ip + ":" + port + "/changePassword";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("id",vmId);
         paramMap.put("username",username);
@@ -205,7 +338,7 @@ public class ClientApiUtil {
     * @Return Boolean 是否导入成功
     */
     public static Boolean importDisk(String ip,Integer port, String token, Long vmid, String osPath,  String diskName){
-        String url = "https://"+ip+":"+port+"/importDisk";
+        String url = AGENT_SCHEME + ip + ":" + port + "/importDisk";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vmid",vmid);
         paramMap.put("image_path",osPath);
@@ -223,7 +356,7 @@ public class ClientApiUtil {
     * @Return JSONObject 网卡配置信息
     */
     public static JSONObject getNetworkInfo(String ip,Integer port, String token){
-        String url = "https://"+ip+":"+port+"/readFile";
+        String url = AGENT_SCHEME + ip + ":" + port + "/readFile";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("path","/etc/network");
         paramMap.put("filename","interfaces");
@@ -245,7 +378,7 @@ public class ClientApiUtil {
     * @Return Boolean 是否创建成功
     */
     public static Boolean createVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
-        String url = "https://"+ip+":"+controllerPort+"/vnc";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/vnc";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vnc_file_path","/home/software/vnc");
         paramMap.put("vmid",vmid);
@@ -273,7 +406,7 @@ public class ClientApiUtil {
     * @Return Boolean 是否导入成功
     */
     public static Boolean importVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
-        String url = "https://"+ip+":"+controllerPort+"/vnc/import";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/vnc/import";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vnc_file_path","/home/software/vnc");
         paramMap.put("vmid",vmid);
@@ -292,7 +425,7 @@ public class ClientApiUtil {
     * @DateTime: 2026/7/16 21:45
     */
     public static Boolean ensureVncService(String ip, String token, Integer vmid, Integer vncPort,String username, String vncPassword,Integer controllerPort, String vncHost, Integer time){
-        String url = "https://"+ip+":"+controllerPort+"/vnc/ensure";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/vnc/ensure";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vnc_file_path","/home/software/vnc");
         paramMap.put("vmid",vmid);
@@ -316,7 +449,7 @@ public class ClientApiUtil {
     * @Return Boolean 是否停止成功
     */
     public static Boolean stopVncService(String ip, String token, Integer vncPort,Integer controllerPort){
-        String url = "https://"+ip+":"+controllerPort+"/vnc/stop";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/vnc/stop";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vnc_file_path","/home/software/vnc");
         paramMap.put("vmid","1");//被控写了不能传空置，随机填个数
@@ -333,7 +466,7 @@ public class ClientApiUtil {
      * 获取被控节点上虚拟机磁盘的实际分配容量。
      */
     public static JSONObject getVmDiskUsage(String ip, String token, Integer controllerPort, JSONObject request) {
-        String url = "https://" + ip + ":" + controllerPort + "/disk/usage";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/disk/usage";
         Map<String, Object> params = new HashMap<>(request);
         JSONObject result = postControllerApi(url, params, token);
         if (result == null || result.getInteger("code") != 200) {
@@ -343,7 +476,7 @@ public class ClientApiUtil {
     }
 
     public static JSONObject startMigrationBackup(String ip, String token, Integer controllerPort, String taskId, Integer vmid, String backupDir) {
-        String url = "https://" + ip + ":" + controllerPort + "/migration/backup";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/backup";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
         paramMap.put("vmid", vmid);
@@ -355,7 +488,7 @@ public class ClientApiUtil {
 
     public static JSONObject startMigrationRestore(String ip, String token, Integer controllerPort, String taskId, String sourceUrl,
                                                    String sourceToken, Integer targetVmid, String targetStorage, String backupDir) {
-        String url = "https://" + ip + ":" + controllerPort + "/migration/restore";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/restore";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
         paramMap.put("source_url", sourceUrl);
@@ -369,13 +502,13 @@ public class ClientApiUtil {
     }
 
     public static JSONObject getMigrationStatus(String ip, String token, Integer controllerPort, String taskId) {
-        String url = "https://" + ip + ":" + controllerPort + "/migration/status/" + taskId;
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/status/" + taskId;
         Map<String, Object> paramMap = new HashMap<>();
         return getControllerApi(url, paramMap, token);
     }
 
     public static JSONObject cleanupMigrationSource(String ip, String token, Integer controllerPort, String taskId, Integer vmid) {
-        String url = "https://" + ip + ":" + controllerPort + "/migration/cleanup-source";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migration/cleanup-source";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
         paramMap.put("vmid", vmid);
@@ -393,21 +526,21 @@ public class ClientApiUtil {
     * @Return  Boolean 是否重启成功
     */
     public static Boolean restartNetwork(String ip, String token, Integer controllerPort){
-        String url = "https://"+ip+":"+controllerPort+"/restartNetwork";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/restartNetwork";
         Map<String, Object> paramMap = new HashMap<>();
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }
 
     public static JSONObject exportNatRules(String ip, String token, Integer controllerPort) {
-        String url = "https://" + ip + ":" + controllerPort + "/nat/export";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/export";
         JSONObject result = getControllerApi(url, new HashMap<>(), token);
         return result != null && result.getInteger("code") == 200 ? result : null;
     }
 
     public static Boolean syncNatRules(String ip, String token, Integer controllerPort,
                                        JSONArray portRules, JSONArray ipForwardRules) {
-        String url = "https://" + ip + ":" + controllerPort + "/nat/sync";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/sync";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("port_rules", portRules);
         paramMap.put("ip_forward_rules", ipForwardRules);
@@ -436,7 +569,7 @@ public class ClientApiUtil {
     public static Boolean addPortForward(String ip, String token, Integer controllerPort, Integer hostId,
                                          String sourceIp, Integer source_port, String destination_ip,
                                          Integer destination_port, String protocol){
-        String url = "https://"+ip+":"+controllerPort+"/nat/add";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/add";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
         paramMap.put("source_ip",sourceIp);
@@ -455,7 +588,7 @@ public class ClientApiUtil {
                     return true;
                 }
                 paramMap.put("protocol", "tcp");
-                postControllerApi("https://" + ip + ":" + controllerPort + "/nat/delete", paramMap, token);
+                postControllerApi(AGENT_SCHEME + ip + ":" + controllerPort + "/nat/delete", paramMap, token);
                 return false;
             } else {
                 return result != null && result.getInteger("code") == 200;
@@ -487,7 +620,7 @@ public class ClientApiUtil {
     public static Boolean deletePortForward(String ip, String token, Integer controllerPort, Integer hostId,
                                             String sourceIp, Integer source_port, String destination_ip,
                                             Integer destination_port, String protocol) {
-        String url = "https://" + ip + ":" + controllerPort + "/nat/delete";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/delete";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
         paramMap.put("source_ip", sourceIp);
@@ -508,7 +641,7 @@ public class ClientApiUtil {
     }
 
     public static Boolean addIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
-        String url = "https://" + ip + ":" + controllerPort + "/nat/addIpForward";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/addIpForward";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
         paramMap.put("source_ip", publicIp);
@@ -528,7 +661,7 @@ public class ClientApiUtil {
     }
 
     public static Boolean deleteIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
-        String url = "https://" + ip + ":" + controllerPort + "/nat/deleteIpForward";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/deleteIpForward";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
         paramMap.put("source_ip", publicIp);
@@ -553,7 +686,7 @@ public class ClientApiUtil {
     }
 
     public static JSONObject applySecurityGroupResult(String ip, String token, Integer controllerPort, SecurityGroupApplyDto applyDto) {
-        String url = "https://" + ip + ":" + controllerPort + "/security-group/apply";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/security-group/apply";
         JSONObject result;
         try {
             result = postControllerApi(url, JSONObject.parseObject(JSONObject.toJSONString(applyDto)), token);
@@ -573,7 +706,7 @@ public class ClientApiUtil {
     }
 
     public static JSONObject deleteSecurityGroupResult(String ip, String token, Integer controllerPort, Integer hostId) {
-        String url = "https://" + ip + ":" + controllerPort + "/security-group/delete";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/security-group/delete";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("hostId", hostId);
         JSONObject result;
@@ -595,7 +728,7 @@ public class ClientApiUtil {
     }
 
     public static JSONObject checkSecurityGroupResult(String ip, String token, Integer controllerPort, Integer hostId) {
-        String url = "https://" + ip + ":" + controllerPort + "/security-group/check";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/security-group/check";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("hostId", hostId);
         try {
@@ -632,7 +765,7 @@ public class ClientApiUtil {
     * @Return JSONObject 端口转发列表
     */
     public static JSONObject getPortForwardList(String ip, String token, Integer controllerPort, Integer hostId, Integer page, Integer size){
-        String url = "https://"+ip+":"+controllerPort+"/nat/getVm/"+page+"/"+size;
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/getVm/"+page+"/"+size;
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
         JSONObject result = getControllerApi(url, paramMap, token);
@@ -646,7 +779,7 @@ public class ClientApiUtil {
      * @Params: bridge 转发虚拟网口
      */
     public static Boolean addNatBridge(String ip, String token, Integer controllerPort, String nataddr, String bridge){
-        String url = "https://"+ip+":"+controllerPort+"/nat/addBridge";
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/addBridge";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("nataddr",nataddr);
         paramMap.put("bridge",bridge);

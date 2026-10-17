@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Os;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
+import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.OsService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
@@ -57,6 +58,8 @@ public class ResetSystemCron {
     private OsService osService;
     @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
+    @Resource
+    private ConfigService configService;
 
     /**
      * 重装系统
@@ -515,6 +518,7 @@ public class ResetSystemCron {
         try {
             CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(
                     node,
+                    configService.getToken(),
                     vmhost.getVmid(),
                     vmhost.getIpConfig(),
                     getNameservers(pveVmConfig),
@@ -567,8 +571,8 @@ public class ResetSystemCron {
             return;
         }
         try {
-            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, vmhost.getVmid(), vmhost.getIpConfig(),
-                    getNameservers(pveVmConfig), net0Mac, net1Mac);
+            CloudInitNetworkUtil.uploadDualNicNetworkSnippet(node, configService.getToken(), vmhost.getVmid(),
+                    vmhost.getIpConfig(), getNameservers(pveVmConfig), net0Mac, net1Mac);
         } catch (Exception e) {
             throw new IllegalStateException("写入重装系统cloud-init双网卡IPv4/IPv6配置失败: vmid=" + vmhost.getVmid(), e);
         }

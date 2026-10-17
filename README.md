@@ -135,12 +135,22 @@ wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash
 ### 节点端口开放（宿主机）
     
     7600/tcp
-    22/tcp
     8006/tcp
     6080/tcp
     59000-65535/tcp
 
-> 注意需要开启SSH服务
+> 注意：主控不再依赖节点SSH，任务统一由被控（QAgent）下发，请确保 7600/tcp 可访问（该端口由 nginx 提供 TLS）。
+
+### 主控与被控通信安全
+
+被控端只监听回环地址（`127.0.0.1:17600`），由 nginx 在 7600/tcp 上终止 TLS 并按管理端源 IP/CIDR 白名单放行。除此之外：
+
+- **加密负载**：写操作请求体与全部响应体使用 AES-256-GCM 加密，密钥为被控端 token 的 SHA-256 摘要，Web 面板抓不到明文（含密码、镜像路径等）。
+- **防重放**：每个请求带 `X-QimenIDC-Timestamp`、`X-QimenIDC-Nonce` 头，两者参与 AEAD 校验；被控端拒绝超时与重复的请求。
+- **可写范围白名单**：被控端文件类接口只允许操作白名单目录（默认只有 `/var/lib/vz/snippets`、`/etc/network`、`/home/images`），越权请求返回 403。
+- **已下线接口**：NAT、迁移、更新以及文件读写删除下载类接口一律返回 410，主控侧对应流程同步停用。
+
+> 部署与证书导入步骤见 [docs/controlled-node-security.md](docs/controlled-node-security.md)。升级时先更新被控端（QAgent），再更新主控。
 
 ## 社区和支持
 如果您有任何问题、建议或反馈，可以加入QQ群：

@@ -62,7 +62,6 @@ public class SysNodeMasterController {
             master.setPassword("**********");
             master.setCsrfToken("**********");
             master.setTicket("**********");
-            master.setSshPassword("**********");
         }*/
         return ResponseResult.ok(masterPage);
     }

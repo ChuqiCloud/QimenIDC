@@ -628,6 +628,7 @@ public class VmMigrationCron {
     }
 
     private void syncTargetCloudInit(Vmhost vmhost, Master targetNode, NetworkMigrationResult result) {
+        String token = configService.getToken();
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(targetNode, cookieMap, vmhost.getVmid());
@@ -655,7 +656,8 @@ public class VmMigrationCron {
             removeCicustomNetworkConfig(proxmoxApiUtil, targetNode, cookieMap, vmhost, pveVmConfig);
         } else {
             try {
-                CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(targetNode, vmhost.getVmid(), result.ipConfig, result.nameservers, macAddress);
+                CloudInitNetworkUtil.uploadSingleNicNetworkSnippet(targetNode, token, vmhost.getVmid(),
+                        result.ipConfig, result.nameservers, macAddress);
             } catch (Exception e) {
                 throw new IllegalStateException("failed to write target cloud-init network snippet: vmid=" + vmhost.getVmid(), e);
             }
@@ -727,7 +729,6 @@ public class VmMigrationCron {
         return port >= 1000 && port <= 60050
                 && !Objects.equals(port, node.getPort())
                 && !Objects.equals(port, node.getControllerPort())
-                && !Objects.equals(port, node.getSshPort())
                 && port != 3128
                 && port != 5404
                 && port != 5405

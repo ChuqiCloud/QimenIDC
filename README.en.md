@@ -72,10 +72,22 @@ Port open on the controlled server:
 
 Port open on the host machine:
 
-- 22/tcp
 - 8006/tcp
+- 6080/tcp
+- 59000-65535/tcp
 
-SSH service needs to be enabled on the host machine.
+The master no longer relies on node SSH; tasks are dispatched through the agent (QAgent), so make sure 7600/tcp is reachable (nginx terminates TLS on that port).
+
+### Master-to-agent transport security
+
+The agent only listens on loopback (`127.0.0.1:17600`); nginx terminates TLS on 7600/tcp and admits only the configured manager source IPs/CIDRs. On top of that:
+
+- **Encrypted payloads**: write request bodies and every response body are encrypted with AES-256-GCM, keyed by the SHA-256 digest of the agent token, so nothing sensitive (passwords, image paths) shows up as plaintext in captures.
+- **Replay protection**: every request carries `X-QimenIDC-Timestamp` and `X-QimenIDC-Nonce` headers which are covered by the AEAD tag; expired or replayed requests are rejected.
+- **Writable path allowlist**: agent file endpoints only touch allow-listed directories (by default `/var/lib/vz/snippets`, `/etc/network`, `/home/images`); anything else returns 403.
+- **Retired endpoints**: NAT, migration, update and the file read/write/delete/download routes all return 410, and the matching master-side flows are disabled.
+
+> See [docs/controlled-node-security.md](docs/controlled-node-security.md) for deployment and certificate import. Upgrade the agent (QAgent) before the master.
 
 ### Controller Deployment
 

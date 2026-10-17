@@ -1766,9 +1766,6 @@ GET /{adminPath}/getNodeListByArea
         "ticket": "**********",
         "nodeName": "pve",
         "autoStorage": "local-lvm",
-        "sshPort": 22,
-        "sshUsername": "root",
-        "sshPassword": "**********",
         "controllerStatus": 0
       }
     ],
@@ -1814,9 +1811,6 @@ GET /{adminPath}/getNodeListByArea
 |»»» ticket|string|false|none||none|
 |»»» nodeName|string|false|none||none|
 |»»» autoStorage|string|false|none||none|
-|»»» sshPort|integer|false|none||none|
-|»»» sshUsername|string|false|none||none|
-|»»» sshPassword|string|false|none||none|
 |»»» controllerStatus|integer|false|none||none|
 |»» total|integer|true|none||none|
 |»» size|integer|true|none||none|
@@ -1908,9 +1902,6 @@ POST /admin/insertNodeMaster
   "username": "root",
   "password": "chuqis434..",
   "nodeName": "chuqis",
-  "sshPort": 22,
-  "sshUsername": "root",
-  "sshPassword": "chuqis434.."
 }
 ```
 
@@ -1928,9 +1919,6 @@ POST /admin/insertNodeMaster
 |» password|body|string| 是 |密码|
 |» realm|body|string¦null| 否 |权限，默认pam|
 |» nodeName|body|string¦null| 否 |指定节点名，默认pve|
-|» sshPort|body|string| 是 |ssh端口|
-|» sshUsername|body|string| 是 |ssh登录账号|
-|» sshPassword|body|string| 是 |ssh登录密码|
 |» status|body|string¦null| 否 |0正常1停止|
 |» controllerPort|body|integer¦null| 否 |被控端口，默认7600|
 
@@ -1999,9 +1987,6 @@ GET /{adminPath}/selectNodeByPage
         "ticket": "**********",
         "nodeName": "pve",
         "autoStorage": "local-lvm",
-        "sshPort": 22,
-        "sshUsername": "root",
-        "sshPassword": "**********",
         "controllerStatus": 0
       },
       {
@@ -2016,9 +2001,6 @@ GET /{adminPath}/selectNodeByPage
         "ticket": "**********",
         "nodeName": "pve",
         "autoStorage": "local-lvm",
-        "sshPort": 2222,
-        "sshUsername": "root",
-        "sshPassword": "**********",
         "controllerStatus": null
       },
       {
@@ -2033,9 +2015,6 @@ GET /{adminPath}/selectNodeByPage
         "ticket": "**********",
         "nodeName": "chuqis",
         "autoStorage": "local-lvm",
-        "sshPort": 22,
-        "sshUsername": "root",
-        "sshPassword": "**********",
         "controllerStatus": null
       },
       {
@@ -2050,9 +2029,6 @@ GET /{adminPath}/selectNodeByPage
         "ticket": "**********",
         "nodeName": "pve",
         "autoStorage": "local-lvm",
-        "sshPort": 22,
-        "sshUsername": "root",
-        "sshPassword": "**********",
         "controllerStatus": 0
       }
     ],
@@ -2096,9 +2072,6 @@ GET /{adminPath}/selectNodeByPage
 |»»» ticket|string|true|none||none|
 |»»» nodeName|string|true|none||none|
 |»»» autoStorage|string|true|none||none|
-|»»» sshPort|integer|true|none||none|
-|»»» sshUsername|string|true|none||none|
-|»»» sshPassword|string|true|none||none|
 |»»» controllerStatus|integer¦null|true|none||none|
 |»» total|integer|true|none||none|
 |»» size|integer|true|none||none|
@@ -2128,9 +2101,6 @@ PUT /{adminPath}/updateNodeInfo
   "realm": "string",
   "status": 0,
   "nodeName": "string",
-  "sshPort": 0,
-  "sshUsername": "string",
-  "sshPassword": "string"
 }
 ```
 
@@ -2149,9 +2119,6 @@ PUT /{adminPath}/updateNodeInfo
 |» realm|body|string| 是 |none|
 |» status|body|integer| 是 |none|
 |» nodeName|body|string| 是 |none|
-|» sshPort|body|integer| 是 |none|
-|» sshUsername|body|string| 是 |none|
-|» sshPassword|body|string| 是 |none|
 
 > 返回示例
 
@@ -9958,6 +9925,26 @@ GET /api/common/version
 
 # 受控端
 
+## 被控端安全约定
+
+主控与被控端之间的所有调用都必须满足以下约定，否则被控端返回 401/403：
+
+- **鉴权**：所有业务请求携带 `Authorization` 头，值为被控端 token（`/status`、`/version` 除外）。
+- **加密负载**：写操作（POST）的请求体使用 AES-256-GCM 加密，响应体同样加密返回。负载格式为 `Base64(magic + iv + ciphertext + tag)`，`magic` 为 `QIMENIDC-1`，密钥为被控端 token 的 SHA-256 摘要。
+- **防重放**：每个请求必须携带 `timestamp`（秒）与 `nonce`，两者与请求方法、路径一起作为 AEAD 的附加数据参与校验；时间戳偏差超过 300 秒或 nonce 重复的请求会被拒绝。
+- **版本一致性**：主控升级后通过 `GET /version` 与被控端协商版本与加密能力，两侧一致时才启用加密负载，避免升级顺序导致调用失败。
+- **可写范围白名单**：文件类接口（`/pathFile`、`/wget`、`/wget/status`、`/readFile`、`/deleteFile`、`/writeFile`）的目录与文件名均受白名单约束，越权访问返回 403。默认白名单：
+
+|能力|允许的目录|
+|---|---|
+|读取（/readFile）|`/var/lib/vz/snippets`、`/etc/network`|
+|写入（/writeFile）|`/var/lib/vz/snippets`|
+|列表（/pathFile）|`/home/images`、`/var/lib/vz/snippets`、`/etc/network`|
+|删除（/deleteFile）|`/home/images`|
+|下载（/wget、/wget/status）|`/home/images`|
+
+白名单定义在被控端 `Controlled/service/Security.py` 的 `FILE_POLICIES`，如需扩展请同时评估主控侧调用链。
+
 ## GET 状态查询
 
 GET /status
@@ -9990,14 +9977,22 @@ GET /status
 
 GET /pathFile
 
-获取指定目录文件列表
+获取指定目录文件列表。只读接口，参数随URL明文传输，目录受被控端可读范围白名单限制。
 
 ### 请求参数
 
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
-|path|query|string| 否 |none|
-|Authorization|header|string| 否 |none|
+|path|query|string| 是 |目录路径，需在白名单内|
+|timestamp|query|string| 是 |请求时间戳（秒），参与负载校验，用于防重放|
+|nonce|query|string| 是 |随机串，参与负载校验，用于防重放|
+|Authorization|header|string| 是 |被控端token|
+
+## POST 获取指定目录文件列表（加密参数）
+
+POST /pathFile
+
+与 GET 等价，参数改由加密请求体传输，路径不会落在URL与访问日志中。
 
 > 返回示例
 
@@ -10015,19 +10010,44 @@ GET /pathFile
 
 ### 返回数据结构
 
-## GET 下载文件到指定目录
+## POST 下载文件到指定目录
 
-GET /wget
+POST /wget
 
-下载文件到指定目录
+触发下载文件到指定目录，会改动镜像目录，因此参数必须放在加密请求体中。重复调用返回当前下载进度。
+
+> Body 请求参数（加密后传输，示意见明文结构）
+
+```json
+{
+  "url": "https://mirror.example.com/cloud-images/ubuntu.qcow2",
+  "path": "/home/images"
+}
+```
 
 ### 请求参数
 
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
-|url|query|string| 否 |none|
-|path|query|string| 否 |none|
-|Authorization|header|string| 否 |none|
+|timestamp|query|string| 是 |请求时间戳（秒）|
+|nonce|query|string| 是 |随机串|
+|Authorization|header|string| 是 |被控端token|
+
+## GET 查询下载进度
+
+GET /wget/status
+
+只读接口，查询指定文件下载进度，参数随URL明文传输。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|url|query|string| 是 |文件下载地址|
+|path|query|string| 是 |下载目录，需在白名单内|
+|timestamp|query|string| 是 |请求时间戳（秒）|
+|nonce|query|string| 是 |随机串|
+|Authorization|header|string| 是 |被控端token|
 
 > 返回示例
 
