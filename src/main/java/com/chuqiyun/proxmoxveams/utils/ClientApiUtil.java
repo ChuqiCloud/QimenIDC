@@ -3,10 +3,10 @@ package com.chuqiyun.proxmoxveams.utils;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.chuqiyun.proxmoxveams.dto.SecurityGroupApplyDto;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import io.swagger.models.auth.In;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -63,9 +63,31 @@ public class ClientApiUtil {
      */
     private static String masterVersion = "";
 
+    private static MasterService masterService;
+
+    @Resource
+    public void setMasterService(MasterService masterService) {
+        ClientApiUtil.masterService = masterService;
+    }
+
     @Value("${info.application.version:}")
     public void setMasterVersion(String version){
         ClientApiUtil.masterVersion = version;
+    }
+
+    // 按目标地址读取最新节点证书，保存或解绑后下一次请求立即生效。
+    private static RestTemplate createNodeRestTemplate(String url, int timeoutMillis) {
+        if (masterService == null) {
+            throw new IllegalStateException("QAgent节点服务尚未初始化");
+        }
+        URI endpoint = URI.create(url);
+        int port = endpoint.getPort() == -1 ? 443 : endpoint.getPort();
+        Master node = masterService.getOne(new LambdaQueryWrapper<Master>()
+                .select(Master::getNodePublicKey)
+                .eq(Master::getHost, endpoint.getHost())
+                .eq(Master::getControllerPort, port));
+        return RestTemplateConfig.createQAgentRestTemplate(timeoutMillis,
+                node == null ? null : node.getNodePublicKey());
     }
 
     // get请求https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
@@ -130,7 +152,7 @@ public class ClientApiUtil {
         String timestamp = String.valueOf(System.currentTimeMillis() / 1000L);
         String nonce = UUID.randomUUID().toString().replace("-", "");
         UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromHttpUrl(rawUrl);
-        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate(timeoutMillis);
+        RestTemplate restTemplate = createNodeRestTemplate(rawUrl, timeoutMillis);
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
         headers.add("X-QimenIDC-Version", getMasterVersion());
@@ -225,7 +247,7 @@ public class ClientApiUtil {
     */
     public static String getAgentVersion(String ip, Integer port, String token){
         String url = AGENT_SCHEME + ip + ":" + port + "/version";
-        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
+        RestTemplate restTemplate = createNodeRestTemplate(url, DEFAULT_TIMEOUT_MILLIS);
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
         try {
@@ -271,7 +293,7 @@ public class ClientApiUtil {
     */
     public static JSONObject getControllerConnectStatus(String ip, Integer port,String token){
         String url = AGENT_SCHEME + ip + ":" + port + "/status";
-        RestTemplate restTemplate = RestTemplateConfig.createQAgentRestTemplate();
+        RestTemplate restTemplate = createNodeRestTemplate(url, DEFAULT_TIMEOUT_MILLIS);
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.AUTHORIZATION, token);
         HttpEntity<Object> entity = new HttpEntity<>(headers);

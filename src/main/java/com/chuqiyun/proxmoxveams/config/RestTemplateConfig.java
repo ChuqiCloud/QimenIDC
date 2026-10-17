@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.config;
 
 import com.chuqiyun.proxmoxveams.utils.PublicIpProbe;
+import com.chuqiyun.proxmoxveams.utils.CertificateUtil;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -20,6 +21,8 @@ import org.springframework.http.client.ClientHttpRequestFactory;
 
 import javax.net.ssl.SSLContext;
 import java.security.KeyStoreException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 
 /**
  * @author mryunqi
@@ -99,27 +102,60 @@ public class RestTemplateConfig {
     }
 
     public static RestTemplate createQAgentRestTemplate() {
-        return createQAgentRestTemplate(30_000);
+        return createQAgentRestTemplate(30_000, null);
     }
 
     /**
-     * 迁移等长耗时阶段需要比默认 30s 更长的读超时，按调用方传入的毫秒数构造。
+     * 为单个被控节点创建 HTTPS 客户端。节点证书是自签证书时，
+     * 只信任主控保存的那张证书，并继续执行地址校验。
+     */
+    public static RestTemplate createQAgentRestTemplate(String nodePublicKey) {
+        return createQAgentRestTemplate(30_000, nodePublicKey);
+    }
+
+    /**
+     * 迁移阶段接口是同步执行后返回，vzdump/qmrestore 可能跑很久，单独放宽超时。
      */
     public static RestTemplate createQAgentRestTemplate(int readTimeoutMillis) {
+        return createQAgentRestTemplate(readTimeoutMillis, null);
+    }
+
+    public static RestTemplate createQAgentRestTemplate(int readTimeoutMillis, String nodePublicKey) {
         int socketTimeout = Math.max(1_000, readTimeoutMillis);
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(15_000)
                 .setConnectionRequestTimeout(10_000)
                 .setSocketTimeout(socketTimeout)
                 .build();
-        CloseableHttpClient httpClient = HttpClients.custom()
-                .setDefaultRequestConfig(requestConfig)
-                .disableAutomaticRetries()
-                .setSSLSocketFactory(new SSLConnectionSocketFactory(
-                        SSLContexts.createSystemDefault(),
-                        SSLConnectionSocketFactory.getDefaultHostnameVerifier()))
-                .build();
-        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        return new RestTemplate(factory);
+        try {
+            SSLContext sslContext = createQAgentSslContext(nodePublicKey);
+            CloseableHttpClient httpClient = HttpClients.custom()
+                    .setDefaultRequestConfig(requestConfig)
+                    .disableAutomaticRetries()
+                    .setSSLSocketFactory(new SSLConnectionSocketFactory(
+                            sslContext,
+                            SSLConnectionSocketFactory.getDefaultHostnameVerifier()))
+                    .build();
+            HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+            return new RestTemplate(factory);
+        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
+            throw new IllegalStateException("创建QAgent HTTPS客户端失败", e);
+        }
+    }
+
+    private static SSLContext createQAgentSslContext(String nodePublicKey)
+            throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+        if (nodePublicKey == null || nodePublicKey.trim().isEmpty()) {
+            return SSLContexts.createSystemDefault();
+        }
+        X509Certificate pinned = CertificateUtil.parse(nodePublicKey);
+        TrustStrategy trustStrategy = (chain, authType) -> {
+            if (chain == null || chain.length == 0 || !chain[0].equals(pinned)) {
+                throw new CertificateException("QAgent证书与节点保存的证书不一致");
+            }
+            chain[0].checkValidity();
+            return true;
+        };
+        return SSLContexts.custom().loadTrustMaterial(null, trustStrategy).build();
     }
 }

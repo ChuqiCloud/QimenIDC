@@ -98,8 +98,11 @@ function install_qimenidc_controller_source(){
 
 # 配置QimenIDC Controller token文件
 function config_qimenidc_controller_token(){
-    /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py initialize
-    echo "Secure token saved in /home/software/QAgent/token.key (root:root, 600)."
+    local token
+    IFS= read -r -s -p "请输入主控 token: " token
+    echo
+    printf '%s\n' "$token" | /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py set
+    echo "Manager token saved in /home/software/QAgent/token.key (root:root, 600)."
 }
 
 function config_manager_whitelist(){
