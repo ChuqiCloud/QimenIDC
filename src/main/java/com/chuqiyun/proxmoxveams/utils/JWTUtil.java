@@ -3,7 +3,6 @@ package com.chuqiyun.proxmoxveams.utils;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
-import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,12 +27,17 @@ public class JWTUtil {
      */
     public static boolean verify(String token, String uuid,String secret) {
         try {
+            if (uuid == null || uuid.isBlank()) {
+                return false;
+            }
             Algorithm algorithm = Algorithm.HMAC256(getSecretKey(secret));
             JWTVerifier verifier = JWT.require(algorithm)
                     .withClaim("uuid", uuid)
                     .build();
             DecodedJWT jwt = verifier.verify(token);
-            return true;
+            // MFA 临时票据不含正式会话密文，不能作为业务登录凭据使用。
+            String session = jwt.getClaim("secret").asString();
+            return jwt.getClaim("scope").isMissing() && session != null && !session.isBlank();
         } catch (Exception exception) {
             return false;
         }
@@ -51,7 +55,7 @@ public class JWTUtil {
                 return null;
             }
             return jwt.getClaim("uuid").asString();
-        } catch (JWTDecodeException e) {
+        } catch (Exception e) {
             return null;
         }
     }
@@ -66,11 +70,14 @@ public class JWTUtil {
             }
             String secretData = jwt.getClaim("secret").asString();
             return Long.valueOf(AESUtil.decrypt(secretData,secret));
-        } catch (JWTDecodeException e) {
-            return null;
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            return null;
         }
+    }
+
+    /** token 必须与数据库当前存储的会话标记完全一致。 */
+    public static boolean isCurrentSession(Long tokenSession, Long storedSession) {
+        return tokenSession != null && tokenSession > 0 && tokenSession.equals(storedSession);
     }
 
     /**
@@ -79,18 +86,22 @@ public class JWTUtil {
      * @return 加密的token
      */
     public static String sign(String uuid,String secret) {
+        return sign(uuid, secret, System.currentTimeMillis());
+    }
+
+    /** 绑定数据库的会话标记，不能再独立读取一次系统时间。 */
+    public static String sign(String uuid, String secret, long session) {
         Date date = new Date(System.currentTimeMillis()+EXPIRE_TIME);
         Algorithm algorithm = Algorithm.HMAC256(getSecretKey(secret));
         // 附带username信息
         return JWT.create()
                 .withClaim("uuid", uuid)
-                .withClaim("secret",getSecretDate(secret))
+                .withClaim("secret",getSecretDate(secret, session))
                 .withExpiresAt(date)
                 .sign(algorithm);
     }
 
-    private static String getSecretDate(String secret){
-        Long time = System.currentTimeMillis();
+    private static String getSecretDate(String secret, long time){
         String encrypted;
         try {
             encrypted = AESUtil.encrypt(String.valueOf(time),secret);

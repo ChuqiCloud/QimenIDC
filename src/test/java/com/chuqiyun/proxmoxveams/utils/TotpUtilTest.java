@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import org.junit.jupiter.api.Test;
+import org.apache.commons.codec.binary.Base32;
 
 import java.nio.charset.StandardCharsets;
 
@@ -52,10 +53,27 @@ class TotpUtilTest {
         String second = TotpUtil.generateSecret();
 
         assertNotEquals(first, second);
-        assertEquals(20, Base64UrlUtil.decode(first).length);
+        assertEquals(20, new Base32().decode(first).length);
+        assertEquals(first, new Base32().encodeAsString(new Base32().decode(first)).replace("=", ""));
         String url = TotpUtil.buildOtpAuthUrl("QimenIDC", "admin", first);
         assertTrue(url.startsWith("otpauth://totp/QimenIDC:admin?secret="));
         assertTrue(url.contains("digits=6"));
         assertTrue(url.contains("period=30"));
+    }
+
+    @Test
+    void keepsHistoricalBase64UrlSecretsUsable() {
+        assertEquals("287082", TotpUtil.generate(RFC_SECRET, 59L));
+        String uppercaseLegacySecret = "AAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        String standardSecret = new Base32().encodeAsString(Base64UrlUtil.decode(uppercaseLegacySecret));
+        assertEquals(TotpUtil.generate(standardSecret, 59L), TotpUtil.generate(uppercaseLegacySecret, 59L));
+    }
+
+    @Test
+    void acceptsStandardAuthenticatorBase32Vectors() {
+        String standardSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        assertEquals("287082", TotpUtil.generate(standardSecret, 59L));
+        assertEquals("081804", TotpUtil.generate(standardSecret, 1111111109L));
+        assertEquals("005924", TotpUtil.generate(standardSecret, 1234567890L));
     }
 }

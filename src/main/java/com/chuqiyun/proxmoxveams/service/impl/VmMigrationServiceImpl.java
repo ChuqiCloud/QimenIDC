@@ -32,6 +32,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -78,7 +79,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     private ConfigService configService;
 
     @Override
-    public VmMigrationBatchDto submit(VmMigrationParams params) {
+    public synchronized VmMigrationBatchDto submit(VmMigrationParams params) {
         VmMigrationBatchDto result = new VmMigrationBatchDto();
         String batchId = "mig-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         result.setBatchId(batchId);
@@ -104,8 +105,9 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         result.setTargetStorage(resolveTargetStorage(params.getTargetStorage(), targetNode));
 
         List<String> runningStages = new ArrayList<>();
+        Set<Integer> reservedTargetVmids = reservedTargetVmids(targetNode.getId());
         for (Integer hostId : hostIds) {
-            VmMigrationBatchDto.Item item = submitOne(params, targetNode, batchId, hostId, runningStages);
+            VmMigrationBatchDto.Item item = submitOne(params, targetNode, batchId, hostId, runningStages, reservedTargetVmids);
             result.getItems().add(item);
             if ("QUEUED".equals(item.getStatus())) {
                 result.setAcceptedCount(result.getAcceptedCount() + 1);
@@ -119,7 +121,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     }
 
     private VmMigrationBatchDto.Item submitOne(VmMigrationParams params, Master targetNode, String batchId, Integer hostId,
-                                               List<String> runningStages) {
+                                               List<String> runningStages, Set<Integer> reservedTargetVmids) {
         Vmhost vmhost = hostId == null ? null : vmhostService.getById(hostId);
         if (vmhost == null) {
             return VmMigrationBatchDto.Item.rejected(hostId, "虚拟机不存在");
@@ -134,6 +136,10 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         }
         if (targetVmid == null || targetVmid <= 0) {
             return VmMigrationBatchDto.Item.rejected(hostId, "targetVmid自动分配失败");
+        }
+        // 分配器只看 PVE 与虚拟机表，尚未导入的迁移任务也必须预留 VMID，避免覆盖同批镜像。
+        if (reservedTargetVmids.contains(targetVmid)) {
+            return VmMigrationBatchDto.Item.rejected(hostId, "目标VMID已被其他迁移任务预留，请稍后重试或指定其他VMID");
         }
 
         Map<Object, Object> taskParams = new HashMap<>();
@@ -162,11 +168,34 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (!taskService.insertTask(task)) {
             return VmMigrationBatchDto.Item.rejected(hostId, "创建迁移任务失败");
         }
+        reservedTargetVmids.add(targetVmid);
         vmhostService.addVmHostTask(vmhost.getId(), task.getId());
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM,
                 "迁移任务入队, taskId={}, hostId={}, sourceNodeId={}, targetNodeId={}, batchId={}",
                 task.getId(), hostId, vmhost.getNodeid(), targetNode.getId(), batchId);
         return VmMigrationBatchDto.Item.accepted(hostId, task.getId());
+    }
+
+    private Set<Integer> reservedTargetVmids(Integer targetNodeId) {
+        Set<Integer> reserved = new LinkedHashSet<>();
+        QueryWrapper<Task> wrapper = new QueryWrapper<>();
+        wrapper.eq("type", TaskType.MIGRATE_VM);
+        wrapper.in("status", 0, 1, 3);
+        List<Task> tasks = taskService.list(wrapper);
+        if (tasks == null) {
+            return reserved;
+        }
+        for (Task task : tasks) {
+            Map<Object, Object> params = safeParams(task);
+            if (!"CANCELLED".equals(stringValue(params.get("stage")))
+                    && Objects.equals(targetNodeId, toInteger(params.get("targetNodeId")))) {
+                Integer vmid = toInteger(params.get("targetVmid"));
+                if (vmid != null && vmid > 0) {
+                    reserved.add(vmid);
+                }
+            }
+        }
+        return reserved;
     }
 
     private String checkMigratable(Vmhost vmhost, Master targetNode, List<String> runningStages) {
@@ -308,7 +337,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     }
 
     @Override
-    public VmMigrationLogView getTaskLog(Integer taskId, Long offset) {
+    public VmMigrationLogView getTaskLog(Integer taskId, String offset) {
         Task task = taskId == null ? null : taskService.getById(taskId);
         VmMigrationLogView view = new VmMigrationLogView();
         view.setTaskId(taskId);
@@ -322,23 +351,18 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         view.setProgress(toInteger(params.get("progress")));
         view.setStatus(statusText(task.getStatus()));
 
-        // 游标先覆盖主控阶段日志，再对接被控端日志文件的字节偏移，前端直接回传 nextOffset
+        // 主控日志按绝对行序号定位；源/目标被控日志各自保留 byte offset。
+        LogCursor cursor = LogCursor.parse(offset, taskId);
         List<String> mainLines = taskLogLines(task, params);
-        long mainLinesSize = mainLines.size();
+        Long storedBase = longValue(params.get("logLineBase"));
+        long mainBase = storedBase == null ? 0 : Math.max(0, storedBase);
+        long mainEnd = mainBase + mainLines.size();
+        long mainOffset = cursor.mainOffset < 0 ? mainBase : Math.min(mainEnd, Math.max(mainBase, cursor.mainOffset));
         List<String> lines = new ArrayList<>();
-        long agentOffset = 0;
-        if (offset == null || offset <= 0) {
-            lines.addAll(mainLines);
-            lines.addAll(fetchAgentLogs(task, params, -1));
-            view.setNextOffset(mainLinesSize);
-        } else if (offset < mainLinesSize) {
-            lines.addAll(mainLines.subList(offset.intValue(), mainLines.size()));
-            view.setNextOffset(mainLinesSize);
-        } else {
-            agentOffset = offset - mainLinesSize;
-            lines.addAll(fetchAgentLogs(task, params, agentOffset));
-            view.setNextOffset(offset + (long) lines.size());
-        }
+        lines.addAll(mainLines.subList((int) (mainOffset - mainBase), mainLines.size()));
+        cursor.mainOffset = mainEnd;
+        fetchAgentLogs(task, params, cursor, lines);
+        view.setNextOffset(cursor.encode(taskId));
         view.setLogs(lines);
         return view;
     }
@@ -346,46 +370,84 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     /**
      * 被控端日志按阶段落在源节点或目标节点，两侧都取一次再按阶段拼接
      */
-    private List<String> fetchAgentLogs(Task task, Map<Object, Object> params, long offset) {
-        List<String> lines = new ArrayList<>();
+    private void fetchAgentLogs(Task task, Map<Object, Object> params, LogCursor cursor, List<String> lines) {
         Integer sourceNodeId = toInteger(params.get("sourceNodeId"));
         Integer targetNodeId = toInteger(params.get("targetNodeId"));
         String taskId = String.valueOf(task.getId());
         if (sourceNodeId != null) {
-            lines.addAll(fetchAgentLog(sourceNodeId, taskId, offset));
+            cursor.sourceOffset = fetchAgentLog(sourceNodeId, taskId, cursor.sourceOffset, lines);
         }
         if (targetNodeId != null && !Objects.equals(targetNodeId, sourceNodeId)) {
-            lines.addAll(fetchAgentLog(targetNodeId, taskId, offset));
+            cursor.targetOffset = fetchAgentLog(targetNodeId, taskId, cursor.targetOffset, lines);
         }
-        return lines;
     }
 
-    private List<String> fetchAgentLog(Integer nodeId, String taskId, long offset) {
-        List<String> lines = new ArrayList<>();
+    private long fetchAgentLog(Integer nodeId, String taskId, long offset, List<String> lines) {
         Master node = masterService.getById(nodeId);
         if (node == null) {
-            return lines;
+            return offset;
         }
         try {
-            JSONObject result = ClientApiUtil.getMigrationLog(node.getHost(), configService.getToken(), node.getControllerPort(), taskId, offset);
+            JSONObject result = requestAgentLog(node, taskId, offset);
             JSONObject data = result == null ? null : result.getJSONObject("data");
-            if (data == null) {
-                return lines;
+            if (data == null || !Integer.valueOf(200).equals(result.getInteger("code"))) {
+                return offset;
+            }
+            Long nextOffset = data.getLong("next_offset");
+            if (nextOffset == null || nextOffset < 0) {
+                return offset;
             }
             String content = data.getString("content");
-            if (StringUtils.isBlank(content)) {
-                return lines;
-            }
-            for (String line : content.split("\\r?\\n")) {
-                if (StringUtils.isNotBlank(line)) {
-                    lines.add("[" + node.getNodeName() + "] " + line.trim());
+            if (StringUtils.isNotBlank(content)) {
+                for (String line : content.split("\\r?\\n")) {
+                    if (StringUtils.isNotBlank(line)) {
+                        lines.add("[" + node.getNodeName() + "] " + line.trim());
+                    }
                 }
             }
+            return nextOffset;
         } catch (Exception e) {
             UnifiedLogger.warn(UnifiedLogger.LogType.TASK_MIGRATE_VM,
                     "拉取被控端迁移日志失败, taskId={}, nodeId={}, error={}", taskId, nodeId, e.getMessage());
         }
-        return lines;
+        return offset;
+    }
+
+    protected JSONObject requestAgentLog(Master node, String taskId, long offset) {
+        return ClientApiUtil.getMigrationLog(node.getHost(), configService.getToken(), node.getControllerPort(), taskId, offset);
+    }
+
+    private static class LogCursor {
+        private long mainOffset = -1;
+        private long sourceOffset = -1;
+        private long targetOffset = -1;
+
+        private static LogCursor parse(String value, Integer taskId) {
+            LogCursor cursor = new LogCursor();
+            if (StringUtils.isBlank(value)) {
+                return cursor;
+            }
+            String[] parts = value.split(":", -1);
+            if (parts.length == 5 && "v1".equals(parts[0]) && String.valueOf(taskId).equals(parts[1])) {
+                try {
+                    long main = Long.parseLong(parts[2]);
+                    long source = Long.parseLong(parts[3]);
+                    long target = Long.parseLong(parts[4]);
+                    if (main >= 0 && source >= -1 && target >= -1) {
+                        cursor.mainOffset = main;
+                        cursor.sourceOffset = source;
+                        cursor.targetOffset = target;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // 旧数值游标或无效游标不能换算为 byte offset，安全地重新取尾部。
+                }
+            }
+            return cursor;
+        }
+
+        private String encode(Integer taskId) {
+            return "v1:" + taskId + ":" + mainOffset + ":" + sourceOffset + ":" + targetOffset;
+        }
     }
 
     @Override
@@ -411,17 +473,20 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (taskService.getOne(runningWrapper) != null) {
             throw new IllegalStateException("该虚拟机还有迁移任务在执行");
         }
-        params.put("resumeFromStage", failedStage);
+        // 未提交的目标网络会在失败时回滚，启动失败必须先重建，不能直接沿用源端记录启动。
+        String resumeStage = "START_TARGET_VM".equals(failedStage) && !Boolean.TRUE.equals(params.get("targetCommitted"))
+                ? "NETWORK_REBIND" : failedStage;
+        params.put("resumeFromStage", resumeStage);
         params.put("stage", "PENDING");
         params.put("progress", 0);
         params.put("updateTime", System.currentTimeMillis());
-        appendTaskLog(task, params, "从 " + STAGE_TEXT.getOrDefault(failedStage, failedStage) + " 步骤继续");
+        appendTaskLog(task, params, "从 " + STAGE_TEXT.getOrDefault(resumeStage, resumeStage) + " 步骤继续");
         task.setParams(params);
         task.setStatus(0);
         task.setError(null);
         taskService.updateTask(task);
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM,
-                "迁移任务从断点继续, taskId={}, resumeFromStage={}", task.getId(), failedStage);
+                "迁移任务从断点继续, taskId={}, resumeFromStage={}", task.getId(), resumeStage);
         return task;
     }
 
@@ -516,13 +581,17 @@ public class VmMigrationServiceImpl implements VmMigrationService {
             return;
         }
         Object value = params.get("logLines");
-        List<String> lines = value instanceof List ? (List<String>) value : new ArrayList<>();
+        List<String> lines = value instanceof List ? new ArrayList<>((List<String>) value) : new ArrayList<>();
         lines.add(message);
         // 只保留最近的记录，避免 params 无限膨胀
+        Long storedBase = longValue(params.get("logLineBase"));
+        long base = storedBase == null ? 0 : Math.max(0, storedBase);
         while (lines.size() > 500) {
             lines.remove(0);
+            base++;
         }
         params.put("logLines", lines);
+        params.put("logLineBase", base);
     }
 
     private Map<Object, Object> safeParams(Task task) {

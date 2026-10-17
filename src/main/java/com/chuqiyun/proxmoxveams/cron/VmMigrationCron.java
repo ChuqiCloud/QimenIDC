@@ -236,7 +236,11 @@ public class VmMigrationCron {
 
         migrateStage(task, params, startIndex, "START_TARGET_VM", 92, "启动目标虚拟机", () -> {
             Vmhost current = requireCurrentVmhost(task);
-            startTargetVm(targetNode, finalTargetNodeId, current.getVmid());
+            if (!Objects.equals(current.getNodeid(), finalTargetNodeId)
+                    || !Objects.equals(current.getVmid(), finalTargetVmid)) {
+                throw new IllegalStateException("target VM network has not been rebound");
+            }
+            startTargetVm(targetNode, finalTargetNodeId, finalTargetVmid);
             current.setStatus(0);
             vmhostService.updateById(current);
             createApplyWindowsVmIpTaskIfNeeded(current);

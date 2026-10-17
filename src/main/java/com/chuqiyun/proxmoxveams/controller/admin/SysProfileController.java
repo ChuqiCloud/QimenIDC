@@ -84,18 +84,20 @@ public class SysProfileController {
     public ResponseResult<String> updateProfile(@RequestBody JSONObject param,
                                                 HttpServletRequest request) throws UnauthorizedException {
         Sysuser sysuser = currentUser(request);
+        Sysuser updates = new Sysuser();
+        updates.setId(sysuser.getId());
         String username = param.getString("username");
         if (StringUtils.isNotBlank(username) && !sysuser.getUsername().equals(username)) {
             Sysuser exist = sysuserService.getSysuserByUsername(username);
             if (!Objects.isNull(exist)) {
                 return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
             }
-            sysuser.setUsername(username);
+            updates.setUsername(username);
         }
-        sysuser.setName(param.getString("name"));
-        sysuser.setPhone(param.getString("phone"));
-        sysuser.setEmail(param.getString("email"));
-        return sysuserService.updateById(sysuser)
+        updates.setName(param.getString("name"));
+        updates.setPhone(param.getString("phone"));
+        updates.setEmail(param.getString("email"));
+        return sysuserService.updateAccountDetails(updates, null)
                 ? ResponseResult.ok("资料修改成功！")
                 : ResponseResult.fail("资料修改失败！");
     }
@@ -123,11 +125,14 @@ public class SysProfileController {
     @PostMapping("/profile/totp/bind")
     public ResponseResult<Object> bindTotp(HttpServletRequest request) throws UnauthorizedException {
         Sysuser sysuser = currentUser(request);
+        if (StringUtils.isNotBlank(sysuser.getTotpSecret())
+                && !Objects.isNull(sysuser.getTotpConfirmedTime())) {
+            return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL.getCode(),
+                    "请先解绑当前 TOTP，再绑定新的密钥");
+        }
         String secretKey = TotpUtil.generateSecret();
-        // 未确认前先落库，确认后才写入 totp_confirmed_time
-        sysuser.setTotpSecret(TotpSecretCipher.encrypt(secretKey));
-        sysuser.setTotpConfirmedTime(null);
-        if (!sysuserService.updateMfaSettings(sysuser)) {
+        // 只允许替换未确认的待绑定密钥，已启用的因子必须先验证密码并解绑。
+        if (!sysuserService.startTotpBinding(sysuser.getId(), TotpSecretCipher.encrypt(secretKey))) {
             return ResponseResult.fail("TOTP 绑定失败，请重试！");
         }
         Map<String, Object> result = new LinkedHashMap<>();
@@ -155,13 +160,9 @@ public class SysProfileController {
         if (step < 0) {
             return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL);
         }
-        if (!sysuserService.consumeTotpStep(sysuser.getId(), step)) {
-            return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL.getCode(), "该动态码已被使用，请等待下一个");
-        }
-        sysuser.setTotpConfirmedTime(System.currentTimeMillis());
-        // 已有的 totp_secret 与 mfa_type 原样写回，是否启用由 /profile/mfa 决定
-        if (!sysuserService.updateMfaSettings(sysuser)) {
-            return ResponseResult.fail("TOTP 确认失败，请重试！");
+        if (!sysuserService.confirmTotpBinding(sysuser.getId(), sysuser.getTotpSecret(), step)) {
+            return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL.getCode(),
+                    "密钥已变更、已确认或动态码已使用，请重新获取密钥和验证码");
         }
         return ResponseResult.ok("TOTP 绑定成功！");
     }
@@ -174,19 +175,10 @@ public class SysProfileController {
     public ResponseResult<String> unbindTotp(@RequestBody JSONObject param,
                                              HttpServletRequest request) throws UnauthorizedException {
         Sysuser sysuser = currentUser(request);
-        // 没有其它可用二步验证方式时，要求输入当前密码，避免会话被劫持后直接解绑
-        if (!hasOtherFactor(sysuser)) {
-            if (!sysuserService.verifyPassword(sysuser.getId(), param.getString("password"))) {
-                return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL.getCode(), "密码错误，无法解绑");
-            }
+        if (!requireCurrentPassword(sysuser, param)) {
+            return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL.getCode(), "密码错误，无法解绑");
         }
-        sysuser.setTotpSecret(null);
-        sysuser.setTotpConfirmedTime(null);
-        sysuser.setTotpLastStep(null);
-        if (MFA_TOTP.equals(normalizeMfaType(sysuser.getMfaType()))) {
-            sysuser.setMfaType(MFA_NONE);
-        }
-        return sysuserService.updateMfaSettings(sysuser)
+        return sysuserService.clearTotpBinding(sysuser.getId())
                 ? ResponseResult.ok("TOTP 已解绑！")
                 : ResponseResult.fail("TOTP 解绑失败！");
     }
@@ -199,7 +191,19 @@ public class SysProfileController {
     public ResponseResult<Object> updateMfaType(@RequestBody JSONObject param,
                                                 HttpServletRequest request) throws UnauthorizedException {
         Sysuser sysuser = currentUser(request);
-        String mfaType = StringUtils.defaultIfBlank(param.getString("mfaType"), MFA_NONE).trim().toLowerCase();
+        String requestedMfaType = param.getString("mfaType");
+        if (StringUtils.isBlank(requestedMfaType)) {
+            return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR.getCode(), "缺少二步验证方式");
+        }
+        String mfaType = requestedMfaType.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!MFA_NONE.equals(mfaType) && !MFA_TOTP.equals(mfaType) && !MFA_PASSKEY.equals(mfaType)) {
+            return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR.getCode(), "不支持的二步验证方式");
+        }
+        String currentMfaType = normalizeMfaType(sysuser.getMfaType());
+        if ((MFA_NONE.equals(mfaType) || (!MFA_NONE.equals(currentMfaType) && !currentMfaType.equals(mfaType)))
+                && !requireCurrentPassword(sysuser, param)) {
+            return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL.getCode(), "密码错误，无法修改二步验证");
+        }
         if (MFA_NONE.equals(mfaType)) {
             sysuser.setMfaType(MFA_NONE);
             return sysuserService.updateMfaSettings(sysuser)
@@ -224,7 +228,7 @@ public class SysProfileController {
                     ? ResponseResult.ok("已启用 Passkey 二步验证！")
                     : ResponseResult.fail("设置失败！");
         }
-        return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR.getCode(), "不支持的二步验证方式");
+        return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR);
     }
 
     /**
@@ -297,6 +301,9 @@ public class SysProfileController {
         if (!passkeyService.listPasskeys(sysuser.getId()).stream().anyMatch(p -> id.equals(p.getId()))) {
             return ResponseResult.fail(ResponseResult.RespCode.PASSKEY_FAIL.getCode(), "Passkey 不存在");
         }
+        if (!requireCurrentPassword(sysuser, param)) {
+            return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL.getCode(), "密码错误，无法解绑 Passkey");
+        }
         if (!passkeyService.removePasskey(id, sysuser.getId())) {
             return ResponseResult.fail("解绑失败！");
         }
@@ -311,11 +318,8 @@ public class SysProfileController {
         return ResponseResult.ok("Passkey 已解绑！");
     }
 
-    /**
-     * 解绑后是否还保留其它二步验证方式
-     */
-    private boolean hasOtherFactor(Sysuser sysuser) {
-        return !passkeyService.listPasskeys(sysuser.getId()).isEmpty();
+    private boolean requireCurrentPassword(Sysuser sysuser, JSONObject param) {
+        return sysuserService.verifyPassword(sysuser.getId(), param.getString("password"));
     }
 
     private Sysuser currentUser(HttpServletRequest request) throws UnauthorizedException {

@@ -524,7 +524,7 @@ build: # 内部构建版本信息
     1:
       - "alter table sysuser
                    add mfa_type varchar(16) default 'none' not null comment '二步验证方式 none/totp/passkey' after logindate,
-                   add totp_secret text null comment '加密存储的TOTP密钥(base64url)' after mfa_type,
+                   add totp_secret text null comment '加密存储的TOTP密钥(新密钥Base32，兼容历史Base64URL)' after mfa_type,
                    add totp_confirmed_time bigint null comment 'TOTP绑定确认时间戳(毫秒)' after totp_secret,
                    add totp_last_step bigint null comment '最近一次已消费的TOTP时间片' after totp_confirmed_time,
                    add passkey_enabled int default 0 not null comment '是否已绑定Passkey 0否 1是' after totp_last_step;"

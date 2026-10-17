@@ -150,6 +150,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
         QueryWrapper<Task> wrapper = new QueryWrapper<>();
         wrapper.select(column + " as group_key", "count(*) as total");
         applyDateRange(wrapper, startDate, endDate);
+        wrapper.groupBy(column);
 
         Map<Integer, Long> counter = new LinkedHashMap<>();
         for (Map<String, Object> row : this.listMaps(wrapper)) {
@@ -169,6 +170,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
         QueryWrapper<Task> runningWrapper = new QueryWrapper<>();
         runningWrapper.select("type as group_key", "count(*) as total");
         runningWrapper.eq("status", TaskStatus.RUNNING);
+        runningWrapper.groupBy("type");
         for (Map<String, Object> row : this.listMaps(runningWrapper)) {
             Integer type = row.get("group_key") == null ? null : Integer.valueOf(String.valueOf(row.get("group_key")));
             runningByType.merge(type, toLong(row.get("total")), Long::sum);
@@ -267,7 +269,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
             item.setError(task.getError());
             item.setCreateDate(task.getCreateDate());
             item.setParams(task.getParamsForApi());
-            fillProgress(item, task);
+            fillProgress(item, task, now);
             records.add(item);
         }
         return records;
@@ -276,12 +278,13 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
     /**
      * 进度与耗时都来自任务参数（迁移任务会写入 progress/stage/updateTime），没有上报时留空。
      */
-    private void fillProgress(TaskItemDto item, Task task) {
+    private void fillProgress(TaskItemDto item, Task task, long now) {
         Map<Object, Object> params = task.getParamsForApi();
         if (params != null) {
             item.setProgress(toInteger(params.get("progress")));
             item.setStage(params.get("stage") == null ? null : String.valueOf(params.get("stage")));
-            item.setUpdateTime(toLong(params.get("updateTime")));
+            Long updateTime = toPositiveLong(params.get("updateTime"));
+            item.setUpdateTime(updateTime);
         }
         Long createDate = task.getCreateDate();
         if (createDate == null || createDate <= 0) {
@@ -292,7 +295,10 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
             // 任务已结束但没有上报时间，无法算出准确耗时
             return;
         }
-        item.setDuration((endTime == null ? now : endTime) - createDate);
+        long duration = (endTime == null ? now : endTime) - createDate;
+        if (duration >= 0) {
+            item.setDuration(duration);
+        }
     }
 
     private boolean isFinished(Integer status) {
@@ -353,6 +359,18 @@ public class TaskServiceImpl extends ServiceImpl<TaskDao, Task> implements TaskS
             return Long.parseLong(String.valueOf(value).trim());
         } catch (NumberFormatException e) {
             return 0L;
+        }
+    }
+
+    private Long toPositiveLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(String.valueOf(value).trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

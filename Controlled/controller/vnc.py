@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 
 from common.CodeEnum import CodeEnum
 from common.ResponseResult import secured_response
+from controller._payload import bind_entity, get_payload
 
 from service.Vnc import Vnc
 from entity.VncEntity import VncEntity
@@ -9,18 +10,6 @@ from entity.VncEntity import VncEntity
 vnc_router = APIRouter()
 
 
-async def get_payload(request: Request):
-    # 中间件已解密并缓存请求体，未缓存时兼容旧调用方手动解密
-    payload = getattr(request.state, 'body', None)
-    if payload is None:
-        from service.Security import decode_request, filter_payload
-        raw = await request.body()
-        payload = filter_payload(request, decode_request(request, raw))
-    return payload
-
-def bind_entity(model, payload):
-    # 仅取实体声明过的字段，丢弃多余字段
-    return model(**{name: payload[name] for name in model.model_fields if name in payload})
 
 @vnc_router.post("/vnc")
 async def vnc(request: Request, item: VncEntity = None):

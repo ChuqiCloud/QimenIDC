@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.dto.VmMigrationBatchDto;
 import com.chuqiyun.proxmoxveams.dto.VmMigrationLogView;
@@ -30,7 +31,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -131,6 +134,47 @@ class VmMigrationServiceImplTest {
     }
 
     @Test
+    void batchSubmitRejectsRepeatedAllocatedTargetVmid() {
+        when(masterService.getById(2)).thenReturn(targetNode());
+        when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
+        when(vmhostService.getById(2)).thenReturn(vmhost(2, 102, 1));
+        when(vmhostService.getNewVmid(2)).thenReturn(201);
+        VmMigrationParams params = new VmMigrationParams();
+        params.setHostIds(Arrays.asList(1, 2));
+        params.setTargetNodeId(2);
+
+        VmMigrationBatchDto result = service.submit(params);
+
+        assertEquals(1, result.getAcceptedCount());
+        assertEquals(1, result.getRejectedCount());
+        assertEquals(1, inserted.size());
+        assertTrue(result.getItems().get(1).getMessage().contains("目标VMID已被其他迁移任务预留"));
+    }
+
+    @Test
+    void submitRejectsTargetVmidReservedByFailedMigration() {
+        when(masterService.getById(2)).thenReturn(targetNode());
+        when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
+        Task previous = new Task();
+        Map<Object, Object> previousParams = new HashMap<>();
+        previousParams.put("targetNodeId", 2);
+        previousParams.put("targetVmid", 201);
+        previousParams.put("stage", "FAILED");
+        previous.setParams(previousParams);
+        when(taskService.list(any())).thenReturn(Arrays.asList(previous));
+        VmMigrationParams params = new VmMigrationParams();
+        params.setHostId(1);
+        params.setTargetNodeId(2);
+        params.setTargetVmid(201);
+
+        VmMigrationBatchDto result = service.submit(params);
+
+        assertEquals(0, result.getAcceptedCount());
+        assertEquals(1, result.getRejectedCount());
+        assertTrue(inserted.isEmpty());
+    }
+
+    @Test
     void resumeOnlyAcceptsResumableFailedStage() {
         Task task = new Task();
         task.setId(9);
@@ -168,6 +212,41 @@ class VmMigrationServiceImplTest {
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.resume(9));
         assertTrue(error.getMessage().contains("不支持续跑"));
         verify(taskService, never()).updateTask(any());
+    }
+
+    @Test
+    void resumeUncommittedStartRebuildsRolledBackNetwork() {
+        Task task = new Task();
+        task.setId(9);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(3);
+        task.setHostid(1);
+        Map<Object, Object> params = new HashMap<>();
+        params.put("lastFailedStep", "START_TARGET_VM");
+        task.setParams(params);
+        when(taskService.getById(9)).thenReturn(task);
+
+        Task resumed = service.resume(9);
+
+        assertEquals("NETWORK_REBIND", resumed.getParams().get("resumeFromStage"));
+    }
+
+    @Test
+    void resumeCommittedStartKeepsTargetNetwork() {
+        Task task = new Task();
+        task.setId(9);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(3);
+        task.setHostid(1);
+        Map<Object, Object> params = new HashMap<>();
+        params.put("lastFailedStep", "START_TARGET_VM");
+        params.put("targetCommitted", true);
+        task.setParams(params);
+        when(taskService.getById(9)).thenReturn(task);
+
+        Task resumed = service.resume(9);
+
+        assertEquals("START_TARGET_VM", resumed.getParams().get("resumeFromStage"));
     }
 
     @Test
@@ -216,7 +295,72 @@ class VmMigrationServiceImplTest {
         VmMigrationLogView view = service.getTaskLog(12, null);
         assertEquals(1, view.getLogs().size());
         assertTrue(view.getLogs().get(0).contains("已经入队"));
-        assertEquals(1L, view.getNextOffset());
+        assertEquals("v1:12:1:-1:-1", view.getNextOffset());
+    }
+
+    @Test
+    void logCursorTracksMainLinesAndBothAgentByteOffsetsIndependently() {
+        service = spy(service);
+        Task task = new Task();
+        task.setId(12);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(1);
+        Map<Object, Object> params = new HashMap<>();
+        params.put("logLines", new ArrayList<>(Arrays.asList("开始迁移")));
+        params.put("sourceNodeId", 1);
+        params.put("targetNodeId", 2);
+        task.setParams(params);
+        when(taskService.getById(12)).thenReturn(task);
+        Master source = new Master();
+        source.setId(1);
+        source.setNodeName("source");
+        Master target = targetNode();
+        when(masterService.getById(1)).thenReturn(source);
+        when(masterService.getById(2)).thenReturn(target);
+        doReturn(logResponse("源节点备份\n", 101)).when(service).requestAgentLog(source, "12", -1);
+        doReturn(logResponse("目标节点恢复\n", 202)).when(service).requestAgentLog(target, "12", -1);
+
+        VmMigrationLogView first = service.getTaskLog(12, null);
+        assertEquals("v1:12:1:101:202", first.getNextOffset());
+        assertEquals(Arrays.asList("开始迁移", "[source] 源节点备份", "[node-2] 目标节点恢复"), first.getLogs());
+
+        service.appendTaskLog(task, params, "已进入下一步");
+        doReturn(logResponse("源新增\n", 119)).when(service).requestAgentLog(source, "12", 101);
+        doReturn(logResponse("", 202)).when(service).requestAgentLog(target, "12", 202);
+        VmMigrationLogView second = service.getTaskLog(12, first.getNextOffset());
+        assertEquals(Arrays.asList("已进入下一步", "[source] 源新增"), second.getLogs());
+        assertEquals("v1:12:2:119:202", second.getNextOffset());
+        verify(service).requestAgentLog(source, "12", 101);
+        verify(service).requestAgentLog(target, "12", 202);
+    }
+
+    @Test
+    void mainLogCursorRemainsIncrementalAfterRetainedWindowRollsOver() {
+        Task task = new Task();
+        task.setId(12);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(0);
+        Map<Object, Object> params = new HashMap<>();
+        task.setParams(params);
+        when(taskService.getById(12)).thenReturn(task);
+        for (int i = 0; i < 500; i++) {
+            service.appendTaskLog(task, params, "line-" + i);
+        }
+        VmMigrationLogView first = service.getTaskLog(12, null);
+        service.appendTaskLog(task, params, "line-500");
+        VmMigrationLogView second = service.getTaskLog(12, first.getNextOffset());
+        assertEquals(Arrays.asList("line-500"), second.getLogs());
+        assertEquals("v1:12:501:-1:-1", second.getNextOffset());
+    }
+
+    private JSONObject logResponse(String content, long nextOffset) {
+        JSONObject data = new JSONObject();
+        data.put("content", content);
+        data.put("next_offset", nextOffset);
+        JSONObject result = new JSONObject();
+        result.put("code", 200);
+        result.put("data", data);
+        return result;
     }
 
     @Test

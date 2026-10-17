@@ -7,7 +7,11 @@ import com.chuqiyun.proxmoxveams.constant.TaskType;
 import com.chuqiyun.proxmoxveams.dto.TaskItemDto;
 import com.chuqiyun.proxmoxveams.dto.TaskQueryDto;
 import com.chuqiyun.proxmoxveams.entity.Task;
+import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.VmhostService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.Serializable;
 import java.util.HashMap;
@@ -21,21 +25,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 管理端任务查询必须输出可读状态，且不能把任务参数里的凭据带出接口。
  */
 class TaskServiceAdminQueryTest {
 
+    private TaskServiceImpl service;
+
+    @BeforeEach
+    void createServiceWithRelatedNameQueries() {
+        service = spy(new TaskServiceImpl());
+        MasterService masterService = mock(MasterService.class);
+        VmhostService vmhostService = mock(VmhostService.class);
+        when(masterService.list(any(Wrapper.class))).thenReturn(List.of());
+        when(vmhostService.list(any(Wrapper.class))).thenReturn(List.of());
+        ReflectionTestUtils.setField(service, "masterService", masterService);
+        ReflectionTestUtils.setField(service, "vmhostService", vmhostService);
+    }
+
     @Test
     void listKeepsProgressButDropsCredentials() {
-        TaskServiceImpl service = spy(new TaskServiceImpl());
         Page<Task> page = new Page<>(1, 20);
+        page.setTotal(1);
         page.setRecords(List.of(migrationTask()));
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
-
-        // page() 依赖 MyBatis 的 Mapper，这里绕开原始实现，单独验证组装逻辑
-        doReturn(java.util.Collections.emptyList()).when(service).list(any(Wrapper.class));
 
         TaskQueryDto result = service.getTaskPageForAdmin(new TaskQueryDto());
         TaskItemDto item = result.getRecords().get(0);
@@ -53,7 +69,6 @@ class TaskServiceAdminQueryTest {
 
     @Test
     void detailReturnsNullWhenTaskMissing() {
-        TaskServiceImpl service = spy(new TaskServiceImpl());
         doReturn(null).when(service).getById((Serializable) 404);
 
         assertNull(service.getTaskDetailForAdmin(404));
@@ -62,18 +77,43 @@ class TaskServiceAdminQueryTest {
 
     @Test
     void detailReportsFinishedTaskWithoutReportedEndTime() {
-        TaskServiceImpl service = spy(new TaskServiceImpl());
         Task task = migrationTask();
+        task.setParams(new HashMap<>());
         task.setStatus(TaskStatus.FAILURE);
         task.setError("迁移超时");
         doReturn(task).when(service).getById((Serializable) 7);
-        doReturn(java.util.Collections.emptyList()).when(service).list(any(Wrapper.class));
 
         TaskItemDto detail = service.getTaskDetailForAdmin(7);
 
         assertEquals("执行失败", detail.getStatusName());
         assertEquals("迁移超时", detail.getError());
         assertNull(detail.getDuration());
+        assertNull(detail.getUpdateTime());
+    }
+
+    @Test
+    void invalidUpdateTimesDoNotProduceNegativeDurations() {
+        for (Object updateTime : List.of(0L, -1L, "invalid", 1_600_000_000_000L)) {
+            Task task = migrationTask();
+            task.getParams().put("updateTime", updateTime);
+            task.setStatus(TaskStatus.SUCCESS);
+            doReturn(task).when(service).getById((Serializable) 7);
+
+            assertNull(service.getTaskDetailForAdmin(7).getDuration());
+        }
+    }
+
+    @Test
+    void runningTaskWithoutUpdateTimeUsesElapsedWallTime() {
+        Task task = migrationTask();
+        task.getParams().remove("updateTime");
+        task.setCreateDate(System.currentTimeMillis() - 1000L);
+        doReturn(task).when(service).getById((Serializable) 7);
+
+        TaskItemDto detail = service.getTaskDetailForAdmin(7);
+
+        assertNull(detail.getUpdateTime());
+        assertTrue(detail.getDuration() >= 1000L);
     }
 
     private Task migrationTask() {

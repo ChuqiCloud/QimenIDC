@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.utils;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.binary.Base32;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -20,18 +21,19 @@ public final class TotpUtil {
     private static final int SECRET_BYTES = 20;
     private static final String HMAC_ALGORITHM = "HmacSHA1";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Base32 BASE32 = new Base32();
     private static final int MAX_DRIFT_STEPS = 10;
 
     private TotpUtil() {
     }
 
     /**
-     * 生成 160bit 随机密钥，返回无填充 base64（认证器通用的 Base32 之外的常见格式）
+     * 生成 160bit 随机密钥，返回无填充的大写 Base32（otpauth 标准格式）
      */
     public static String generateSecret() {
         byte[] secret = new byte[SECRET_BYTES];
         RANDOM.nextBytes(secret);
-        return Base64UrlUtil.encode(secret);
+        return BASE32.encodeAsString(secret).replace("=", "");
     }
 
     /**
@@ -45,7 +47,7 @@ public final class TotpUtil {
      * 按时间片计算动态码
      */
     public static String generateAtStep(String secret, long counter) {
-        byte[] key = Base64UrlUtil.decode(secret);
+        byte[] key = decodeSecret(secret);
         byte[] data = ByteBuffer.allocate(8).putLong(counter).array();
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
@@ -119,6 +121,25 @@ public final class TotpUtil {
 
     private static String urlEncode(String value) {
         return java.net.URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 历史版本使用 160bit Base64URL（27 字符）；标准 Base32 必须能规范地往返编码。
+     * 这样不会把历史值中碰巧只含 Base32 字符的密钥误认为新格式。
+     */
+    private static byte[] decodeSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalArgumentException("TOTP 密钥为空");
+        }
+        String normalized = secret.replaceAll("\\s", "").toUpperCase(Locale.ROOT);
+        if (normalized.matches("[A-Z2-7]+=*")) {
+            byte[] decoded = BASE32.decode(normalized);
+            if (decoded.length > 0 && BASE32.encodeAsString(decoded).replace("=", "")
+                    .equals(normalized.replace("=", ""))) {
+                return decoded;
+            }
+        }
+        return Base64UrlUtil.decode(secret);
     }
 
     private static boolean constantTimeEquals(String left, String right) {

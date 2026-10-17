@@ -14,7 +14,7 @@ public class VmMigrationLogView {
     private String status;
     private List<String> logs = new ArrayList<>();
     /**
-     * 下次增量拉取的游标，前端原样带回即可
+     * 下次增量拉取的不透明游标，前端必须原样带回，不要按行数或字节数解析。
      */
-    private Long nextOffset;
+    private String nextOffset;
 }

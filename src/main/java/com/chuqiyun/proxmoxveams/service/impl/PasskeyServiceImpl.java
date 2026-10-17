@@ -166,7 +166,7 @@ public class PasskeyServiceImpl implements PasskeyService {
         }
         checkOrigin(clientDataJson);
         WebAuthnUtil.ClientData clientData = WebAuthnUtil.parseClientData(clientDataJson, CLIENT_DATA_GET);
-        consumeChallenge("authentication", clientData.getChallenge(), expectedUserUuid);
+        PendingChallenge pending = consumeChallenge("authentication", clientData.getChallenge(), expectedUserUuid);
 
         if (StringUtils.isBlank(rawId)) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
@@ -185,7 +185,8 @@ public class PasskeyServiceImpl implements PasskeyService {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         // 挑战绑定账号时校验一致性，避免跨账号重放
-        if (StringUtils.isNotBlank(expectedUserUuid) && !expectedUserUuid.equals(sysuser.getUuid())) {
+        String challengeUserUuid = StringUtils.defaultIfBlank(pending.userUuid(), expectedUserUuid);
+        if (StringUtils.isNotBlank(challengeUserUuid) && !challengeUserUuid.equals(sysuser.getUuid())) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         if (userHandle != null && userHandle.length > 0

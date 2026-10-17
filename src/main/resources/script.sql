@@ -291,7 +291,7 @@ create table sysuser
     email     varchar(255) null,
     logindate varchar(255) null,
     mfa_type varchar(16) default 'none' not null comment '二步验证方式 none/totp/passkey',
-    totp_secret text null comment '加密存储的TOTP密钥(base64url)',
+    totp_secret text null comment '加密存储的TOTP密钥(新密钥Base32，兼容历史Base64URL)',
     totp_confirmed_time bigint null comment 'TOTP绑定确认时间戳(毫秒)',
     totp_last_step bigint null comment '最近一次已消费的TOTP时间片',
     passkey_enabled int default 0 not null comment '是否已绑定Passkey 0否 1是'

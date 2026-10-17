@@ -1,7 +1,6 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.chuqiyun.proxmoxveams.common.AuthException;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.dto.LoginResult;
@@ -139,17 +138,16 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public MfaChallenge passkeyDirectChallenge(String username) throws AuthException {
-        Sysuser sysuser = requirePasskeyUser(username);
+        Sysuser sysuser = StringUtils.isBlank(username) ? null : requirePasskeyUser(username);
         return buildChallenge(MFA_PASSKEY, null, passkeyService.createAuthenticationOptions(sysuser));
     }
 
     @Override
     public LoginResult loginWithPasskeyDirect(String username, JSONObject credential) throws AuthException {
         // 无用户名（discoverable）登录时 username 可以为空，账号由凭据反查
-        if (StringUtils.isNotBlank(username)) {
-            requirePasskeyUser(username);
-        }
-        Sysuser authenticated = passkeyService.finishAuthentication(credential, null);
+        Sysuser requested = StringUtils.isBlank(username) ? null : requirePasskeyUser(username);
+        Sysuser authenticated = passkeyService.finishAuthentication(credential,
+                requested == null ? null : requested.getUuid());
         // Passkey 已作为主认证方式，只有同时启用 TOTP 才需要补一次动态码
         if (MFA_TOTP.equals(resolveMfaType(authenticated))) {
             return LoginResult.mfaRequired(MFA_TOTP,
@@ -160,11 +158,11 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public String issueLoginToken(Sysuser sysuser) {
-        // 刷新登录时间以吊销旧 token
-        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
-        wrapper.eq("id", sysuser.getId()).set("logindate", System.currentTimeMillis());
-        sysuserService.update(wrapper);
-        return JWTUtil.sign(sysuser.getUuid(), secret);
+        Long session = sysuserService.rotateLoginSession(sysuser.getId());
+        if (session == null) {
+            throw new AuthException(ResponseResult.RespCode.LOGIN_FAIL);
+        }
+        return JWTUtil.sign(sysuser.getUuid(), secret, session);
     }
 
     /**

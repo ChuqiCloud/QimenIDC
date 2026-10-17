@@ -32,9 +32,9 @@ public interface VmMigrationService {
     VmMigrationTaskView getTaskView(Integer taskId);
 
     /**
-     * 过程日志：offset 为空时返回尾部日志，否则按偏移增量返回。
+     * 过程日志：offset 为空时返回当前日志，否则按不透明游标增量返回。
      */
-    VmMigrationLogView getTaskLog(Integer taskId, Long offset);
+    VmMigrationLogView getTaskLog(Integer taskId, String offset);
 
     /**
      * 从最近失败的一步继续后续阶段，不重新打包。

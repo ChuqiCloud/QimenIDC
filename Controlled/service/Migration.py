@@ -1,4 +1,6 @@
+import codecs
 import glob
+import hashlib
 import json
 import os
 import re
@@ -13,6 +15,10 @@ import urllib.request
 MIGRATION_HOME = "/home/software/QAgent/migration"
 STATUS_DIR = os.path.join(MIGRATION_HOME, "status")
 DEFAULT_BACKUP_DIR = os.path.join(MIGRATION_HOME, "backups")
+
+
+class InvalidRestoreArchive(RuntimeError):
+    pass
 
 
 def ensure_dirs(path=None):
@@ -62,7 +68,7 @@ def write_status(task_id, **kwargs):
 def append_log(task_id, message):
     ensure_dirs()
     log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
-    with open(log_path, "a", encoding="utf-8") as file:
+    with open(log_path, "a", encoding="utf-8", newline="\n") as file:
         file.write(message.rstrip() + "\n")
 
 
@@ -84,11 +90,26 @@ def read_log(task_id, offset=0, limit=64 * 1024):
     offset = max(0, min(int(offset), size))
     with open(log_path, "rb") as file:
         file.seek(offset)
-        chunk = file.read(max(0, int(limit)))
+        # 尾部读取可能落在 UTF-8 字符中间，跳过残缺的前缀。
+        first = file.read(1)
+        while first and first[0] & 0xC0 == 0x80:
+            offset += 1
+            first = file.read(1)
+        file.seek(offset)
+        chunk = file.read(max(0, min(int(limit), 1024 * 1024)))
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        content = decoder.decode(chunk, final=file.tell() == size)
+        pending = decoder.getstate()[0]
+        # 小的 limit 也必须推进游标，补齐最后一个 UTF-8 字符。
+        while pending and file.tell() < size:
+            extra = file.read(1)
+            chunk += extra
+            content += decoder.decode(extra, final=file.tell() == size)
+            pending = decoder.getstate()[0]
     return {
         "offset": offset,
         "next_offset": offset + len(chunk),
-        "content": chunk.decode("utf-8", errors="replace"),
+        "content": content,
     }
 
 
@@ -188,6 +209,17 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
     update = progress_writer(task_id, "TRANSFER", start, end, "downloading backup file")
     headers = {"Authorization": source_token}
     resume_size = os.path.getsize(backup_file) if os.path.exists(backup_file) else 0
+    source_fingerprint = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+    previous = read_status(task_id)
+    if (previous.get("backup_file") != backup_file
+            or previous.get("download_source") != source_fingerprint):
+        if resume_size:
+            append_log(task_id, "backup source changed; discarding partial archive before download")
+            with open(backup_file, "wb"):
+                pass
+        resume_size = 0
+    write_status(task_id, backup_file=backup_file, download_complete=False,
+                 download_source=source_fingerprint)
     if resume_size > 0:
         headers["Range"] = f"bytes={resume_size}-"
     append_log(task_id, f"$ download {source_url} -> {backup_file}")
@@ -195,20 +227,33 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
     try:
         response = urllib.request.urlopen(request, timeout=30)
     except urllib.error.HTTPError as error:
-        if error.code == 416 and resume_size > 0:
-            update(100, force=True, backup_file=backup_file, size=resume_size)
-            return
-        raise
+        if error.code != 416 or resume_size <= 0:
+            raise
+        # A stale or invalid Range must never make a partial local file look complete.
+        append_log(task_id, "server rejected resume range; restarting backup download")
+        with open(backup_file, "wb"):
+            pass
+        resume_size = 0
+        headers.pop("Range", None)
+        response = urllib.request.urlopen(urllib.request.Request(source_url, headers=headers), timeout=30)
 
     with response:
         code = getattr(response, "status", response.getcode())
         content_length = response.headers.get("Content-Length")
         content_range = response.headers.get("Content-Range")
-        if code == 206 and content_range and "/" in content_range:
-            total_size = int(content_range.rsplit("/", 1)[1])
+        if code == 206:
+            match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", content_range or "")
+            if not match or int(match.group(1)) != resume_size:
+                raise RuntimeError("server returned an invalid range for the backup download")
+            range_end = int(match.group(2))
+            total_size = 0 if match.group(3) == "*" else int(match.group(3))
+            if not total_size or range_end >= total_size or range_end < resume_size:
+                raise RuntimeError("server returned an invalid content range for the backup download")
             downloaded = resume_size
             mode = "ab"
         else:
+            if code != 200:
+                raise RuntimeError(f"unexpected backup download response: HTTP {code}")
             total_size = int(content_length) if content_length else 0
             downloaded = 0
             mode = "wb"
@@ -223,6 +268,10 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
                 if total_size > 0:
                     update(downloaded * 100.0 / total_size, backup_file=backup_file, size=downloaded)
         final_size = os.path.getsize(backup_file)
+        if total_size > 0 and final_size != total_size:
+            write_status(task_id, download_complete=False, backup_file=backup_file, size=final_size)
+            raise RuntimeError(f"backup download incomplete: expected {total_size} bytes, got {final_size}")
+        write_status(task_id, download_complete=True, backup_file=backup_file, size=final_size)
         update(100, force=True, backup_file=backup_file, size=final_size)
         append_log(task_id, f"downloaded {final_size} bytes")
 
@@ -348,7 +397,10 @@ def validate_restore_archive(task_id, backup_file):
     if backup_file.endswith(".zst"):
         if not command_exists("zstd"):
             raise RuntimeError("zstd is not installed on target node, cannot restore .zst backup")
-        run_command(task_id, f"zstd -t {shlex.quote(backup_file)}")
+        try:
+            run_command(task_id, f"zstd -t {shlex.quote(backup_file)}")
+        except RuntimeError as error:
+            raise InvalidRestoreArchive("downloaded backup failed zstd integrity validation") from error
         header_command = f"zstd -dc {shlex.quote(backup_file)} | head -c 4 | od -An -tx1"
     else:
         header_command = f"head -c 4 {shlex.quote(backup_file)} | od -An -tx1"
@@ -356,14 +408,14 @@ def validate_restore_archive(task_id, backup_file):
     archive_header = run_command(task_id, header_command).strip().lower()
     write_status(task_id, archive_header=archive_header)
     if archive_header != "56 4d 41 00":
-        raise RuntimeError(
+        raise InvalidRestoreArchive(
             "downloaded backup is not a QEMU VMA archive, "
             f"header={archive_header}, file={backup_file}. "
             "Check whether the source VMID is a real QEMU VM and whether vzdump generated a vzdump-qemu-*.vma.zst file."
         )
 
     if file_info and "HTML" in file_info.upper():
-        raise RuntimeError(f"downloaded backup file is not a vzdump archive: {file_info}")
+        raise InvalidRestoreArchive(f"downloaded backup file is not a vzdump archive: {file_info}")
 
 
 def vm_status(vmid):
@@ -430,9 +482,15 @@ def resolve_restore_file(item):
 
 def restore_file_ready(item):
     backup_file = resolve_restore_file(item)
-    if not os.path.exists(backup_file):
+    status = read_status(item.task_id)
+    if not os.path.exists(backup_file) or not status.get("download_complete"):
         return None
-    return backup_file if os.path.getsize(backup_file) > 0 else None
+    size = os.path.getsize(backup_file)
+    source = hashlib.sha256(item.source_url.encode("utf-8")).hexdigest()
+    if (size <= 0 or status.get("backup_file") != backup_file or status.get("size") != size
+            or status.get("download_source") != source):
+        return None
+    return backup_file
 
 
 def run_backup(item):
@@ -500,7 +558,14 @@ def run_restore(item):
 
         if not os.path.exists(backup_file) or os.path.getsize(backup_file) <= 0:
             raise RuntimeError("downloaded backup file is empty")
-        validate_restore_archive(task_id, backup_file)
+        try:
+            validate_restore_archive(task_id, backup_file)
+        except InvalidRestoreArchive:
+            # 完整传输也可能留下损坏的文件，下一次续跑必须从干净文件重新下载。
+            write_status(task_id, download_complete=False)
+            with open(backup_file, "wb"):
+                pass
+            raise
         update_restore_progress = progress_writer(task_id, "RESTORE", 56, 99, "running qmrestore")
         run_command(
             task_id,

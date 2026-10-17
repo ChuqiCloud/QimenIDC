@@ -193,7 +193,7 @@ def is_encrypt_enabled():
 '''
 def filter_payload(request, payload):
     allowed = get_declared_fields(request)
-    if allowed is None:
+    if allowed is None or not allowed or allowed <= {'request'}:
         return payload
     unknown = [key for key in payload.keys() if key not in allowed]
     if unknown:
@@ -214,8 +214,12 @@ def get_declared_fields(request):
             return None
         fields.add(name)
         annotation = param.annotation
-        if isinstance(annotation, type) and hasattr(annotation, 'model_fields'):
-            fields.update(annotation.model_fields.keys())
+        if isinstance(annotation, type):
+            model_fields = getattr(annotation, 'model_fields', None)
+            if model_fields is None:
+                model_fields = getattr(annotation, '__fields__', None)
+            if model_fields is not None:
+                fields.update(model_fields.keys())
     return fields
 
 

@@ -96,15 +96,12 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     if (jwtTokenDate == null){
                         jwtTokenDate = 0L;
                     }
-                    //给予系统容错5秒误差
-                    jwtTokenDate = jwtTokenDate - 5*1000;
-
                     Long sysUserDate = parseLoginDate(sysuser.getLogindate());
-                    if (jwtTokenDate> sysUserDate){
+                    if (!JWTUtil.isCurrentSession(jwtTokenDate, sysUserDate)){
                         response.sendRedirect("/"+ADMIN_PATH+"/login");
                         return false;
                     }
-
+                    return true;
                 }
             } else if (method.isAnnotationPresent(AdminApiCheck.class)) {
                 AdminApiCheck apiCheck = method.getAnnotation(AdminApiCheck.class);
@@ -126,11 +123,8 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     if (jwtTokenDate == null){
                         jwtTokenDate = 0L;
                     }
-                    //给予系统容错5秒误差
-                    jwtTokenDate = jwtTokenDate - 5*1000;
-
                     Long sysUserDate = parseLoginDate(sysuser.getLogindate());
-                    if (jwtTokenDate> sysUserDate){
+                    if (!JWTUtil.isCurrentSession(jwtTokenDate, sysUserDate)){
                         return authError(response);
                     }else {
                         return true;

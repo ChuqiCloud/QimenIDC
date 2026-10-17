@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.io.Serializable;
 
@@ -26,7 +28,9 @@ public class Sysuser extends Model<Sysuser> {
     
     private String username;
     
+    @JsonIgnore
     @JSONField(serialize = false)
+    @ToString.Exclude
     private String password;
     private String name;
     
@@ -42,9 +46,11 @@ public class Sysuser extends Model<Sysuser> {
     private String mfaType;
 
     /**
-     * base64url 编码的 TOTP 密钥，仅服务端使用；密钥本身用数据库凭据方式加密存储
+     * Base32 编码的 TOTP 密钥（兼容历史 Base64URL），仅服务端使用并加密存储
      */
+    @JsonIgnore
     @JSONField(serialize = false)
+    @ToString.Exclude
     private String totpSecret;
 
     /**
@@ -55,7 +61,9 @@ public class Sysuser extends Model<Sysuser> {
     /**
      * 已消费的最新 TOTP 时间片，用于阻止同一动态码重复使用
      */
+    @JsonIgnore
     @JSONField(serialize = false)
+    @ToString.Exclude
     private Long totpLastStep;
 
     /**

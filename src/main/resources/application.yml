@@ -26,6 +26,11 @@ config:
     origin: ""
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
+# 服务信息上报默认关闭；启用时请通过环境变量 REPORT_KEY 提供平台密钥。
+report:
+  enabled: false
+  key: ${REPORT_KEY:}
+
 MySQL:
   host: localhost
   port: 3306

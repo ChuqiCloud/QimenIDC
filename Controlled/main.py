@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import os
 from contextlib import asynccontextmanager, suppress
 
@@ -13,7 +14,7 @@ from common.CodeEnum import CodeEnum
 
 from service.Authentication import get_token
 from service.EndpointPolicy import is_retired_endpoint
-from service.Security import decode_request, filter_payload
+from service.Security import decode_request
 from service.VncFileEditor import VncFileEditor
 
 # 被控端程序版本，随代码一起发布，主控心跳时读取
@@ -116,7 +117,29 @@ async def read_secured_body(request):
     raw = await request.body()
     if len(raw) > int(os.environ.get('QIMENIDC_MAX_BODY', '4194304')):
         raise UnicornException(code=CodeEnum.TOO_MANY_REQUESTS, msg='payload too large')
-    return filter_payload(request, decode_request(request, raw))
+    return decode_request(request, raw)
+
+
+def replay_json_body(request, payload):
+    # Starlette 0.27 会为下游路由新建 Request，需重放已鉴权 JSON，
+    # 避免下游再次读取已被中间件消费的密文流而阻塞。
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    original_receive = request.receive
+    delivered = False
+
+    async def receive():
+        nonlocal delivered
+        if not delivered:
+            delivered = True
+            return {'type': 'http.request', 'body': body, 'more_body': False}
+        return await original_receive()
+
+    request._receive = receive
+    request._body = body
+    request.scope['headers'] = [
+        (name, value) for name, value in request.scope['headers']
+        if name.lower() not in (b'content-type', b'content-length')
+    ] + [(b'content-type', b'application/json'), (b'content-length', str(len(body)).encode('ascii'))]
 
 
 '''
@@ -143,6 +166,7 @@ async def add_process_time_header(request: Request, call_next):
             check_content_type(request)
             # 提前解密请求体，解密失败直接返回401
             request.state.body = await read_secured_body(request)
+            replay_json_body(request, request.state.body)
         # 响应体做安全响应头加固
         response = await call_next(request)
         response.headers['X-Content-Type-Options'] = 'nosniff'

@@ -152,12 +152,70 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         if (!EncryptUtil.verifyPassword(oldPassword, sysuser.getPassword())) {
             return "原密码错误";
         }
-        // 更新登录时间即让已签发的 token 失效，强制其它会话重新登录
-        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
-        wrapper.eq("id", userId)
-                .set("password", EncryptUtil.md5(newPassword))
-                .set("logindate", System.currentTimeMillis());
-        return this.update(wrapper) ? null : "密码修改失败";
+        // 与会话轮换使用同一比较写入机制，避免同毫秒改密保留旧 Token。
+        for (int attempt = 0; attempt < 10; attempt++) {
+            Long previous = sysuser.getLogindate();
+            long next = nextLoginDate(previous);
+            UpdateWrapper<Sysuser> wrapper = sessionUpdate(userId, previous);
+            wrapper.eq("password", sysuser.getPassword())
+                    .set("password", EncryptUtil.md5(newPassword))
+                    .set("logindate", next);
+            if (this.update(wrapper)) {
+                return null;
+            }
+            sysuser = this.getById(userId);
+            if (sysuser == null || !EncryptUtil.verifyPassword(oldPassword, sysuser.getPassword())) {
+                return "原密码已变更，请重新登录";
+            }
+        }
+        return "密码修改失败，请重试";
+    }
+
+    @Override
+    public boolean updateAccountDetails(Sysuser updates, String encodedPassword) {
+        if (updates == null || updates.getId() == null) {
+            return false;
+        }
+        boolean rotateSession = StringUtils.isNotBlank(encodedPassword);
+        for (int attempt = 0; attempt < (rotateSession ? 10 : 1); attempt++) {
+            Sysuser current = rotateSession ? this.getById(updates.getId()) : null;
+            if (rotateSession && current == null) {
+                return false;
+            }
+
+            UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+            wrapper.eq("id", updates.getId());
+            if (rotateSession) {
+                wrapper = sessionUpdate(updates.getId(), current.getLogindate());
+            }
+            boolean hasUpdate = setIfPresent(wrapper, "username", updates.getUsername());
+            hasUpdate |= setIfPresent(wrapper, "name", updates.getName());
+            hasUpdate |= setIfPresent(wrapper, "phone", updates.getPhone());
+            hasUpdate |= setIfPresent(wrapper, "email", updates.getEmail());
+            if (rotateSession) {
+                wrapper.set("password", encodedPassword)
+                        .set("logindate", nextLoginDate(current.getLogindate()));
+                hasUpdate = true;
+            }
+            if (!hasUpdate) {
+                return true;
+            }
+            if (this.update(wrapper)) {
+                return true;
+            }
+            if (!rotateSession) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private boolean setIfPresent(UpdateWrapper<Sysuser> wrapper, String column, String value) {
+        if (value == null) {
+            return false;
+        }
+        wrapper.set(column, value);
+        return true;
     }
 
     /**
@@ -188,11 +246,66 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", sysuser.getId())
                 .set("mfa_type", sysuser.getMfaType())
-                .set("totp_secret", sysuser.getTotpSecret())
-                .set("totp_confirmed_time", sysuser.getTotpConfirmedTime())
-                .set("totp_last_step", sysuser.getTotpLastStep())
                 .set("passkey_enabled", Objects.isNull(sysuser.getPasskeyEnabled()) ? 0 : sysuser.getPasskeyEnabled());
         return this.update(wrapper);
+    }
+
+    @Override
+    public boolean startTotpBinding(Integer userId, String encryptedSecret) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId).isNull("totp_confirmed_time")
+                .set("totp_secret", encryptedSecret).set("totp_last_step", null);
+        return this.update(wrapper);
+    }
+
+    @Override
+    public boolean confirmTotpBinding(Integer userId, String encryptedSecret, long step) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId).eq("totp_secret", encryptedSecret).isNull("totp_confirmed_time")
+                .and(w -> w.isNull("totp_last_step").or().lt("totp_last_step", step))
+                .set("totp_confirmed_time", System.currentTimeMillis()).set("totp_last_step", step);
+        return this.update(wrapper);
+    }
+
+    @Override
+    public boolean clearTotpBinding(Integer userId) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId).set("totp_secret", null).set("totp_confirmed_time", null)
+                .set("totp_last_step", null)
+                .setSql("mfa_type = case when mfa_type = 'totp' then 'none' else mfa_type end");
+        return this.update(wrapper);
+    }
+
+    @Override
+    public Long rotateLoginSession(Integer userId) {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            Sysuser user = this.getById(userId);
+            if (user == null) {
+                return null;
+            }
+            long next = nextLoginDate(user.getLogindate());
+            UpdateWrapper<Sysuser> wrapper = sessionUpdate(userId, user.getLogindate());
+            wrapper.set("logindate", next);
+            if (this.update(wrapper)) {
+                return next;
+            }
+        }
+        return null;
+    }
+
+    private UpdateWrapper<Sysuser> sessionUpdate(Integer userId, Long previous) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId);
+        if (previous == null) {
+            wrapper.isNull("logindate");
+        } else {
+            wrapper.eq("logindate", previous);
+        }
+        return wrapper;
+    }
+
+    private long nextLoginDate(Long previous) {
+        return Math.max(System.currentTimeMillis(), previous == null ? 0L : Math.addExact(previous, 1L));
     }
 
     /**

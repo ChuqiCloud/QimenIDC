@@ -140,7 +140,7 @@ public class SysVmHostController {
     @AdminApiCheck
     @GetMapping(value = "/migrateVm/{taskId}/log")
     public Object getMigrateVmTaskLog(@PathVariable("taskId") Integer taskId,
-                                      @RequestParam(required = false) Long offset) throws UnauthorizedException {
+                                      @RequestParam(required = false) String offset) throws UnauthorizedException {
         return ResponseResult.ok(vmMigrationService.getTaskLog(taskId, offset));
     }
 

@@ -70,14 +70,15 @@ public class SysAccountController {
         if (Objects.isNull(sysuser)) {
             return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
         }
-        if (StringUtils.isNotBlank(param.getString("password"))) {
-            sysuser.setPassword(EncryptUtil.md5(param.getString("password")));
-        }
-        sysuser.setUsername(param.getString("username"));
-        sysuser.setEmail(param.getString("email"));
-        sysuser.setPhone(param.getString("phone"));
-        sysuser.setName(param.getString("name"));
-        if (sysuserService.updateById(sysuser)) {
+        Sysuser updates = new Sysuser();
+        updates.setId(sysuser.getId());
+        String encodedPassword = StringUtils.isNotBlank(param.getString("password"))
+                ? EncryptUtil.md5(param.getString("password")) : null;
+        updates.setUsername(param.getString("username"));
+        updates.setEmail(param.getString("email"));
+        updates.setPhone(param.getString("phone"));
+        updates.setName(param.getString("name"));
+        if (sysuserService.updateAccountDetails(updates, encodedPassword)) {
             return ResponseResult.ok("淇敼绠＄悊鍛樿处鎴锋垚鍔燂紒");
         } else {
             return ResponseResult.fail("淇敼绠＄悊鍛樿处鎴峰け璐ワ紒");

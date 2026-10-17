@@ -28,25 +28,26 @@
 | GET | `/{adminPath}/profile` | AdminApiCheck | 当前账号资料与安全设置 |
 | POST | `/{adminPath}/profile/update` | AdminApiCheck | 修改自身资料 |
 | POST | `/{adminPath}/profile/password` | AdminApiCheck | 自助重置密码（需原密码） |
-| POST | `/{adminPath}/profile/totp/bind` | AdminApiCheck | 生成 TOTP 密钥与 otpauth 链接 |
+| POST | `/{adminPath}/profile/totp/bind` | AdminApiCheck | 生成 TOTP 密钥与 otpauth 链接；已确认密钥需先解绑 |
 | POST | `/{adminPath}/profile/totp/confirm` | AdminApiCheck | 用动态码确认绑定 |
-| POST | `/{adminPath}/profile/totp/unbind` | AdminApiCheck | 解绑 TOTP |
-| POST | `/{adminPath}/profile/mfa` | AdminApiCheck | 设置二步验证方式 `none/totp/passkey` |
+| POST | `/{adminPath}/profile/totp/unbind` | AdminApiCheck | 传入当前 `password` 后解绑 TOTP |
+| POST | `/{adminPath}/profile/mfa` | AdminApiCheck | 显式传入 `mfaType=none/totp/passkey`；关闭或切换已启用的方式时传入当前 `password` |
 | GET | `/{adminPath}/profile/passkey/list` | AdminApiCheck | Passkey 列表 |
 | POST | `/{adminPath}/profile/passkey/register/options` | AdminApiCheck | 注册挑战 |
 | POST | `/{adminPath}/profile/passkey/register` | AdminApiCheck | 提交注册结果 |
-| POST | `/{adminPath}/profile/passkey/delete` | AdminApiCheck | 解绑 Passkey |
+| POST | `/{adminPath}/profile/passkey/delete` | AdminApiCheck | 传入当前 `password` 后解绑 Passkey |
 
 `credential` 字段直接透传浏览器 `navigator.credentials` 的结果，二进制字段均为 base64url（无填充）。
 
 ## 安全要点
 
-- TOTP 密钥以 `QIDENC:` 前缀的 AES-GCM 密文落库，与其它凭据使用同一套加密器；接口永不下发密钥。
+- TOTP 新密钥按标准无填充 Base32 输出；历史 Base64URL 密钥仍可验证。密钥以 `QIDENC:` 前缀的 AES-GCM 密文落库；接口永不返回用户实体中的密钥字段。
 - 动态码允许前后各一个时间片（30 秒）偏差，同一时间片只能使用一次（`totp_last_step` 原子比较写入）。
 - Passkey 挑战保存在服务端内存，一次性使用、5 分钟过期；校验 `type`、`rpIdHash`、签名与签名计数器回退。
 - 支持 ES256 / RS256 两种 COSE 公钥；暂不验证 attestation 证书链（`attestation=none`）。
-- 修改密码会刷新 `logindate`，使旧 token 立即失效；修改密码必须先验证原密码。
-- 解绑 TOTP 时若账号没有其它 2FA 方式，需要再次输入密码。
+- 自助修改密码和管理员代改密码都会原子刷新 `logindate`，使目标账号旧 token 立即失效；自助修改密码必须先验证原密码。
+- 本版本改为精确匹配登录会话标记；升级后，旧版本按独立时间戳签发的 token 需要重新登录。
+- 关闭二步验证、切换已启用的二步验证方式、解绑 TOTP 或解绑 Passkey 均需再次输入当前密码。已确认的 TOTP 密钥不能被绑定操作覆盖，需先验证密码解绑。
 
 ## 部署配置
 

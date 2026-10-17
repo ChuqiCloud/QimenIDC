@@ -88,6 +88,30 @@ class WebAuthnUtilTest {
                 () -> WebAuthnUtil.parseClientData(json, "webauthn.create"));
     }
 
+    @Test
+    void parsesRsaCoseModulusAndExponentInStandardOrder() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        KeyPair pair = generator.generateKeyPair();
+        java.security.interfaces.RSAPublicKey publicKey = (java.security.interfaces.RSAPublicKey) pair.getPublic();
+        byte[] modulus = unsigned(publicKey.getModulus().toByteArray());
+        byte[] exponent = unsigned(publicKey.getPublicExponent().toByteArray());
+        byte[] cose = concat(new byte[]{(byte) 0xA4},
+                new byte[]{0x01, 0x03},
+                new byte[]{0x03, 0x39, 0x01, 0x00},
+                new byte[]{0x20}, cborBytes(modulus),
+                new byte[]{0x21}, cborBytes(exponent));
+        byte[] authData = concat(sha256(RP_ID), new byte[]{0x01}, new byte[]{0, 0, 0, 0});
+        byte[] clientDataHash = sha256("rsa-assertion".getBytes(StandardCharsets.US_ASCII));
+        Signature signer = Signature.getInstance("SHA256withRSA");
+        signer.initSign(pair.getPrivate());
+        signer.update(authData);
+        signer.update(clientDataHash);
+
+        assertTrue(WebAuthnUtil.verifySignature(WebAuthnUtil.ALG_RS256, cose,
+                authData, clientDataHash, signer.sign()));
+    }
+
     private boolean verifySignature(WebAuthnUtil.AuthData parsed, java.security.PrivateKey privateKey,
                                     String payload) throws Exception {
         byte[] authenticatorData = concat(sha256(RP_ID), new byte[]{0x01}, new byte[]{0, 0, 0, 2});
@@ -135,6 +159,10 @@ class WebAuthnUtilTest {
         int copyLength = Math.min(value.length, length);
         System.arraycopy(value, value.length - copyLength, fixed, length - copyLength, copyLength);
         return fixed;
+    }
+
+    private static byte[] unsigned(byte[] value) {
+        return value.length > 1 && value[0] == 0 ? Arrays.copyOfRange(value, 1, value.length) : value;
     }
 
     private static byte[] cborText(String value) {

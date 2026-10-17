@@ -276,24 +276,38 @@ public final class WebAuthnUtil {
             int mapSize = reader.readMapHeader();
             int kty = 0;
             int algorithm = 0;
-            byte[] x = null;
-            byte[] y = null;
+            int crv = 0;
+            byte[] minusOneBytes = null;
+            byte[] minusTwoBytes = null;
+            byte[] minusThreeBytes = null;
             for (int i = 0; i < mapSize; i++) {
                 int label = reader.readInt();
                 switch (label) {
                     case 1 -> kty = reader.readInt();
                     case 3 -> algorithm = reader.readInt();
                     case -1 -> {
-                        if (kty != 3) {
-                            requireP256(reader.readInt());
+                        if (reader.peekMajorType() == 0x40) {
+                            minusOneBytes = reader.readBytes(); // RSA 的 n
                         } else {
-                            y = reader.readBytes(); // RSA 的 n
+                            crv = reader.readInt(); // EC 的 crv，CBOR 字段可按任意顺序出现
                         }
                     }
-                    case -2 -> x = reader.readBytes();
-                    case -3 -> y = reader.readBytes();
+                    case -2 -> minusTwoBytes = reader.readBytes();
+                    case -3 -> minusThreeBytes = reader.readBytes();
                     default -> reader.skipItem();
                 }
+            }
+            byte[] x;
+            byte[] y;
+            if (kty == 2 && algorithm == ALG_ES256) {
+                requireP256(crv);
+                x = minusTwoBytes;
+                y = minusThreeBytes;
+            } else if (kty == 3 && algorithm == ALG_RS256) {
+                x = minusOneBytes; // RSA 的 n
+                y = minusTwoBytes; // RSA 的 e
+            } else {
+                throw new IllegalArgumentException("不支持的 COSE 公钥类型或算法");
             }
             if (x == null || y == null) {
                 throw new IllegalArgumentException("COSE 公钥缺少坐标");
@@ -315,6 +329,13 @@ public final class WebAuthnUtil {
         private CborReader(byte[] data) {
             this.data = data;
             this.position = 0;
+        }
+
+        private int peekMajorType() {
+            if (position >= data.length) {
+                throw new IllegalArgumentException("CBOR 数据不足");
+            }
+            return data[position] & 0xE0;
         }
 
         private int readMapHeader() {

@@ -5,6 +5,7 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -36,10 +37,10 @@ import java.util.regex.Pattern;
  * @DateTime: 2026/6/7 10:49
  */
 @Component
+@ConditionalOnProperty(prefix = "report", name = "enabled", havingValue = "true")
 @EnableScheduling
 public class ReportCron {
     private static final String REPORT_URL = "https://auth.mryunqi.com/api/v1/report";
-    private static final String REPORT_KEY = "AuthReport-9f4c7d2a6b1e8c0f";
     private static final String IPV4_PRIMARY_URL = "https://api.leapteam.cn/api/ip.php";
     private static final String IPV4_BACKUP_URL = "https://api.myip.la/";
     private static final long REPORT_INTERVAL = 60 * 60 * 1000L;
@@ -56,8 +57,14 @@ public class ReportCron {
     @Value("${info.application.build.version}")
     private String backendVersion;
 
+    @Value("${report.key:}")
+    private String reportKey;
+
     @Scheduled(initialDelay = 60 * 1000L, fixedRate = REPORT_INTERVAL)
     public void report() {
+        if (reportKey == null || reportKey.isBlank()) {
+            return;
+        }
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("ipAddress", getLocalIpAddress());
@@ -67,7 +74,7 @@ public class ReportCron {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("X-Report-Key", REPORT_KEY);
+            headers.set("X-Report-Key", reportKey);
             restTemplate.postForObject(REPORT_URL, new HttpEntity<>(requestBody, headers), Void.class);
         } catch (Exception ignored) {
         }
