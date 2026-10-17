@@ -7202,6 +7202,244 @@ POST /{adminPath}/updateVmDefaultDiskSize
 |» message|string|true|none||none|
 |» data|null|true|none||none|
 
+# 后台/任务管理
+
+## GET 分页查询任务
+
+GET /{adminPath}/getTaskByPage
+
+按节点、任务类型、状态、虚拟机与创建时间筛选任务，按 id 倒序返回。返回体中的参数已剔除密码、token、ticket 等凭据。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|page|query|integer| 否 |页码，默认 1|
+|size|query|integer| 否 |每页数量，默认 20，最大 200|
+|nodeid|query|integer| 否 |节点ID|
+|hostid|query|integer| 否 |虚拟机记录ID|
+|vmid|query|integer| 否 |PVE 虚拟机ID|
+|type|query|string| 否 |任务类型，多个用逗号分隔，见下方任务类型表|
+|status|query|string| 否 |任务状态，多个用逗号分隔|
+|startDate|query|integer| 否 |创建时间起，毫秒时间戳|
+|endDate|query|integer| 否 |创建时间止，毫秒时间戳|
+|Authorization|header|string| 否 |管理员凭证|
+
+任务状态：`0` 等待执行、`1` 执行中、`2` 执行成功、`3` 执行失败、`4` 接口同步成功。
+
+> 返回示例
+
+> 成功
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "total": 1,
+    "page": 1,
+    "size": 20,
+    "pages": 1,
+    "records": [
+      {
+        "id": 128,
+        "nodeid": 1,
+        "nodeName": "香港-01",
+        "hostid": 37,
+        "vmid": 105,
+        "hostname": "vm-105",
+        "type": 32,
+        "typeName": "重装系统",
+        "status": 1,
+        "statusName": "执行中",
+        "progress": 40,
+        "stage": "REINSTALL",
+        "error": null,
+        "createDate": 1700000000000,
+        "updateTime": 1700000004000,
+        "duration": 4000,
+        "params": {
+          "progress": 40,
+          "stage": "REINSTALL"
+        }
+      }
+    ]
+  }
+}
+```
+
+### 返回结果
+
+|状态码|状态码含义|说明|数据模型|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|成功|Inline|
+
+### 返回数据结构
+
+状态码 **200**
+
+|名称|类型|必选|约束|中文名|说明|
+|---|---|---|---|---|---|
+|» code|integer|true|none||none|
+|» message|string|true|none||none|
+|» data|object|true|none||none|
+|»» total|integer|true|none||任务总数|
+|»» page|integer|true|none||当前页|
+|»» size|integer|true|none||每页数量|
+|»» pages|integer|true|none||总页数|
+|»» records|array|true|none||任务列表|
+|»»» id|integer|true|none||任务ID|
+|»»» nodeid|integer|true|none||节点ID|
+|»»» nodeName|string|false|none||节点名称|
+|»»» hostid|integer|false|none||虚拟机记录ID|
+|»»» vmid|integer|false|none||PVE 虚拟机ID|
+|»»» hostname|string|false|none||虚拟机名称|
+|»»» type|integer|true|none||任务类型|
+|»»» typeName|string|true|none||任务类型名称|
+|»»» status|integer|true|none||任务状态|
+|»»» statusName|string|true|none||任务状态名称|
+|»»» progress|integer|false|none||进度百分比，任务未上报时为 null|
+|»»» stage|string|false|none||任务阶段，任务未上报时为 null|
+|»»» error|string|false|none||失败原因|
+|»»» createDate|integer|false|none||创建时间（毫秒）|
+|»»» updateTime|integer|false|none||最近上报时间（毫秒）|
+|»»» duration|integer|false|none||耗时（毫秒），已结束且未上报时间的任务为 null|
+|»»» params|object|false|none||任务参数，已脱敏|
+
+## GET 查询任务详情
+
+GET /{adminPath}/getTaskDetail/{id}
+
+返回单个任务的完整信息，字段与列表一致；参数中的凭据（`password`、`token`、`ticket`、`authorization` 等）不会返回。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|id|path|integer| 是 |任务ID|
+|Authorization|header|string| 否 |管理员凭证|
+
+> 返回示例
+
+> 成功
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "id": 128,
+    "nodeid": 1,
+    "nodeName": "香港-01",
+    "hostid": 37,
+    "vmid": 105,
+    "hostname": "vm-105",
+    "type": 40,
+    "typeName": "离线迁移虚拟机",
+    "status": 3,
+    "statusName": "执行失败",
+    "progress": 65,
+    "stage": "FAILED",
+    "error": "目标节点存储空间不足",
+    "createDate": 1700000000000,
+    "updateTime": 1700000060000,
+    "duration": 60000,
+    "params": {
+      "sourceNodeId": 1,
+      "targetNodeId": 2,
+      "sourceVmid": 105,
+      "targetVmid": 205,
+      "progress": 65,
+      "stage": "FAILED"
+    }
+  }
+}
+```
+
+任务不存在时 `code` 为 `20400`，`message` 为 `任务不存在`。
+
+## GET 任务数量统计
+
+GET /{adminPath}/getTaskStatistics
+
+按任务类型（默认）或状态聚合计件，可按创建时间范围过滤。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|groupBy|query|string| 否 |聚合维度：`type`（默认）或 `status`|
+|startDate|query|integer| 否 |创建时间起，毫秒时间戳|
+|endDate|query|integer| 否 |创建时间止，毫秒时间戳|
+|Authorization|header|string| 否 |管理员凭证|
+
+> 返回示例
+
+> 成功
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": [
+    {
+      "type": 0,
+      "typeName": "创建虚拟机",
+      "status": null,
+      "statusName": null,
+      "count": 18
+    },
+    {
+      "type": null,
+      "typeName": null,
+      "status": 3,
+      "statusName": "执行失败",
+      "count": 2
+    }
+  ]
+}
+```
+
+## GET 执行中任务概览
+
+GET /{adminPath}/getRunningTaskSummary
+
+返回等待与执行中的任务数量，执行中任务按类型拆分，可用于管理端顶部状态条。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|Authorization|header|string| 否 |管理员凭证|
+
+> 返回示例
+
+> 成功
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "waitingCount": 3,
+    "runningCount": 2,
+    "runningByType": [
+      {
+        "type": 32,
+        "typeName": "重装系统",
+        "status": 1,
+        "statusName": "执行中",
+        "count": 2
+      }
+    ]
+  }
+}
+```
+
 # 后台/限制功能/CPU模型管理
 
 ## POST 新增cpu信息模型
