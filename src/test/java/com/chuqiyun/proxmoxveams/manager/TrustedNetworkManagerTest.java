@@ -30,7 +30,7 @@ class TrustedNetworkManagerTest {
     private List<String> split(TrustedNetworkManager manager, String addresses) throws Exception {
         Method method = TrustedNetworkManager.class.getDeclaredMethod("splitAddresses", String.class);
         method.setAccessible(true);
-        return (List<String>) method.invoke(manager, addresses);
+        return new java.util.ArrayList<>((java.util.Set<String>) method.invoke(manager, addresses));
     }
 
     @SuppressWarnings("unchecked")
