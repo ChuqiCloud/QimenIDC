@@ -7458,6 +7458,48 @@ GET /{adminPath}/getRunningTaskSummary
 }
 ```
 
+# 后台/节点/被控端可信白名单
+
+## GET 查看被控端可信来源白名单
+
+GET /{adminPath}/getAgentWhitelist
+
+被控端 nginx 只放行白名单内的管理源地址，这里返回当前集群标识、主控自报出口、
+节点实测到的来源，以及已同步和待重试的节点。主控换了出口 IP 导致节点「连接超时」时先看它。
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|Authorization|header|string| 否 |管理员凭证|
+
+> 返回示例
+
+> 成功
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "clusterId": "db-1a2b3c4d5e6f",
+    "localAddresses": "10.0.0.5/32",
+    "networks": ["10.0.0.5/32", "198.51.100.7/32"],
+    "lastFullSyncAt": 1760700000000,
+    "syncedNodes": [1, 2, 3],
+    "pendingNodes": [4]
+  }
+}
+```
+
+字段说明：
+
+- `clusterId`：JDBC 连接串摘要，同一套主控库算出来一致
+- `localAddresses`：本主控探测到的出口地址
+- `networks`：当前会被下发到节点的全部来源（主控自报 ∪ 节点实测）
+- `pendingNodes`：同步失败、等待心跳重试的节点（退避 5 分钟）
+
 # 后台/限制功能/CPU模型管理
 
 ## POST 新增cpu信息模型

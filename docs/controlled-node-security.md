@@ -2,6 +2,8 @@
 
 QAgent now listens only on `127.0.0.1:17600`; nginx terminates TLS on the existing QAgent port (7600 by default) and allows only configured manager source IPs/CIDRs. noVNC runs as the locked `qimenvnc` system account. Its token file and expiry metadata are mode `0600`.
 
+`harden.sh` 新增两个参数，用于白名单自动同步：`--manager-endpoint host:port`（主控的 QAgent 端口，探测它的出口地址）、`--cluster-id`（同一集群共用的标识，缺省用 JDBC 连接串摘要）。两者都会写进 `security.conf` 与 `qagent.service` 环境变量。
+
 Install nginx, openssl, Python 3.10, and the updated QAgent/noVNC package first. On a managed node, run the remediation once with the source addresses seen by that node's firewall and the exact DNS names/IPs configured as the node host in QimenIDC:
 
 ```bash
@@ -19,6 +21,25 @@ ssh -T first-node 'sudo -n cat /home/software/QAgent/token.key' |
 ```
 
 Run the stream once per node and then update the manager's shared token using its protected configuration workflow. `--token-stdin` validates and atomically installs the piped 64-character lowercase hex token without printing it. Omit `--clear-vnc` only when keeping existing noVNC sessions is intended. A subsequent package update preserves the token, whitelist, and certificates.
+
+## 管理源白名单自动同步
+
+安装时写进 `security.conf` 的 `QAGENT_MANAGER_IPS` 只是初始值。主控或机房出口 IP 一变，节点会以「连接超时」的方式整体失联，所以白名单需要能自动跟随。
+
+**被控端**：`POST /net/trust`（加密，仍需 token）。请求体 `{"networks": ["198.51.100.42/32"], "cluster_id": "db-1a2b3c4d5e6f"}`。执行顺序：
+
+1. 自己连一次主控的 QAgent TLS 端口（`QIMENIDC_MANAGER_ENDPOINT`），读对端证书里的来源地址 —— 这就是本节点视角下的主控出口。
+2. 把「主控自报的地址」和「自己实测到的地址」取并集（`0.0.0.0/0`、`::/0` 一律拒绝）。
+3. 写 `security.conf`，重写 nginx 的 `geo` 块并 `nginx -t` + `systemctl reload nginx`；校验或重载失败自动回滚，避免把主控挡在门外。
+4. 内容无变化时不重载，接口可每秒调用。
+
+注册为**排除白名单但保留鉴权**的路径：出口 IP 被换掉时，这是唯一能自救的通道。被控端启动时也会主动探测一次主控出口，免得升级重启后主控进不来。
+
+**主控**：`StartUp` 预热结束后做一轮 `TrustedNetworkManager.initialSync()`，把集群内各主控的出口地址分发给全部节点；心跳（`ControllerCron`）顺带登记被控端回传的实测地址，并对还没成功的节点按 5 分钟退避重试。被控端实测地址和主控自报不一致时打 WARN（通常是 SNAT 或反代），但两侧都放行，不会互相挡。
+
+运维自查：管理端 `GET /{adminPath}/getAgentWhitelist` 看待同步的节点和当前生效地址；节点上 `qa` 菜单选 `11` 看 `security.conf` 与 nginx 的 `geo` 块。
+
+> 升级顺序：被控端 1.0.3 要先于主控 1.3.4_5。旧被控端没有 `/net/trust`，主控同步会失败但只是 WARN，不影响其余功能。
 
 The VNC proxy accepts TCP connections only from the noVNC controller hosts. Supply every controller node's actual source IP/CIDR with the vnc-proxy-ips option; default routes are refused. For install, the installer asks for manager source IP/CIDRs, the node hostnames/IPs used by manager API calls, and noVNC controller IPs/CIDRs. For later changes, rerun:
 

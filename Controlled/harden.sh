@@ -13,6 +13,8 @@ manager_ips="${QAGENT_MANAGER_IPS:-}"
 cert_hosts="${QAGENT_CERT_HOSTS:-}"
 vnc_proxy_ips="${QAGENT_VNC_PROXY_IPS:-}"
 backend_port="${QAGENT_BACKEND_PORT:-}"
+manager_endpoint="${QIMENIDC_MANAGER_ENDPOINT:-}"
+cluster_id="${QIMENIDC_CLUSTER_ID:-}"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --configure) mode=configure; shift ;;
@@ -22,8 +24,10 @@ while [ "$#" -gt 0 ]; do
         --cert-hosts) cert_hosts="${2:?provide node IP/DNS identities used by the manager}"; shift 2 ;;
         --vnc-proxy-ips) vnc_proxy_ips="${2:?provide noVNC controller source IP/CIDRs}"; shift 2 ;;
         --backend-port) backend_port="${2:?provide internal backend port}"; shift 2 ;;
+        --manager-endpoint) manager_endpoint="${2:?provide manager host:port used for source probing}"; shift 2 ;;
+        --cluster-id) cluster_id="${2:?provide cluster id shared by every manager in this cluster}"; shift 2 ;;
         --help)
-            echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--configure|--token-stdin] [--clear-vnc]"
+            echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--manager-endpoint host:port] [--cluster-id id] [--configure|--token-stdin] [--clear-vnc]"
             echo "Default: rotate QAgent token and revoke ALL noVNC sessions. --configure preserves credentials."
             exit 0 ;;
         *) security_fail "unknown option: $1"; exit 1 ;;
@@ -37,6 +41,10 @@ QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${manager_ips:-${QAGENT_MANA
 QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${cert_hosts:-${QAGENT_CERT_HOSTS:-}}")
 QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${vnc_proxy_ips:-${QAGENT_VNC_PROXY_IPS:-}}")
 QAGENT_BACKEND_PORT="${backend_port:-${QAGENT_BACKEND_PORT:-17600}}"
+MANAGER_ENDPOINT="${manager_endpoint:-${MANAGER_ENDPOINT:-}}"
+CLUSTER_ID="${cluster_id:-${CLUSTER_ID:-}}"
+security_validate_manager_endpoint "${MANAGER_ENDPOINT}"
+security_validate_cluster_id "${CLUSTER_ID}"
 security_regular_file "${QAGENT_HOME}/port"
 QAGENT_TLS_PORT=$(cat "${QAGENT_HOME}/port")
 security_validate_port "${QAGENT_TLS_PORT}"

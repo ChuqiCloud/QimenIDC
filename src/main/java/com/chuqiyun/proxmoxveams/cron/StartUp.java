@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.cron;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Config;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
+import com.chuqiyun.proxmoxveams.manager.TrustedNetworkManager;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.SqlService;
@@ -35,6 +36,8 @@ public class StartUp {
     private SqlService sqlService;
     @Resource
     private StoredCredentialMigration storedCredentialMigration;
+    @Resource
+    private TrustedNetworkManager trustedNetworkManager;
     /**
      * 内部版号
      */
@@ -130,5 +133,12 @@ public class StartUp {
         masterService.updateAllNodeCookie();
         //log.info("[System] 集群预热结束");
         UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "集群预热结束");
+        // 被控端 nginx 按管理源白名单放行，启动时先把集群内所有主控出口下发一遍，
+        // 否则换了出口IP的主控会一直卡在连接超时。失败不影响启动，由心跳周期补偿。
+        try {
+            trustedNetworkManager.initialSync();
+        } catch (Exception e) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "可信白名单启动同步失败: {}", e.getMessage());
+        }
     }
 }

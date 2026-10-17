@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.entity.Config;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.manager.TrustedNetworkManager;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ClientPayloadUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,11 @@ public class ControllerCron {
     private MasterService masterService;
     @Resource
     private ConfigService configService;
+    /**
+     * 管理源白名单同步，心跳顺带登记被控端实测到的对端地址并补发未完成的节点
+     */
+    @Resource
+    private TrustedNetworkManager trustedNetworkManager;
     /**
      * 主控版本，用于与被控端做一致性校验
      */
@@ -77,10 +83,16 @@ public class ControllerCron {
             }
             node.setControllerStatus(0);
             masterService.updateById(node);
+            trustedNetworkManager.observeAgentReport(node.getId(), result);
             syncAgentSecurity(node, config.getToken());
             if (Objects.equals(node.getStatus(), 1)) {
                 masterService.updateNodeCookie(node.getId());
             }
+        }
+        try {
+            trustedNetworkManager.retryPending();
+        } catch (Exception e) {
+            log.warn("可信白名单补偿同步失败: {}", e.getMessage());
         }
     }
 

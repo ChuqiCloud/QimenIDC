@@ -91,6 +91,7 @@ The agent only listens on loopback (`127.0.0.1:17600`); nginx terminates TLS on 
 - **Replay protection**: every request carries `X-QimenIDC-Timestamp` and `X-QimenIDC-Nonce` headers which are covered by the AEAD tag; expired or replayed requests are rejected.
 - **Writable path allowlist**: agent file endpoints only touch allow-listed directories (by default `/var/lib/vz/snippets`, `/etc/network`, `/home/images`); anything else returns 403.
 - **Retired endpoints**: NAT, migration, update and the file read/write/delete/download routes all return 410, and the matching master-side flows are disabled.
+- **Whitelist self-sync**: on startup the manager pushes every manager egress address in the cluster to each node through `POST /net/trust`; the node unions that with the source it observes itself and reloads nginx, so a changed egress IP no longer requires editing `security.conf` by hand. The route still requires the token and only bypasses the IP whitelist, keeping a way back in after an egress change. `GET /{adminPath}/getAgentWhitelist` shows the sync state.
 
 > See [docs/controlled-node-security.md](docs/controlled-node-security.md) for deployment and certificate import. Upgrade the agent (QAgent) before the master.
 

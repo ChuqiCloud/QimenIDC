@@ -637,4 +637,17 @@ create table system_log
     index idx_system_log_host_id_create_time (host_id, create_time)
 );
 
+create table agent_trust
+(
+    id            bigint auto_increment primary key,
+    cluster_id    varchar(64)   not null comment '集群标识，同一套主控库共用',
+    address       varchar(128)  not null comment '可信管理源地址(CIDR)',
+    source        varchar(16)   not null comment '来源 local主控自报 probe节点实测',
+    node_id       int           null comment '上报该地址的被控节点ID',
+    create_time   bigint        not null comment '创建时间戳(毫秒)',
+    last_seen     bigint        not null comment '最近一次上报时间戳(毫秒)',
+    unique index uk_agent_trust_cluster_addr (cluster_id, address),
+    index idx_agent_trust_seen (last_seen)
+);
+
 

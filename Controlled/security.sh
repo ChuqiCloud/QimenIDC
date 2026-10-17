@@ -7,6 +7,9 @@ SECURITY_DIR="/etc/qimenidc"
 SECURITY_CONFIG="${SECURITY_DIR}/security.conf"
 VNC_TOKEN_FILE="/home/software/vnc"
 VNC_TOKEN_USER="qimenvnc"
+# 主控出口地址探测目标与集群标识，随 security.conf 一起落盘
+MANAGER_ENDPOINT="${QIMENIDC_MANAGER_ENDPOINT:-}"
+CLUSTER_ID="${QIMENIDC_CLUSTER_ID:-}"
 
 security_fail() {
     echo "Security setup failed: $*" >&2
@@ -92,6 +95,24 @@ except ValueError as error:
 PY
 }
 
+security_validate_cluster_id() {
+    [ -z "$1" ] && return 0
+    [[ "$1" =~ ^[a-z0-9][a-z0-9_.-]{2,63}$ ]] ||
+        security_fail "invalid cluster id: $1 (3-64 chars of [a-z0-9_.-])"
+}
+
+security_validate_manager_endpoint() {
+    [ -z "$1" ] && return 0
+    /usr/bin/python3.10 - "$1" <<'PY'
+import sys
+value = sys.argv[1].strip()
+host, _, port = value.rpartition(':')
+if not host or not port.isdigit() or not 0 < int(port) < 65536:
+    print('Invalid manager endpoint: ' + value, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 security_validate_port() {
     [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -gt 0 ] && [ "$1" -le 65535 ] ||
         security_fail "invalid port: $1"
@@ -101,8 +122,16 @@ security_save_config() {
     security_init_directory
     local temporary
     temporary=$(mktemp "${SECURITY_DIR}/security.conf.XXXXXX")
-    printf 'QAGENT_MANAGER_IPS=%q\nQAGENT_CERT_HOSTS=%q\nQAGENT_VNC_PROXY_IPS=%q\nQAGENT_BACKEND_PORT=%q\n' \
-        "${QAGENT_MANAGER_IPS}" "${QAGENT_CERT_HOSTS}" "${QAGENT_VNC_PROXY_IPS}" "${QAGENT_BACKEND_PORT}" > "${temporary}"
+    # 白名单同步会就地改写 QAGENT_MANAGER_IPS / QAGENT_MANAGER_PROBES，
+    # 这里先读回当前值，避免 --configure 把同步结果覆盖回安装时的初始值。
+    # 显式传入的新白名单优先，只有沿用旧值时保留同步结果。
+    local current_manager="${QAGENT_MANAGER_IPS}" current_probes=""
+    if [ -f "${SECURITY_CONFIG}" ]; then
+        current_probes=$(sed -n 's/^QAGENT_MANAGER_PROBES=//p' "${SECURITY_CONFIG}" | tail -n 1)
+    fi
+    printf 'QAGENT_MANAGER_IPS=%q\nQAGENT_CERT_HOSTS=%q\nQAGENT_VNC_PROXY_IPS=%q\nQAGENT_BACKEND_PORT=%q\nQAGENT_MANAGER_PROBES=%q\nQIMENIDC_MANAGER_ENDPOINT=%q\nQIMENIDC_CLUSTER_ID=%q\n' \
+        "${current_manager}" "${QAGENT_CERT_HOSTS}" "${QAGENT_VNC_PROXY_IPS}" "${QAGENT_BACKEND_PORT}" \
+        "${current_probes}" "${MANAGER_ENDPOINT}" "${CLUSTER_ID}" > "${temporary}"
     chown root:root "${temporary}"
     chmod 600 "${temporary}"
     mv -f "${temporary}" "${SECURITY_CONFIG}"
@@ -282,6 +311,8 @@ WorkingDirectory=${QAGENT_HOME}
 Environment=QAGENT_BACKEND_PORT=${QAGENT_BACKEND_PORT}
 Environment=QIMEN_VNC_TOKEN_USER=${VNC_TOKEN_USER}
 Environment="QIMEN_VNC_PROXY_CIDRS=${QAGENT_VNC_PROXY_IPS}"
+Environment="QIMENIDC_MANAGER_ENDPOINT=${MANAGER_ENDPOINT}"
+Environment="QIMENIDC_CLUSTER_ID=${CLUSTER_ID}"
 ExecStart=/usr/bin/python3.10 ${QAGENT_HOME}/main.py
 Restart=on-failure
 UMask=0077
@@ -292,13 +323,20 @@ EOF
     chmod 644 /etc/systemd/system/qagent.service
 }
 
+security_allowed_networks() {
+    # 主控出口IP漂移时由 /net/trust 追加的探测结果，与安装白名单一起生效
+    local probes
+    probes=$(sed -n 's/^QAGENT_MANAGER_PROBES=//p' "${SECURITY_CONFIG}" 2>/dev/null | tail -n 1)
+    printf '%s %s\n' "${QAGENT_MANAGER_IPS}" "${probes}" | tr ' ' '\n' | sed '/^$/d' | awk '!seen[$0]++'
+}
+
 security_write_nginx_config() {
     local network
     cat > /etc/nginx/conf.d/qimenidc-qagent.conf <<EOF
 geo \$realip_remote_addr \$qimenidc_qagent_allowed {
     default 0;
 EOF
-    for network in ${QAGENT_MANAGER_IPS}; do
+    for network in $(security_allowed_networks); do
         printf '    %s 1;\n' "${network}" >> /etc/nginx/conf.d/qimenidc-qagent.conf
     done
     cat >> /etc/nginx/conf.d/qimenidc-qagent.conf <<EOF
