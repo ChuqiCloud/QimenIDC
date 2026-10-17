@@ -163,7 +163,12 @@ public class ConfigServiceImpl extends ServiceImpl<ConfigDao, Config> implements
         try {
             Config config = this.getById(1);
             if (config == null) {
-                return false;
+                // config 表没有 id=1 时直接写回会永久失败，导致每次启动都重复跑一遍升级 SQL。
+                config = new Config();
+                config.setId(1);
+                config.setBuild(StringUtils.trimToNull(build));
+                config.setInstalled(1);
+                return this.save(config);
             }
             String targetBuild = StringUtils.trimToNull(build);
             String currentBuild = StringUtils.trimToNull(config.getBuild());
