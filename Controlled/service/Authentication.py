@@ -1,13 +1,18 @@
 import argparse
 import os
 import re
-import secrets
 import stat
+import sys
 import tempfile
 from pathlib import Path
 
 
 TOKEN_FILE = Path('/home/software/QAgent/token.key')
+
+
+def validate_token(token):
+    if not re.fullmatch(r'[!-~]{1,512}', token or ''):
+        raise ValueError('Provide the non-empty single-line token from the manager')
 
 
 def get_token():
@@ -20,16 +25,14 @@ def get_token():
         if os.name == 'posix' and (stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != 0):
             raise ValueError('Token file must be root owned with mode 0600')
         token = token_file.read(514).strip()
-    if not re.fullmatch(r'[0-9a-f]{64}', token):
-        raise ValueError('Token must be provisioned as 64 lowercase hex characters')
+    validate_token(token)
     return token
 
 
 def write_token(token, replace=True):
     if os.name == 'posix' and os.geteuid() != 0:
         raise PermissionError('Token provisioning requires root')
-    if not re.fullmatch(r'[0-9a-f]{64}', token):
-        raise ValueError('Token must be 64 lowercase hex characters')
+    validate_token(token)
     if TOKEN_FILE.is_symlink():
         raise ValueError('Refusing a symbolic link token file')
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -54,16 +57,12 @@ def write_token(token, replace=True):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Provision or rotate the local QAgent token')
-    parser.add_argument('action', choices=('initialize', 'rotate', 'set'))
+    parser = argparse.ArgumentParser(description='Save or validate the manager-supplied QAgent token')
+    parser.add_argument('action', choices=('initialize', 'set'))
     args = parser.parse_args()
     if args.action == 'set':
-        import sys
         write_token(sys.stdin.readline().strip())
+        print(f'Manager token saved to {TOKEN_FILE}.')
     else:
-        token = secrets.token_hex(32)
-        created = write_token(token, replace=args.action == 'rotate')
-        if created:
-            print(f'QAgent token saved to {TOKEN_FILE}; register the shared platform credential securely.')
-        else:
-            print(f'QAgent token already provisioned at {TOKEN_FILE}.')
+        get_token()
+        print(f'Manager token preserved at {TOKEN_FILE}.')

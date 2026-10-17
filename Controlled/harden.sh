@@ -5,8 +5,7 @@ umask 077
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "${SCRIPT_DIR}/security.sh"
 
-# 默认执行泄露整改；常规安装和更新使用 --configure，不反复轮换凭据。
-mode=remediate
+# 配置只保留主控下发的 token；需要更换时通过 --token-stdin 输入。
 clear_vnc=0
 token_stdin=0
 manager_ips="${QAGENT_MANAGER_IPS:-}"
@@ -17,9 +16,9 @@ manager_endpoint="${QIMENIDC_MANAGER_ENDPOINT:-}"
 cluster_id="${QIMENIDC_CLUSTER_ID:-}"
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --configure) mode=configure; shift ;;
+        --configure) shift ;;
         --clear-vnc) clear_vnc=1; shift ;;
-        --token-stdin) mode=configure; token_stdin=1; shift ;;
+        --token-stdin) token_stdin=1; shift ;;
         --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; shift 2 ;;
         --cert-hosts) cert_hosts="${2:?provide node IP/DNS identities used by the manager}"; shift 2 ;;
         --vnc-proxy-ips) vnc_proxy_ips="${2:?provide noVNC controller source IP/CIDRs}"; shift 2 ;;
@@ -28,7 +27,7 @@ while [ "$#" -gt 0 ]; do
         --cluster-id) cluster_id="${2:?provide cluster id shared by every manager in this cluster}"; shift 2 ;;
         --help)
             echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--manager-endpoint host:port] [--cluster-id id] [--configure|--token-stdin] [--clear-vnc]"
-            echo "Default: rotate QAgent token and revoke ALL noVNC sessions. --configure preserves credentials."
+            echo "Default: preserve the manager token and noVNC sessions. --token-stdin installs the manager-supplied token."
             exit 0 ;;
         *) security_fail "unknown option: $1"; exit 1 ;;
     esac
@@ -76,13 +75,10 @@ security_save_config
 
 if [ "${token_stdin}" = 1 ]; then
     /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" set
-elif [ "${mode}" = remediate ]; then
-    /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" rotate >/dev/null
-    security_clear_vnc_tokens
 else
     /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" initialize
 fi
-if [ "${mode}" = configure ] && [ "${clear_vnc}" = 1 ]; then
+if [ "${clear_vnc}" = 1 ]; then
     security_clear_vnc_tokens
 fi
 # 低权 noVNC 只能读取应用代码，不能修改 root 执行的脚本。
@@ -104,9 +100,7 @@ systemctl is-active --quiet nginx.service qagent.service noVNC.service
 trap - ERR
 echo "QAgent TLS whitelist enabled on port ${QAGENT_TLS_PORT}; backend is 127.0.0.1:${QAGENT_BACKEND_PORT}."
 echo "noVNC runs as ${VNC_TOKEN_USER}; tokens and metadata are mode 600."
-echo "Import ${SECURITY_DIR}/qagent/qimenidc-qagent.crt into the manager Java trust store."
-if [ "${mode}" = remediate ]; then
-    echo "Old QAgent token and all noVNC sessions were revoked. Synchronize the new token securely with the manager."
-elif [ "${token_stdin}" = 1 ]; then
-    echo "The supplied shared QAgent token was installed. Update the manager only after all nodes are synchronized."
+echo "Register ${SECURITY_DIR}/qagent/qimenidc-qagent.crt as this node's certificate in the manager."
+if [ "${token_stdin}" = 1 ]; then
+    echo "The manager-supplied QAgent token was installed."
 fi

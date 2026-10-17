@@ -9,10 +9,16 @@ check_qagent_status() {
     fi
 }
 
-# 重置/home/software/QAgent/token.key文件内容
+# 保存主控下发的 token，不在被控端生成。
 reset_token() {
-    sudo /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py rotate >/dev/null
-    echo "Rotated locally. Read the token securely from /home/software/QAgent/token.key and update the manager/shared nodes."
+    local token
+    IFS= read -r -s -p "请输入主控 token: " token || return 1
+    echo
+    if printf '%s\n' "$token" | sudo /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py set; then
+        echo "主控 token 已保存。"
+    else
+        echo "保存失败，请检查输入；原 token 未改变。"
+    fi
 }
 
 # 输出/home/software/QAgent/token.key文件内容
@@ -31,7 +37,7 @@ while true; do
     echo "4. 检查 QAgent 状态"
     echo "5. 查看 QAgent 运行状态"
     echo "6. 查看 QAgent token"
-    echo "7. 重置 QAgent token"
+    echo "7. 设置主控 token"
     echo "8. 查看 QAgent port"
     echo "9. 重置 QAgent port"
     echo "10. 更新被控端程序"
