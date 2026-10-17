@@ -24,8 +24,8 @@ public class ExceptionController {
     // 捕捉shiro的异常
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     @ExceptionHandler(ShiroException.class)
-    public ResponseResult<String> handle401(ShiroException e) {
-        return ResponseResult.fail(e.getMessage());
+    public ResponseResult<String> handle401(ShiroException ignored) {
+        return ResponseResult.fail(ResponseResult.RespCode.UNAUTHORIZED.getMessage());
     }
 
     // 捕捉UnauthorizedException
@@ -53,7 +53,7 @@ public class ExceptionController {
             log.debug("客户端已断开连接: {}", ex.getMessage());
             return null;
         }
-        return new ResponseResult<>(getStatus(request).value(), ex.getMessage(), null);
+        return new ResponseResult<>(getStatus(request).value(), "请求处理失败，请稍后重试", null);
     }
 
     private boolean isClientAbortException(Throwable ex) {

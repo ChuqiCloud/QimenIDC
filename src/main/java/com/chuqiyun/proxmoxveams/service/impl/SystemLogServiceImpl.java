@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.SystemLogDao;
 import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.service.SystemLogService;
+import com.chuqiyun.proxmoxveams.security.StoredLogRedactor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -35,6 +36,7 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
             return;
         }
         try {
+            redactSystemLog(systemLog);
             normalizeSystemLog(systemLog);
             if (Objects.isNull(systemLog.getCreateTime())) {
                 systemLog.setCreateTime(System.currentTimeMillis());
@@ -49,7 +51,9 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
         if (Objects.isNull(id) || id <= 0) {
             return null;
         }
-        return this.getById(id);
+        SystemLog systemLog = this.getById(id);
+        redactSystemLog(systemLog);
+        return systemLog;
     }
 
     @Override
@@ -92,7 +96,9 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
         }
         appendDateCondition(queryWrapper, date);
         queryWrapper.orderByDesc("create_time");
-        return this.page(systemLogPage, queryWrapper);
+        Page<SystemLog> result = this.page(systemLogPage, queryWrapper);
+        result.getRecords().forEach(this::redactSystemLog);
+        return result;
     }
 
     /**
@@ -194,6 +200,18 @@ public class SystemLogServiceImpl extends ServiceImpl<SystemLogDao, SystemLog> i
             Thread.currentThread().interrupt();
             return false;
         }
+    }
+
+    private void redactSystemLog(SystemLog systemLog) {
+        if (systemLog == null) {
+            return;
+        }
+        systemLog.setQueryString(StoredLogRedactor.redactQueryString(systemLog.getQueryString()));
+        systemLog.setRequestBody(StoredLogRedactor.redact(systemLog.getRequestBody()));
+        systemLog.setResponseBody(StoredLogRedactor.redact(systemLog.getResponseBody()));
+        systemLog.setBusinessMessage(StoredLogRedactor.redact(systemLog.getBusinessMessage()));
+        systemLog.setException(StoredLogRedactor.redact(systemLog.getException()));
+        systemLog.setContent(StoredLogRedactor.redact(systemLog.getContent()));
     }
 
     private void normalizeSystemLog(SystemLog systemLog) {

@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.service.SystemLogService;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
+import com.chuqiyun.proxmoxveams.security.StoredLogRedactor;
 import com.chuqiyun.proxmoxveams.utils.ServletUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.MDC;
@@ -29,12 +30,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -50,10 +49,6 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
     private static final int MAX_AUDIT_VALUE_LENGTH = 128;
     private static final int MAX_AUDIT_FIELDS = 8;
     private static final Pattern JWT_PATTERN = Pattern.compile("\\b[A-Za-z0-9\\-_]+=*\\.[A-Za-z0-9\\-_]+=*\\.[A-Za-z0-9\\-_]+=*\\b");
-    private static final Set<String> SENSITIVE_KEYS = new HashSet<>(Arrays.asList(
-            "password", "passwd", "pwd", "token", "authorization", "cookie",
-            "secret", "appkey", "csrfpreventiontoken", "ticket"
-    ));
     private static final List<String> AUDIT_KEYWORDS = Arrays.asList(
             "id", "uuid", "vmid", "nodeid", "hostid", "poolid", "ip", "hostname",
             "username", "name", "status", "port", "type", "email", "phone"
@@ -228,50 +223,12 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         if (StringUtils.isBlank(text)) {
             return "";
         }
-        String sanitizedText = text;
-        try {
-            Object parsed = JSON.parse(text);
-            Object sanitizedObject = sanitizeJsonValue(parsed, null);
-            sanitizedText = JSON.toJSONString(sanitizedObject);
-        } catch (Exception ignored) {
-            sanitizedText = maskSpecialTokens(text);
-        }
-        sanitizedText = maskSpecialTokens(sanitizedText);
+        String sanitizedText = maskSpecialTokens(StoredLogRedactor.redact(text));
         return StringUtils.abbreviate(sanitizedText, MAX_LOG_BODY_LENGTH);
     }
 
-    private Object sanitizeJsonValue(Object value, String fieldName) {
-        if (Objects.isNull(value)) {
-            return null;
-        }
-        if (isSensitiveKey(fieldName)) {
-            return "***";
-        }
-        if (value instanceof Map<?, ?>) {
-            Map<?, ?> sourceMap = (Map<?, ?>) value;
-            Map<String, Object> resultMap = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : sourceMap.entrySet()) {
-                String key = String.valueOf(entry.getKey());
-                resultMap.put(key, sanitizeJsonValue(entry.getValue(), key));
-            }
-            return resultMap;
-        }
-        if (value instanceof Collection<?>) {
-            Collection<?> sourceCollection = (Collection<?>) value;
-            List<Object> resultList = new ArrayList<>(sourceCollection.size());
-            for (Object item : sourceCollection) {
-                resultList.add(sanitizeJsonValue(item, fieldName));
-            }
-            return resultList;
-        }
-        if (value instanceof String) {
-            return maskSpecialTokens((String) value);
-        }
-        return value;
-    }
-
     private boolean isSensitiveKey(String key) {
-        return StringUtils.isNotBlank(key) && SENSITIVE_KEYS.contains(StringUtils.lowerCase(key));
+        return StoredLogRedactor.isSensitiveKey(key);
     }
 
     private String maskSpecialTokens(String text) {
@@ -648,7 +605,7 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         systemLog.setDurationMs(durationMs);
         systemLog.setException(buildExceptionMessage(throwable));
         systemLog.setContent(content);
-        systemLog.setQueryString(request.getQueryString());
+        systemLog.setQueryString(StoredLogRedactor.redactQueryString(request.getQueryString()));
         systemLog.setRequestBody(requestBody);
         systemLog.setResponseBody(responseBody);
         systemLog.setCreateTime(System.currentTimeMillis());

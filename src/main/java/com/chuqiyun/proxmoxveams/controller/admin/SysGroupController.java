@@ -166,11 +166,6 @@ public class SysGroupController {
         QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("area",area);
         Page<Master> masterPage = masterService.getMasterList(page,size,queryWrapper);
-        for (Master master : masterPage.getRecords()) {
-            master.setPassword("**********");
-            master.setCsrfToken("**********");
-            master.setTicket("**********");
-        }
         return ResponseResult.ok(masterPage);
     }
 

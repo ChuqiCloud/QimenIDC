@@ -57,12 +57,6 @@ public class SysNodeMasterController {
     public ResponseResult<Object> selectNodeByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                    @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
         Page<Master> masterPage = masterService.getMasterList(page,size);
-        // 将每个master的csrfToken与ticket加***处理
-        /*for (Master master : masterPage.getRecords()) {
-            master.setPassword("**********");
-            master.setCsrfToken("**********");
-            master.setTicket("**********");
-        }*/
         return ResponseResult.ok(masterPage);
     }
 

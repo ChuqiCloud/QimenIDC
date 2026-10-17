@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.SqlService;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
+import com.chuqiyun.proxmoxveams.security.StoredCredentialMigration;
 import com.chuqiyun.proxmoxveams.utils.FileUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,8 @@ public class StartUp {
     private SysuserService sysuserService;
     @Resource
     private SqlService sqlService;
+    @Resource
+    private StoredCredentialMigration storedCredentialMigration;
     /**
      * 内部版号
      */
@@ -90,6 +93,8 @@ public class StartUp {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "数据库更新失败");
             System.exit(0); // 退出程序
         }else{
+            // 先迁移历史凭据，再记录新版本，失败会中止启动和节点预热。
+            storedCredentialMigration.migrate();
             String dbBuildVersion = configService.getBuild();
             if (!Objects.equals(dbBuildVersion, nowBuildVersion) && !configService.setBuild(nowBuildVersion)){
                 UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "内部版号设置失败");

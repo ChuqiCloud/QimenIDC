@@ -7,8 +7,10 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.chuqiyun.proxmoxveams.dto.IpDto;
+import com.chuqiyun.proxmoxveams.security.EncryptedPasswordTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.io.Serializable;
 import java.util.List;
@@ -119,6 +121,8 @@ public class Vmhost extends Model<Vmhost> {
     
     private Integer agent;
     private String username;
+    @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
+    @ToString.Exclude
     private String password;
     
     private String ide0;

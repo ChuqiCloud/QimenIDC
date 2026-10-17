@@ -1,11 +1,16 @@
 package com.chuqiyun.proxmoxveams.entity;
 
+import com.alibaba.fastjson2.annotation.JSONField;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import com.chuqiyun.proxmoxveams.security.EncryptedPasswordTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.io.Serializable;
 
@@ -17,7 +22,8 @@ import java.io.Serializable;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "master")
+@ToString
+@TableName(value = "master", autoResultMap = true)
 public class Master extends Model<Master> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
@@ -30,12 +36,28 @@ public class Master extends Model<Master> {
     
     private String username;
     
+    /**
+     * 节点 PVE 凭据只允许服务内部读取，任何 API 序列化都不得返回。
+     * WRITE_ONLY 保留管理接口提交新密码的能力；Fastjson2 注解覆盖手工 JSON 序列化路径。
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @JSONField(serialize = false)
+    @ToString.Exclude
+    @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
     private String password;
     
     private String realm;
     //0正常1异常2停止
     private Integer status;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @JSONField(serialize = false)
+    @ToString.Exclude
+    @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
     private String csrfToken;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @JSONField(serialize = false)
+    @ToString.Exclude
+    @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
     private String ticket;
     private String nodeName;
     private String autoStorage;

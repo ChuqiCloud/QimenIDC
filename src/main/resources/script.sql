@@ -135,10 +135,10 @@ create table master
     host              varchar(255)               not null,
     port              int          default 8006  not null,
     username          varchar(255)               not null,
-    password          varchar(255)               not null,
+    password          text                       not null,
     realm             varchar(50)  default 'pam' not null,
     status            int          default 0     not null comment '0正常1停止',
-    csrf_token        varchar(255)               null,
+    csrf_token        text                       null,
     ticket            text                       null,
     node_name         varchar(255) default 'pve' not null,
     auto_storage      varchar(255)               null,
@@ -337,7 +337,7 @@ create table vmhost
     swap                  int                                        null,
     agent                 int          default 1                     not null,
     username              varchar(255)                               null,
-    password              varchar(255)                               null,
+    password              text                                       null,
     ide0                  varchar(255)                               null,
     ide2                  varchar(255) default 'local-lvm:cloudinit' null comment 'cloud-init',
     net0                  varchar(255) default 'virtio,bridge=vmbr0' null,
@@ -564,7 +564,7 @@ create table vncinfo
     host     varchar(255) null comment '控制器连接地址',
     port     int          null comment 'vnc端口',
     username varchar(255) null,
-    password varchar(255) null comment 'vnc密码'
+    password text         null comment '加密的虚拟机凭据'
 );
 
 create table vncnode

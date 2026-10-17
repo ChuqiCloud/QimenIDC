@@ -512,3 +512,11 @@ build: # 内部构建版本信息
     1:
       - "alter table configuretemplate
                    add vga varchar(20) null comment '显示设备类型(std/qxl/virtio等)，决定VNC控制台默认分辨率' after storage;"
+    3:
+      - "alter table master
+                   modify password text not null,
+                   modify csrf_token text null;"
+      - "alter table vmhost
+                   modify password text null;"
+      - "alter table vncinfo
+                   modify password text null comment '加密的虚拟机凭据';"

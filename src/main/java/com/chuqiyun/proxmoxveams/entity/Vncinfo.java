@@ -1,11 +1,14 @@
 package com.chuqiyun.proxmoxveams.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
+import com.chuqiyun.proxmoxveams.security.EncryptedPasswordTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.io.Serializable;
 
@@ -17,7 +20,7 @@ import java.io.Serializable;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "vncinfo")
+@TableName(value = "vncinfo", autoResultMap = true)
 public class Vncinfo extends Model<Vncinfo> {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
@@ -31,6 +34,8 @@ public class Vncinfo extends Model<Vncinfo> {
     private Integer port;
     private String username;
     //vnc密码
+    @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
+    @ToString.Exclude
     private String password;
 
 
