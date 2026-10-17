@@ -36,11 +36,18 @@ class AuthenticationTest(unittest.TestCase):
 
         self.assertEqual("b" * 64, Authentication.get_token())
 
-    def test_rejects_weak_or_malformed_tokens(self):
-        with self.assertRaises(ValueError):
-            Authentication.write_token("token")
-        Authentication.write_token("a" * 64)
-        self.token_path.write_text("token\n", encoding="ascii")
+    def test_preserves_manager_supplied_non_hex_token(self):
+        token = "Manager-Token_2026!"
+        Authentication.write_token(token)
+        self.assertEqual(token, Authentication.get_token())
+
+    def test_rejects_empty_multiline_and_oversized_tokens(self):
+        for token in ("", "two words", "line\nbreak", "a" * 513):
+            with self.subTest(token_length=len(token)):
+                with self.assertRaises(ValueError):
+                    Authentication.write_token(token)
+        Authentication.write_token("valid-manager-token")
+        self.token_path.write_text("line\nbreak\n", encoding="ascii")
         with self.assertRaises(ValueError):
             Authentication.get_token()
 

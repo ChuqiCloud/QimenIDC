@@ -107,6 +107,8 @@ public class SqlServiceImpl implements SqlService {
         if (dbBuildVersion == null) {
             UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
                     "数据库未记录构建号，将按当前版本执行结构校验与修复: 当前版本={}", nowBuildVersion);
+            // 无法确定旧库已执行哪些迁移，不能重放全部历史 SQL；仅检查启动必需的列。
+            return ensureRequiredColumns();
         } else if (dbBuildVersion.equals(nowBuildVersion)) {
             UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
                     "数据库构建号与当前版本一致({})，执行结构校验", dbBuildVersion);
@@ -170,7 +172,7 @@ public class SqlServiceImpl implements SqlService {
         if (StringUtils.isAnyBlank(tableName, primaryKeyName) || primaryKey == null) {
             return false;
         }
-        String sql = "select 1 from " + tableName + " where " + primaryKeyName + " = #{primaryKey} limit 1";
+        String sql = "select 1 from " + tableName + " where " + primaryKeyName + " = {0} limit 1";
         try {
             List<Map<String, Object>> rows = SqlRunner.db().selectList(sql, primaryKey);
             return rows != null && !rows.isEmpty();
@@ -212,7 +214,7 @@ public class SqlServiceImpl implements SqlService {
         try {
             List<Map<String, Object>> rows = SqlRunner.db().selectList(
                     "select 1 from information_schema.columns "
-                            + "where table_schema = database() and table_name = #{tableName} and column_name = #{columnName}",
+                            + "where table_schema = database() and table_name = {0} and column_name = {1}",
                     tableName, columnName);
             return rows != null && !rows.isEmpty();
         } catch (Exception e) {
@@ -225,7 +227,7 @@ public class SqlServiceImpl implements SqlService {
         try {
             List<Map<String, Object>> rows = SqlRunner.db().selectList(
                     "select 1 from information_schema.tables "
-                            + "where table_schema = database() and table_name = #{tableName}",
+                            + "where table_schema = database() and table_name = {0}",
                     tableName);
             return rows != null && !rows.isEmpty();
         } catch (Exception e) {

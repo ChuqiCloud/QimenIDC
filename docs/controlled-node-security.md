@@ -56,7 +56,7 @@ Run the stream once per node and then update the manager's shared token using it
 
 `master.node_public_key` 由 `sql-update.yml` 的 `1.3.4_6` 补列。早期构建把版本号写进 `config.build` 之后才失败，于是留下「build 号已经是 `1.3.4_6`、列还没建」的库，下次启动直接跳过升级 SQL，卡在 `StartUp` 预热节点的查询上，`ApplicationContext` 起不来。
 
-现在启动流程不再因为「版本号相同」或「版本号为空」提前返回，而是照常走一遍升级 SQL，并按列做一次幂等修复：`information_schema` 里查不到该列就补 `alter table ... add`，列已存在则什么都不做。修复只覆盖「缺了就起不来」的列，不承担完整迁移。
+现在启动流程在版本号相同或为空时也会按列做一次幂等修复：`information_schema` 里查不到该列就补 `alter table ... add`，列已存在则什么都不做。版本号为空时无法判断历史迁移进度，因此只检查必要列，不重放全部历史 SQL；已知旧版本仍按顺序执行后续升级 SQL。修复只覆盖「缺了就起不来」的列，不承担完整迁移。
 
 手工兜底（确认库名后执行）：
 
