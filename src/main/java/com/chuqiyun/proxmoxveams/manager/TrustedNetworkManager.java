@@ -189,7 +189,7 @@ public class TrustedNetworkManager {
             localAddresses = detectLocalAddresses();
             memberAddresses.put(getMemberKey(), splitAddresses(localAddresses));
         }
-        List<String> local = splitAddresses(localAddresses);
+        Set<String> local = splitAddresses(localAddresses);
         List<String> missing = new ArrayList<>();
         for (String address : reported) {
             if (local.contains(address) || clientReportedAddresses.contains(address)) {
@@ -367,13 +367,13 @@ public class TrustedNetworkManager {
         }
     }
 
-    private List<String> splitAddresses(String addresses) {
-        List<String> result = new ArrayList<>();
+    private Set<String> splitAddresses(String addresses) {
+        Set<String> result = new LinkedHashSet<>();
         if (addresses == null || addresses.trim().isEmpty()) {
             return result;
         }
         for (String address : addresses.trim().split("[,\\s]+")) {
-            if (!address.isEmpty() && !result.contains(address)) {
+            if (!address.isEmpty()) {
                 result.add(address);
             }
         }
