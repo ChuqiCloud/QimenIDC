@@ -52,6 +52,20 @@ Run the stream once per node and then update the manager's shared token using it
 
 > 升级顺序：被控端 1.0.4 要先于主控 1.3.4_6。旧被控端没有 `/net/trust`，主控同步会失败但只是 WARN，不影响其余功能。1.0.3 也可用，多源地址会逐个写入 `geo` 块。
 
+### 起不来：`Unknown column 'node_public_key'`
+
+`master.node_public_key` 由 `sql-update.yml` 的 `1.3.4_6` 补列。早期构建把版本号写进 `config.build` 之后才失败，于是留下「build 号已经是 `1.3.4_6`、列还没建」的库，下次启动直接跳过升级 SQL，卡在 `StartUp` 预热节点的查询上，`ApplicationContext` 起不来。
+
+现在启动流程不再因为「版本号相同」或「版本号为空」提前返回，而是照常走一遍升级 SQL，并按列做一次幂等修复：`information_schema` 里查不到该列就补 `alter table ... add`，列已存在则什么都不做。修复只覆盖「缺了就起不来」的列，不承担完整迁移。
+
+手工兜底（确认库名后执行）：
+
+```sql
+alter table master add node_public_key text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期';
+```
+
+顺带修掉的两个同源问题：`config` 表没有 `id=1` 时 `setBuild` 会永久失败（每次启动都重跑一遍升级 SQL），现在会补建这一行；文件锁丢失但 `config` 已有数据时不再重复 `insert` 导致主键冲突。
+
 The VNC proxy accepts TCP connections only from the noVNC controller hosts. Supply every controller node's actual source IP/CIDR with the vnc-proxy-ips option; default routes are refused. For install, the installer asks for manager source IP/CIDRs, the node hostnames/IPs used by manager API calls, and noVNC controller IPs/CIDRs. For later changes, rerun:
 
 ```bash

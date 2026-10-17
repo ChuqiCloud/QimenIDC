@@ -84,9 +84,14 @@ public class StartUp {
             FileUtil.createInstallLock();
         }*/
 
-        // 判断是否第一次启动
+        // 判断是否第一次启动。文件锁可能丢（换机、重装、容器卷重建），
+        // 直接 initConfig 会往 config 表重复插 id=1 而报主键冲突，所以先看数据行在不在。
         if (!isInstalled){
-            configService.initConfig(); // 初始化配置
+            if (sqlService.hasRow("config", "id", 1)){
+                UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "文件锁丢失但配置表已存在，跳过初始化");
+            } else {
+                configService.initConfig(); // 初始化配置
+            }
             FileUtil.createInstallLock(); // 创建文件锁
         }
 
