@@ -564,3 +564,7 @@ build: # 内部构建版本信息
               unique index uk_agent_trust_cluster_addr (cluster_id, address),
               index idx_agent_trust_seen (last_seen)
           ) comment '被控端可信管理源白名单';"
+  1.3.4_6:
+    1:
+      - "alter table master
+                   add node_public_key text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期';"

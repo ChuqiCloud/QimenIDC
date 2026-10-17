@@ -37,9 +37,20 @@ Run the stream once per node and then update the manager's shared token using it
 
 **主控**：`StartUp` 预热结束后做一轮 `TrustedNetworkManager.initialSync()`，把集群内各主控的出口地址分发给全部节点；心跳（`ControllerCron`）顺带登记被控端回传的实测地址，并对还没成功的节点按 5 分钟退避重试。被控端实测地址和主控自报不一致时打 WARN（通常是 SNAT 或反代），但两侧都放行，不会互相挡。
 
-运维自查：管理端 `GET /{adminPath}/getAgentWhitelist` 看待同步的节点和当前生效地址；节点上 `qa` 菜单选 `11` 看 `security.conf` 与 nginx 的 `geo` 块。
+**主控出口地址怎么来的**：优先并发请求四个公共探测源，把每个源报告的地址合并去重后全部下发——主控可能是多出口（多网卡、容器 NAT、多机房），只取一个会漏。
 
-> 升级顺序：被控端 1.0.3 要先于主控 1.3.4_5。旧被控端没有 `/net/trust`，主控同步会失败但只是 WARN，不影响其余功能。
+| 源 | 地址 | 响应格式 |
+|---|---|---|
+| Cloudflare | `https://www.cloudflare.com/cdn-cgi/trace` | 键值行，取 `ip=` |
+| ipify | `https://api.ipify.org/` | 纯文本，可能被风控返回 JSON/HTML |
+| ip.sb | `https://api.ip.sb/ip` | 纯文本，带换行 |
+| ipip.net | `https://myip.ipip.net/` | 中文句子「当前 IP：1.2.3.4 来自于：…」 |
+
+单源超时 3 秒、整体 5 秒，某个源被墙或超时只记 WARN，不阻塞同步。四个全挂才退化为本机网卡地址（容器里拿到的是 SNAT 前的私网地址，仅供参考）。被控端会用 `/32` 主机路由逐条放行，已被某个 CIDR 覆盖的地址不重复写进 `geo` 块。
+
+运维自查：管理端 `GET /{adminPath}/getAgentWhitelist` 看待同步的节点、当前生效地址、每个探测源的原始结果（`probedSources`）和失败原因（`probeErrors`）；节点上 `qa` 菜单选 `11` 看 `security.conf` 与 nginx 的 `geo` 块。
+
+> 升级顺序：被控端 1.0.4 要先于主控 1.3.4_6。旧被控端没有 `/net/trust`，主控同步会失败但只是 WARN，不影响其余功能。1.0.3 也可用，多源地址会逐个写入 `geo` 块。
 
 The VNC proxy accepts TCP connections only from the noVNC controller hosts. Supply every controller node's actual source IP/CIDR with the vnc-proxy-ips option; default routes are refused. For install, the installer asks for manager source IP/CIDRs, the node hostnames/IPs used by manager API calls, and noVNC controller IPs/CIDRs. For later changes, rerun:
 

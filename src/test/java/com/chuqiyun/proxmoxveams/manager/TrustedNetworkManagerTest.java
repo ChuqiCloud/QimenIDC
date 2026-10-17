@@ -33,6 +33,12 @@ class TrustedNetworkManagerTest {
         return (List<String>) method.invoke(manager, addresses);
     }
 
+    @SuppressWarnings("unchecked")
+    private void seedMemberAddresses(TrustedNetworkManager manager, String... addresses) throws Exception {
+        ((java.util.Map<String, java.util.Set<String>>) field(manager, "memberAddresses"))
+                .put("manager-1", new java.util.LinkedHashSet<>(List.of(addresses)));
+    }
+
     private JSONObject agentReport(String... probes) {
         JSONObject body = new JSONObject();
         body.put("code", 200);
@@ -85,6 +91,7 @@ class TrustedNetworkManagerTest {
     void agentReportedAddressesJoinTheWhitelist() throws Exception {
         TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "localAddresses", "10.0.0.5/32");
+        seedMemberAddresses(manager, "10.0.0.5/32");
 
         manager.observeAgentReport(7, agentReport("10.0.0.5/32", "198.51.100.7/32"));
 
@@ -97,13 +104,52 @@ class TrustedNetworkManagerTest {
     @Test
     void failedSyncDoesNotMarkNodeAsSynced() throws Exception {
         TrustedNetworkManager manager = new TrustedNetworkManager();
+        setField(manager, "localAddresses", "10.0.0.5/32");
+        seedMemberAddresses(manager, "10.0.0.5/32");
         JSONObject body = agentReport("198.51.100.7/32");
         body.put("code", 403);
 
         manager.observeAgentReport(9, body);
 
         assertTrue(((java.util.Map<?, ?>) field(manager, "syncedAt")).isEmpty());
-        assertTrue(manager.collectNetworks().isEmpty());
+        // 失败回传里的地址不进白名单，只剩主控自报的那条
+        assertEquals(List.of("10.0.0.5/32"), manager.collectNetworks());
+    }
+
+    @Test
+    void multiSourceAddressesAreAllCollected() throws Exception {
+        TrustedNetworkManager manager = new TrustedNetworkManager();
+        setField(manager, "localAddresses", "111.230.93.5/32 159.75.12.57/32");
+        seedMemberAddresses(manager, "111.230.93.5/32", "159.75.12.57/32");
+
+        // 两个探测源报了两个出口，不能只留一个
+        assertEquals(List.of("111.230.93.5/32", "159.75.12.57/32"), manager.collectNetworks());
+    }
+
+    @Test
+    void fallbackInterfaceAddressesAreAllCidr() {
+        TrustedNetworkManager manager = new TrustedNetworkManager();
+
+        // 探测不到公网时退化为网卡地址，下发的每一条都必须带掩码
+        for (String address : manager.detectInterfaceAddresses()) {
+            assertTrue(address.endsWith("/32"), "address must be a host CIDR: " + address);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void describeExposesProbeOutcome() throws Exception {
+        TrustedNetworkManager manager = new TrustedNetworkManager();
+        setField(manager, "localAddresses", "198.51.100.7/32");
+        seedMemberAddresses(manager, "198.51.100.7/32");
+        ((java.util.Map<String, String>) field(manager, "probedAddresses")).put("ip.sb", "198.51.100.7");
+        ((java.util.Map<String, String>) field(manager, "probeErrors")).put("ipify", "Connection refused");
+
+        java.util.Map<?, ?> description = manager.describe();
+        // 多源探测的原始结果要能看到，排查「为什么白名单里有这个地址」时全靠它
+        assertEquals("{ip.sb=198.51.100.7}", description.get("probedSources").toString());
+        assertEquals("{ipify=Connection refused}", description.get("probeErrors").toString());
+        assertTrue(description.get("networks").toString().contains("198.51.100.7/32"));
     }
 
     @Test
@@ -111,6 +157,7 @@ class TrustedNetworkManagerTest {
         TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "datasourceUrl", "jdbc:mysql://db:3306/pve");
         setField(manager, "localAddresses", "10.0.0.5/32");
+        seedMemberAddresses(manager, "10.0.0.5/32");
 
         String description = manager.describe().toString();
         assertTrue(description.contains("clusterId=" + manager.getClusterId()));

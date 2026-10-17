@@ -1939,6 +1939,7 @@ POST /admin/insertNodeMaster
 |» nodeName|body|string¦null| 否 |指定节点名，默认pve|
 |» status|body|string¦null| 否 |0正常1停止|
 |» controllerPort|body|integer¦null| 否 |被控端口，默认7600|
+|» nodePublicKey|body|string¦null| 否 |节点公钥（PEM 证书），可选|
 
 > 返回示例
 
@@ -2137,6 +2138,10 @@ PUT /{adminPath}/updateNodeInfo
 |» realm|body|string| 是 |none|
 |» status|body|integer| 是 |none|
 |» nodeName|body|string| 是 |none|
+|» nodePublicKey|body|string¦null| 否 |节点公钥（PEM 证书）。不传表示不改，传空串表示清空|
+
+`nodePublicKey` 写入前会校验并归一化：只保留第一张证书、去掉多余文字，非 PEM 或解析失败直接拒绝并返回原因。
+想先确认有效期，用 `POST /{adminPath}/previewNodeCertificate` 预览。
 
 > 返回示例
 
@@ -7484,8 +7489,16 @@ GET /{adminPath}/getAgentWhitelist
   "message": "请求成功",
   "data": {
     "clusterId": "db-1a2b3c4d5e6f",
-    "localAddresses": "10.0.0.5/32",
-    "networks": ["10.0.0.5/32", "198.51.100.7/32"],
+    "localAddresses": "111.230.93.5/32 159.75.12.57/32",
+    "probedSources": {
+      "cloudflare": "111.230.93.5",
+      "ip.sb": "111.230.93.5",
+      "ipip": "159.75.12.57"
+    },
+    "probeErrors": {
+      "ipify": "Connection refused"
+    },
+    "networks": ["111.230.93.5/32", "159.75.12.57/32", "198.51.100.7/32"],
     "lastFullSyncAt": 1760700000000,
     "syncedNodes": [1, 2, 3],
     "pendingNodes": [4]
@@ -7496,9 +7509,94 @@ GET /{adminPath}/getAgentWhitelist
 字段说明：
 
 - `clusterId`：JDBC 连接串摘要，同一套主控库算出来一致
-- `localAddresses`：本主控探测到的出口地址
+- `localAddresses`：本主控探测到的出口地址（多源合并，探测全失败时退化为网卡地址）
+- `probedSources`：每个公共探测源各自报告的本机出口地址
+- `probeErrors`：探测失败的源和原因，被墙/超时都会出现在这里
 - `networks`：当前会被下发到节点的全部来源（主控自报 ∪ 节点实测）
 - `pendingNodes`：同步失败、等待心跳重试的节点（退避 5 分钟）
+
+主控出口探测走四个公共源，并发请求后合并去重：
+
+|源|地址|解析方式|
+|---|---|---|
+|cloudflare|`https://www.cloudflare.com/cdn-cgi/trace`|键值行取 `ip=`|
+|ipify|`https://api.ipify.org/`|纯文本（兼容 JSON/HTML 返回）|
+|ip.sb|`https://api.ip.sb/ip`|纯文本|
+|ipip|`https://myip.ipip.net/`|中文句子中提取第一个 IPv4|
+
+单源超时 3 秒、整体 5 秒，无源可用时不阻塞同步，改为退化为本机网卡地址。
+
+# 后台/节点/节点公钥证书
+
+## POST 预览节点公钥证书有效期
+
+POST /{adminPath}/previewNodeCertificate
+
+节点用的是自签证书，没有 CA 可查，过期时间只能靠公钥自己算。
+保存节点公钥前先调这里预览一次，避免把过期证书或粘错的串写进库。
+接口不落库，可反复调用。
+
+> Body 请求参数
+
+```json
+{
+  "id": 1,
+  "nodePublicKey": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+}
+```
+
+### 请求参数
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|adminPath|path|string| 是 |后台路径|
+|Authorization|header|string| 否 |管理员凭证|
+|id|body|integer| 否 |节点ID，传入时额外返回库里已存公钥的证书信息做对比|
+|nodePublicKey|body|string| 是 |PEM 证书，可用带缩进/带说明文字的多行文本|
+
+> 返回示例
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "valid": true,
+    "notBefore": 1760700000000,
+    "notBeforeText": "2026-10-17 23:20:00",
+    "notAfter": 1792236000000,
+    "notAfterText": "2027-10-17 23:20:00",
+    "remainingDays": 365,
+    "expiring": false,
+    "fingerprint": "3A:1F:...:9C",
+    "serialNumber": "40757F56E45BC413AC9A47BA22FB502B53119A0A",
+    "subject": "CN=QimenIDC node",
+    "issuer": "CN=QimenIDC node",
+    "san": ["127.0.0.1", "node.example.com"],
+    "signatureAlgorithm": "SHA256withRSA",
+    "selfSigned": true,
+    "normalized": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+    "nodeId": 1,
+    "stored": {
+      "valid": true,
+      "notAfterText": "2027-10-17 23:20:00",
+      "fingerprint": "3A:1F:...:9C"
+    },
+    "changed": false
+  }
+}
+```
+
+字段说明：
+
+- `remainingDays`：剩余天数，负数表示已过期
+- `expiring`：剩余不足 30 天，前端应提示更换
+- `fingerprint`：SHA-256 指纹，用来判断节点证书有没有被换过
+- `san`：证书里的 SAN 列表，核对是否包含节点地址
+- `normalized`：归一化后的 PEM，可直接回填给 `updateNodeInfo`
+- `stored` / `changed`：仅在传入 `id` 时返回，`changed=false` 表示和库里存的是同一张证书
+
+非 PEM 内容返回 `code=50000`，提示必须是 PEM 格式证书。
 
 # 后台/限制功能/CPU模型管理
 

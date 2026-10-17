@@ -46,6 +46,16 @@ class SqlUpdateLoaderTest {
     }
 
     @Test
+    void loadsNodePublicKeyColumnForCertificatePreview() throws IOException {
+        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_6", 1);
+
+        assertEquals(1, sqlList.size());
+        assertTrue(sqlList.get(0).contains("alter table master"));
+        assertTrue(sqlList.get(0).contains("add node_public_key"));
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.4_6", "1.3.4_5") > 0);
+    }
+
+    @Test
     void loadsNatMigrationForBuild131Iteration3() throws IOException {
         List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.1", 3);
 

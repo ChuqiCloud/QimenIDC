@@ -60,6 +60,25 @@ def normalize_networks(values, allow_empty=False):
     return networks
 
 
+"""
+主控出口可能是多源：多机房、多网卡，或 SNAT 后一对多。
+探测与自报结果按 /32 主机路由逐个放行；已被某个 CIDR 覆盖的主机地址不再重复写入 geo 块。
+"""
+def merge_networks(values):
+    hosts, networks = [], []
+    for item in normalize_networks(values, allow_empty=True):
+        network = ipaddress.ip_network(item)
+        if network.num_addresses == 1:
+            address = str(network.network_address)
+            if address not in hosts:
+                hosts.append(address)
+        elif str(network) not in networks:
+            networks.append(str(network))
+    hosts = [host for host in hosts
+             if not any(ipaddress.ip_address(host) in ipaddress.ip_network(item) for item in networks)]
+    return normalize_networks(hosts + networks, allow_empty=True)
+
+
 def parse_address(value):
     return ipaddress.ip_address(str(value).split('%')[0].strip())
 
@@ -215,7 +234,7 @@ class TrustStore:
             raise ValueError('manager source cannot be identified')
         cluster = normalize_cluster_id(cluster_id) or get_cluster_id() or 'default'
         current = read_networks(self.config_path)
-        merged = normalize_networks(declared + probe_sources, allow_empty=True)
+        merged = merge_networks(declared + probe_sources)
         changed = merged != current.get('managers', [])
         if changed:
             self.apply({'managers': merged, 'probes': probe_sources}, self.config_path)

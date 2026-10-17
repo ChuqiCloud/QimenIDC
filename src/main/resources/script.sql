@@ -148,7 +148,8 @@ create table master
     naton             int          default 0     not null comment '0关闭 1开启',
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
-    nataddr             varchar(50)  null comment 'nat展示地址'
+    nataddr             varchar(50)  null comment 'nat展示地址',
+    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'
 );
 
 create table modelgroup

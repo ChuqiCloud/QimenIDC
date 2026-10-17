@@ -166,6 +166,20 @@ class TrustedNetworkTest(unittest.TestCase):
         self.assertEqual(['198.51.100.0/24'], TrustedNetwork.normalize_networks(['198.51.100.7/24']))
         self.assertEqual(['198.51.100.7/32'], TrustedNetwork.normalize_networks(['198.51.100.7', '198.51.100.7/32']))
 
+    def test_multi_source_addresses_are_merged(self):
+        # 主控出口多源：两个探测源报告不同地址，都要放行
+        self.assertEqual(['198.51.100.7/32', '203.0.113.9/32', '192.0.2.0/24'],
+                         TrustedNetwork.merge_networks(['198.51.100.7', '203.0.113.9/32', '192.0.2.0/24']))
+        # 已被 CIDR 覆盖的主机地址不重复写入 geo 块
+        self.assertEqual(['192.0.2.0/24'],
+                         TrustedNetwork.merge_networks(['192.0.2.0/24', '192.0.2.9/32']))
+        self.assertEqual([], TrustedNetwork.merge_networks([]))
+
+    def test_drift_warning_ignores_second_source_address(self):
+        # 主控自报两个出口，节点只看到其中一个，不应报漂移
+        self.assertEqual([], TrustedNetwork.missing_networks(
+            ['198.51.100.7/32', '203.0.113.9/32'], ['203.0.113.9/32']))
+
 
 if __name__ == '__main__':
     unittest.main()

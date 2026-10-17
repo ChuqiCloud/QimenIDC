@@ -9,11 +9,14 @@ import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
+import com.chuqiyun.proxmoxveams.utils.CertificateUtil;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * @author mryunqi
@@ -68,12 +71,59 @@ public class SysNodeMasterController {
     @AdminApiCheck
     @RequestMapping(value = "/updateNodeInfo",method = {RequestMethod.POST,RequestMethod.PUT})
     public ResponseResult<String> updateNodeInfo(@RequestBody Master master) throws UnauthorizedException {
+        // 节点公钥要能清空：传空串就是解绑，传 null 才表示不改
+        if (master.getNodePublicKey() != null) {
+            try {
+                master.setNodePublicKey(CertificateUtil.normalize(master.getNodePublicKey()));
+            } catch (IllegalArgumentException e) {
+                return ResponseResult.fail(e.getMessage());
+            }
+        }
         // 将master信息存入数据库
         if (masterService.updateById(master)) {
             return ResponseResult.ok("修改成功！");
         } else {
             return ResponseResult.fail("修改失败！");
         }
+    }
+
+    /**
+     * @Description: 预览节点公钥证书的有效期，不落库
+     * 节点是自签证书，没有 CA 可查，只能拿公钥自己算过期时间，
+     * 保存前先预览一次，避免把过期证书或粘错的串写进库。
+     * 未保存的 id 一并透传，前端可以顺手对比「库里存的」和「刚粘的」是否同一个证书。
+     */
+    @AdminApiCheck
+    @PostMapping("/previewNodeCertificate")
+    public ResponseResult<Object> previewNodeCertificate(@RequestBody Map<String, Object> body) throws UnauthorizedException {
+        Object rawKey = body == null ? null : body.get("nodePublicKey");
+        String publicKey = rawKey == null ? null : String.valueOf(rawKey);
+        if (publicKey == null || publicKey.trim().isEmpty()) {
+            return ResponseResult.fail("请提供节点公钥");
+        }
+        if (!CertificateUtil.isPem(publicKey)) {
+            return ResponseResult.fail("节点公钥必须是 PEM 格式的证书（BEGIN CERTIFICATE）");
+        }
+        Map<String, Object> data = new LinkedHashMap<>(CertificateUtil.describe(publicKey));
+        Object savedId = body.get("id");
+        if (savedId != null) {
+            Master saved;
+            try {
+                saved = masterService.getById(Integer.valueOf(String.valueOf(savedId)));
+            } catch (NumberFormatException e) {
+                return ResponseResult.fail("节点ID格式不正确");
+            }
+            if (saved == null) {
+                return ResponseResult.fail("节点不存在");
+            }
+            Map<String, Object> stored = saved.getNodePublicKey() == null
+                    ? null : CertificateUtil.describe(saved.getNodePublicKey());
+            data.put("nodeId", saved.getId());
+            data.put("stored", stored);
+            data.put("changed", stored == null
+                    || !String.valueOf(stored.get("fingerprint")).equals(String.valueOf(data.get("fingerprint"))));
+        }
+        return ResponseResult.ok(data);
     }
 
     /**

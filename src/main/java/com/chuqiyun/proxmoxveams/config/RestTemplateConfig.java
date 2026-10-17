@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.config;
 
+import com.chuqiyun.proxmoxveams.utils.PublicIpProbe;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -72,6 +73,29 @@ public class RestTemplateConfig {
         } catch (NoSuchAlgorithmException | KeyManagementException | KeyStoreException e) {
             throw new IllegalStateException("创建HTTP客户端失败", e);
         }
+    }
+
+    /**
+     * 公共 IP 探测专用：目标是正规 CA 证书的公共站点，按系统默认信任链校验，
+     * 超时压到 3 秒，避免探测源卡住拖慢启动。
+     */
+    public static RestTemplate createProbeRestTemplate() {
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(PublicIpProbe.PER_SOURCE_TIMEOUT_MILLIS)
+                .setConnectionRequestTimeout(PublicIpProbe.PER_SOURCE_TIMEOUT_MILLIS)
+                .setSocketTimeout(PublicIpProbe.PER_SOURCE_TIMEOUT_MILLIS)
+                .build();
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setDefaultRequestConfig(requestConfig)
+                .disableAutomaticRetries()
+                .setSSLSocketFactory(new SSLConnectionSocketFactory(
+                        SSLContexts.createSystemDefault(),
+                        SSLConnectionSocketFactory.getDefaultHostnameVerifier()))
+                .build();
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        factory.setConnectTimeout(PublicIpProbe.PER_SOURCE_TIMEOUT_MILLIS);
+        factory.setReadTimeout(PublicIpProbe.PER_SOURCE_TIMEOUT_MILLIS);
+        return new RestTemplate(factory);
     }
 
     public static RestTemplate createQAgentRestTemplate() {

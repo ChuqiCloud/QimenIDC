@@ -7,9 +7,16 @@ import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
+import com.chuqiyun.proxmoxveams.utils.PublicIpProbe;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.Resource;
 import java.lang.management.ManagementFactory;
@@ -38,6 +45,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * 同步分两段：启动期由启动编排调用 {@link #initialSync()}；周期心跳只重试未完成的节点，
  * 不累积重试也不阻塞心跳线程。网关或容器把来源地址改成 SNAT 时，被控端实测到的
  * 地址与主控自报不同，两侧取并集，因此不会把任一侧挡在门外。
+ * <p>
+ * 主控自报的出口地址优先取自公共 IP 探测源（{@link PublicIpProbe}），多个源并发后合并；
+ * 探测全挂时才退化为本地网卡地址，保证有东西可下发。
  *
  * @author 星禾
  * @date 2026/10/17
@@ -84,7 +94,28 @@ public class TrustedNetworkManager {
 
     private volatile String clusterId;
 
+    /**
+     * 本机出口地址（CIDR 串），探测全部失败时退化为网卡地址
+     */
     private volatile String localAddresses = "";
+
+    /**
+     * 各探测源报告的本机出口地址，键为源名
+     */
+    private final Map<String, String> probedAddresses = new ConcurrentHashMap<>();
+
+    /**
+     * 探测失败的源及原因
+     */
+    private final Map<String, String> probeErrors = new ConcurrentHashMap<>();
+
+    /**
+     * 出口探测专用的 HTTP 客户端：公共站点用的是正规证书，这里按系统默认信任链校验
+     */
+    private static final RestTemplate PROBE_TEMPLATE = RestTemplateConfig.createProbeRestTemplate();
+
+    private static final String PROBE_USER_AGENT =
+            "Mozilla/5.0 (compatible; QimenIDC/1.0; +https://qimenidc.com)";
 
     private volatile long lastFullSyncAt;
 
@@ -188,11 +219,13 @@ public class TrustedNetworkManager {
      */
     public List<String> collectNetworks() {
         Set<String> networks = new LinkedHashSet<>();
+        if (memberAddresses.isEmpty() && localAddresses.isEmpty()) {
+            // 未走启动同步时（如单元测试或手触发的补下发）现探一次，空白名单会把主控挡在门外
+            localAddresses = detectLocalAddresses();
+            memberAddresses.put(getMemberKey(), splitAddresses(localAddresses));
+        }
         for (Set<String> addresses : memberAddresses.values()) {
             networks.addAll(addresses);
-        }
-        if (networks.isEmpty()) {
-            networks.addAll(splitAddresses(detectLocalAddresses()));
         }
         networks.addAll(clientReportedAddresses);
         return new ArrayList<>(networks);
@@ -205,6 +238,8 @@ public class TrustedNetworkManager {
         Map<String, Object> description = new LinkedHashMap<>();
         description.put("clusterId", getClusterId());
         description.put("localAddresses", localAddresses.isEmpty() ? detectLocalAddresses() : localAddresses);
+        description.put("probedSources", new LinkedHashMap<>(probedAddresses));
+        description.put("probeErrors", new LinkedHashMap<>(probeErrors));
         description.put("networks", collectNetworks());
         description.put("lastFullSyncAt", lastFullSyncAt);
         description.put("syncedNodes", new ArrayList<>(syncedAt.keySet()));
@@ -245,9 +280,57 @@ public class TrustedNetworkManager {
     }
 
     /**
-     * 主控自身出口地址：优先用操作系统路由探测结果，容器里探测不到时退化为接口地址
+     * 主控自身出口地址。
+     * <p>
+     * 先用公共探测源并发探一次，多个源报告的地址合并后全部下发——主控出口可能是多源，
+     * 只取一个会漏。探测全挂（机房封了这些域名、或断外网）时才退化为本地网卡地址，
+     * 保证白名单不会因为探测失败变成空。
      */
     private String detectLocalAddresses() {
+        Set<String> addresses = new LinkedHashSet<>();
+        PublicIpProbe.Result result = probePublicAddresses();
+        for (String address : result.getAddresses()) {
+            addresses.add(address + "/32");
+        }
+        if (addresses.isEmpty()) {
+            addresses.addAll(detectInterfaceAddresses());
+        }
+        return String.join(" ", addresses);
+    }
+
+    /**
+     * 探测公共 IP：结果写回 probedAddresses / probeErrors 供管理端查看
+     */
+    private PublicIpProbe.Result probePublicAddresses() {
+        PublicIpProbe.Result result = PublicIpProbe.probe(this::fetchProbeBody);
+        probedAddresses.clear();
+        probedAddresses.putAll(result.getSources());
+        probeErrors.clear();
+        probeErrors.putAll(result.getErrors());
+        if (result.isEmpty()) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
+                    "[Whitelist] 公共IP探测源全部失败，退回本机网卡地址: " + result.getErrors());
+        } else if (!result.getErrors().isEmpty()) {
+            UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
+                    "[Whitelist] 部分公共IP探测源失败: " + result.getErrors() + ", 已获取: " + result.getAddresses());
+        }
+        return result;
+    }
+
+    private String fetchProbeBody(PublicIpProbe.Source source) {
+        HttpHeaders headers = new HttpHeaders();
+        // 有的源对空 UA 会直接返回空体或被风控
+        headers.add(HttpHeaders.USER_AGENT, PROBE_USER_AGENT);
+        headers.add(HttpHeaders.ACCEPT, "text/plain,*/*");
+        ResponseEntity<String> response = PROBE_TEMPLATE.exchange(source.getUrl(), HttpMethod.GET,
+                new HttpEntity<>(headers), String.class);
+        return response.getBody();
+    }
+
+    /**
+     * 本地网卡地址：探测不通时的兜底，容器里拿到的是 SNAT 前的私网地址，不一定有用
+     */
+    List<String> detectInterfaceAddresses() {
         Set<String> addresses = new LinkedHashSet<>();
         String routed = detectRouteAddress();
         if (routed != null && !routed.isEmpty()) {
@@ -267,7 +350,7 @@ public class TrustedNetworkManager {
         } catch (Exception ignored) {
             // 拿不到接口信息时只用路由探测结果
         }
-        return String.join(" ", addresses);
+        return new ArrayList<>(addresses);
     }
 
     /**
