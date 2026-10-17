@@ -242,6 +242,22 @@ public class ClientApiUtil {
 
     /**
     * @Author: 星禾
+    * @Description: 下发管理源白名单，被控端把入参与自身实测来源取并集后落盘并重载 nginx
+    * @Params: networks 集群内主控出口地址
+    * @Params: clusterId 集群标识，用于区分不同集群的管理源
+    * @Return JSONObject 被控端同步结果，失败返回null
+    */
+    public static JSONObject syncTrustedNetworks(String ip, Integer port, String token,
+                                                 List<String> networks, String clusterId, int timeoutMillis){
+        String url = AGENT_SCHEME + ip + ":" + port + "/net/trust";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("networks", networks == null ? new ArrayList<>() : networks);
+        paramMap.put("cluster_id", clusterId == null ? "" : clusterId);
+        return postControllerApi(url, paramMap, token, timeoutMillis);
+    }
+
+    /**
+    * @Author: 星禾
     * @Description: 主控版本，随请求头下发给被控做一致性校验
     */
     private static String getMasterVersion(){

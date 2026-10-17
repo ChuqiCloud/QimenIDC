@@ -68,6 +68,14 @@ public class Master extends Model<Master> {
     private String natbridge;
     private Integer natippool;
     private String nataddr;
+
+    /**
+     * 节点公钥（PEM 证书）。用于核对节点自签证书是否被替换、看有效期，
+     * 属于公开信息，随节点信息一起返回即可。
+     * 列名加 node_ 前缀：MySQL 里 public 是保留字。
+     */
+    @TableField("node_public_key")
+    private String nodePublicKey;
     /**
      * 获取主键值
      *

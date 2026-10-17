@@ -35,6 +35,7 @@ while true; do
     echo "8. 查看 QAgent port"
     echo "9. 重置 QAgent port"
     echo "10. 更新被控端程序"
+    echo "11. 查看主控可信白名单"
     echo "q. 退出"
     read -p "请选择序号操作: " choice
 
@@ -88,6 +89,11 @@ while true; do
                 printf '%s\n' "${port}" | sudo tee /home/software/QAgent/port >/dev/null
                 sudo bash /home/software/QAgent/harden.sh --configure
             fi
+            ;;
+        11)
+            echo -e "\033[33m--->当前生效的主控来源白名单:\033[0m"
+            sudo sed -n 's/^QAGENT_MANAGER_IPS=//p;s/^QAGENT_MANAGER_PROBES=//p' /etc/qimenidc/security.conf
+            sudo sed -n '/qimenidc_qagent_allowed/,/^}/p' /etc/nginx/conf.d/qimenidc-qagent.conf
             ;;
         10)
             echo "---> 5秒后将更新最新版被控程序..."

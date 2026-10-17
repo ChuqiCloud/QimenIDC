@@ -148,7 +148,8 @@ create table master
     naton             int          default 0     not null comment '0关闭 1开启',
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
-    nataddr             varchar(50)  null comment 'nat展示地址'
+    nataddr             varchar(50)  null comment 'nat展示地址',
+    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'
 );
 
 create table modelgroup
@@ -635,6 +636,19 @@ create table system_log
     index idx_system_log_request_id (request_id),
     index idx_system_log_level (level),
     index idx_system_log_host_id_create_time (host_id, create_time)
+);
+
+create table agent_trust
+(
+    id            bigint auto_increment primary key,
+    cluster_id    varchar(64)   not null comment '集群标识，同一套主控库共用',
+    address       varchar(128)  not null comment '可信管理源地址(CIDR)',
+    source        varchar(16)   not null comment '来源 local主控自报 probe节点实测',
+    node_id       int           null comment '上报该地址的被控节点ID',
+    create_time   bigint        not null comment '创建时间戳(毫秒)',
+    last_seen     bigint        not null comment '最近一次上报时间戳(毫秒)',
+    unique index uk_agent_trust_cluster_addr (cluster_id, address),
+    index idx_agent_trust_seen (last_seen)
 );
 
 

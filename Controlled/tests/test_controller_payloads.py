@@ -149,3 +149,48 @@ class ControllerPayloadTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TrustedNetworkEndpointTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.environment = patch.dict(os.environ, {'QIMENIDC_ENCRYPT': '1'})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        for target in ('main.get_token', 'service.Security.get_token'):
+            token_patch = patch(target, return_value=TOKEN)
+            token_patch.start()
+            self.addCleanup(token_patch.stop)
+        Security._nonce_cache.items.clear()
+        self.client = httpx.AsyncClient(app=main.app, base_url='http://test')
+        self.addAsyncCleanup(self.client.aclose)
+
+    async def post(self, path, payload):
+        timestamp = str(int(time.time()))
+        nonce = uuid.uuid4().hex
+        encrypted = Security.LoadCodec(TOKEN).encrypt(
+            json.dumps(payload).encode('utf-8'), 'POST', path, timestamp, nonce)
+        response = await asyncio.wait_for(self.client.post(path, content=encrypted, headers={
+            'Authorization': TOKEN,
+            'Content-Type': 'text/plain',
+            'X-QimenIDC-Timestamp': timestamp,
+            'X-QimenIDC-Nonce': nonce,
+        }), timeout=3)
+        return response, json.loads(Security.LoadCodec(TOKEN).decrypt(
+            response.json()['_encrypted'], 'POST', path, timestamp, nonce))
+
+    async def test_net_trust_returns_sync_result(self):
+        result = {'cluster': 'pool-hk', 'changed': True, 'addresses': ['198.51.100.7/32']}
+        with patch('controller.netWork.TrustStore') as store:
+            store.return_value.security.return_value = result
+            response, body = await self.post('/net/trust', {
+                'networks': ['198.51.100.7/32'], 'cluster_id': 'pool-hk'})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(200, body['code'])
+        self.assertEqual(['198.51.100.7/32'], body['data']['addresses'])
+        entity = store.return_value.security.call_args.args[0]
+        self.assertEqual(['198.51.100.7/32'], entity)
+        self.assertEqual('pool-hk', store.return_value.security.call_args.args[1])
+
+    async def test_net_trust_still_requires_token(self):
+        response = await self.client.post('/net/trust', content='{}', headers={'Content-Type': 'text/plain'})
+        self.assertEqual(401, response.status_code)

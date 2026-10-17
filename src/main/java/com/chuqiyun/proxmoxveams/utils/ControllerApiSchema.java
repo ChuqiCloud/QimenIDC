@@ -27,6 +27,8 @@ public class ControllerApiSchema {
         put("/deleteFile", "path", "file");
         put("/readFile", "path", "filename");
         put("/writeFile", "path", "filename", "content");
+        // 管理源白名单同步
+        put("/net/trust", "networks", "cluster_id");
         // 虚拟机
         put("/changePassword", "id", "username", "password");
         put("/importDisk", "vmid", "image_path", "save_path");

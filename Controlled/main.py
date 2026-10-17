@@ -18,7 +18,19 @@ from service.Security import decode_request
 from service.VncFileEditor import VncFileEditor
 
 # 被控端程序版本，随代码一起发布，主控心跳时读取
-VERSION = '1.0.2'
+VERSION = '1.0.3'
+
+async def probe_manager_endpoint():
+    # 启动后先用主控的 TLS 端口探测一次，把主控出口地址并入白名单，
+    # 避免主控换了出口IP后连 /net/trust 都进不来。
+    if not os.environ.get('QIMENIDC_MANAGER_ENDPOINT', '').strip():
+        return
+    from service.TrustedNetwork import TrustStore
+    try:
+        await asyncio.to_thread(TrustStore().security)
+    except Exception as ex:
+        print('[WARN] 主控出口地址探测未完成: %s' % str(ex)[:120])
+
 
 async def clean_vnc_tokens():
     editor = VncFileEditor(os.environ.get('QIMEN_VNC_TOKEN_FILE', '/home/software/vnc'))
@@ -33,6 +45,7 @@ async def lifespan(app):
     editor = VncFileEditor(os.environ.get('QIMEN_VNC_TOKEN_FILE', '/home/software/vnc'))
     await asyncio.to_thread(editor.clean_file)
     cleanup_task = asyncio.create_task(clean_vnc_tokens())
+    asyncio.create_task(probe_manager_endpoint())
     try:
         yield
     finally:
@@ -68,6 +81,9 @@ app.include_router(migration.migration_router,tags=["migration"])
 
 # 无需鉴权的接口：接口文档，以及只返回固定值的版本号，均不含节点信息
 PUBLIC_PATHS = ('/docs', '/openapi.json', '/redoc', '/version')
+
+# 白名单同步接口：可能是主控出口IP被换掉后唯一的自救通道，只跳过白名单，token 仍然校验
+TRUST_PATH = '/net/trust'
 
 # 需要解密请求体的方法，GET等只读请求不解密
 BODY_METHODS = ('POST', 'PUT', 'PATCH')

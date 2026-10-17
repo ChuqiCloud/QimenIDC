@@ -154,6 +154,9 @@ wget -O install.sh http://mirror.chuqiyun.com/software/QAgent/install.sh && bash
 - **防重放**：每个请求带 `X-QimenIDC-Timestamp`、`X-QimenIDC-Nonce` 头，两者参与 AEAD 校验；被控端拒绝超时与重复的请求。
 - **可写范围白名单**：被控端文件类接口只允许操作白名单目录（默认只有 `/var/lib/vz/snippets`、`/etc/network`、`/home/images`），越权请求返回 403。
 - **已下线接口**：NAT、迁移、更新以及文件读写删除下载类接口一律返回 410，主控侧对应流程同步停用。
+- **白名单自动同步**：主控启动时把集群内所有主控出口地址经 `POST /net/trust` 下发到各节点，被控端再并入自己实测到的对端地址后重载 nginx；出口 IP 变了不用再手工改 `security.conf`。该接口保留鉴权、只跳过 IP 白名单，是主控换 IP 后唯一的自救通道。管理端 `GET /{adminPath}/getAgentWhitelist` 可查同步状态与各探测源的原始结果。
+- **多源出口探测**：主控出口地址并发取自 Cloudflare trace、ipify、ip.sb、ipip.net 四个公共源，结果合并去重后全部下发，多网卡/容器 NAT 下不会漏掉某个出口；单源超时不阻塞同步，全挂才退化为本机网卡地址。
+- **节点公钥与证书有效期**：节点可保存 PEM 公钥（`nodePublicKey`），管理端 `POST /{adminPath}/previewNodeCertificate` 预览有效期、剩余天数、SHA-256 指纹与 SAN，剩余不足 30 天会标 `expiring`，避免自签证书到期才发现。
 
 > 部署与证书导入步骤见 [docs/controlled-node-security.md](docs/controlled-node-security.md)。升级时先更新被控端（QAgent），再更新主控。
 

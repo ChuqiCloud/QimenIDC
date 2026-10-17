@@ -36,6 +36,26 @@ class SqlUpdateLoaderTest {
     }
 
     @Test
+    void loadsAgentTrustTableForWhitelistSync() throws IOException {
+        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_5", 1);
+
+        assertEquals(1, sqlList.size());
+        assertTrue(sqlList.get(0).contains("create table if not exists agent_trust"));
+        assertTrue(sqlList.get(0).contains("uk_agent_trust_cluster_addr"));
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.4_5", "1.3.4_4") > 0);
+    }
+
+    @Test
+    void loadsNodePublicKeyColumnForCertificatePreview() throws IOException {
+        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_6", 1);
+
+        assertEquals(1, sqlList.size());
+        assertTrue(sqlList.get(0).contains("alter table master"));
+        assertTrue(sqlList.get(0).contains("add node_public_key"));
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.4_6", "1.3.4_5") > 0);
+    }
+
+    @Test
     void loadsNatMigrationForBuild131Iteration3() throws IOException {
         List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.1", 3);
 
