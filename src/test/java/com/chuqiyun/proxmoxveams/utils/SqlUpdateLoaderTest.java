@@ -21,6 +21,21 @@ class SqlUpdateLoaderTest {
     }
 
     @Test
+    void loadsMfaAndPasskeyMigrationBeforeStartup() throws IOException {
+        List<String> alterSql = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_4", 1);
+        List<String> createSql = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_4", 2);
+
+        assertEquals(2, alterSql.size());
+        assertTrue(alterSql.get(0).contains("alter table sysuser"));
+        assertTrue(alterSql.get(0).contains("add mfa_type"));
+        assertTrue(alterSql.get(0).contains("add totp_secret"));
+        assertTrue(alterSql.get(0).contains("add passkey_enabled"));
+        assertEquals(1, createSql.size());
+        assertTrue(createSql.get(0).contains("create table if not exists sys_passkey"));
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.4_4", "1.3.4_3") > 0);
+    }
+
+    @Test
     void loadsNatMigrationForBuild131Iteration3() throws IOException {
         List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.1", 3);
 

@@ -28,6 +28,12 @@ public class ExceptionController {
         return ResponseResult.fail(ResponseResult.RespCode.UNAUTHORIZED.getMessage());
     }
 
+    // 捕捉认证业务异常，保留业务码便于前端区分二步验证流程
+    @ExceptionHandler(AuthException.class)
+    public ResponseResult<?> handleAuthException(AuthException e) {
+        return e.toResult();
+    }
+
     // 捕捉UnauthorizedException
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     @ExceptionHandler(UnauthorizedException.class)

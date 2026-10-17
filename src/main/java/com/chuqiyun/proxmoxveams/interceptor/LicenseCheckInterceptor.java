@@ -99,7 +99,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     //给予系统容错5秒误差
                     jwtTokenDate = jwtTokenDate - 5*1000;
 
-                    Long sysUserDate = sysuser.getLogindate();
+                    Long sysUserDate = parseLoginDate(sysuser.getLogindate());
                     if (jwtTokenDate> sysUserDate){
                         response.sendRedirect("/"+ADMIN_PATH+"/login");
                         return false;
@@ -129,7 +129,7 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
                     //给予系统容错5秒误差
                     jwtTokenDate = jwtTokenDate - 5*1000;
 
-                    Long sysUserDate = sysuser.getLogindate();
+                    Long sysUserDate = parseLoginDate(sysuser.getLogindate());
                     if (jwtTokenDate> sysUserDate){
                         return authError(response);
                     }else {
@@ -164,6 +164,13 @@ public class LicenseCheckInterceptor implements HandlerInterceptor {
         }
 
         return invalidApi(response);
+    }
+
+    /**
+     * 登录时间历史列类型为 varchar，可能出现空值或非法内容，按未登录处理
+     */
+    private long parseLoginDate(Long logindate) {
+        return Objects.isNull(logindate) ? 0L : logindate;
     }
 
     private boolean authError(@NotNull HttpServletResponse response) throws IOException {

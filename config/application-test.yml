@@ -9,6 +9,14 @@ config:
   system_log_retention_days: 180
   # 流量统计保留天数，留空默认 15 天
   flow_data_retention_days: 15
+  # Passkey(WebAuthn) 配置
+  passkey:
+    # RP ID 必须是管理后台对外域名（不带协议与端口）
+    rp_id: localhost
+    # RP 展示名称，显示在系统认证器弹窗中
+    rp_name: QimenIDC
+    # 允许的来源，多个用逗号分隔，例如 https://idc.example.com；留空则不校验
+    origin: ""
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:

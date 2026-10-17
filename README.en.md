@@ -36,6 +36,11 @@ Enterprise-level users can look forward to the upcoming commercial version, whic
 
 The architecture of the enterprise edition will be entirely different from the community edition, designed to meet the needs of enterprise-level users with more standardized, stable, and secure architecture.
 
+## Login security
+
+TOTP and Passkey (WebAuthn) two-factor authentication are supported, along with self-service
+password reset for administrators. See [MFA & Passkey](/docs/mfa-passkey.md).
+
 ## Developer API Documentation
 
 [https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd](https://apifox.com/apidoc/shared-56015960-c9d9-488b-b53d-d9b336ec60bd)

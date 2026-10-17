@@ -310,6 +310,9 @@ public class EncryptUtil {
      * @param md5password 加密过的密码
      */
     public static boolean verifyPassword(String password, String md5password) {
+        if (password == null || md5password == null) {
+            return false;
+        }
         String encryptPasswd = EncryptUtil.desEncode(password,Key);
         return new Md5Hash(encryptPasswd, SALT, 1024).toString().equals(md5password);
     }

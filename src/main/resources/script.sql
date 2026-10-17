@@ -289,8 +289,31 @@ create table sysuser
     name      varchar(255) null,
     phone     varchar(20)  null,
     email     varchar(255) null,
-    logindate varchar(255) null
+    logindate varchar(255) null,
+    mfa_type varchar(16) default 'none' not null comment '二步验证方式 none/totp/passkey',
+    totp_secret text null comment '加密存储的TOTP密钥(base64url)',
+    totp_confirmed_time bigint null comment 'TOTP绑定确认时间戳(毫秒)',
+    totp_last_step bigint null comment '最近一次已消费的TOTP时间片',
+    passkey_enabled int default 0 not null comment '是否已绑定Passkey 0否 1是'
 );
+
+create table if not exists sys_passkey
+(
+    id                bigint auto_increment primary key,
+    userid            int           not null comment '管理员ID',
+    credential_id     varchar(512)  not null comment 'base64url编码的凭据ID',
+    public_key        text          not null comment 'base64url编码的COSE公钥',
+    sign_count        bigint        default 0 not null comment '签名计数器',
+    backup_eligible   int           default 0 not null comment '是否支持备份 0否 1是',
+    backup_state      int           default 0 not null comment '是否已备份 0否 1是',
+    algorithm         int           not null comment '认证器算法 -7 ES256 / -257 RS256',
+    device_name       varchar(100)  null comment '设备展示名称',
+    aaguid            varchar(64)   null comment 'base64url编码的AAGUID',
+    create_time       bigint        not null comment '创建时间戳(毫秒)',
+    last_used_time    bigint        null comment '最近使用时间戳(毫秒)',
+    unique index uk_sys_passkey_credential (credential_id),
+    index idx_sys_passkey_userid (userid)
+) comment '管理员Passkey凭据';
 
 create table task
 (

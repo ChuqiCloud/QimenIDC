@@ -1404,7 +1404,25 @@ POST /{adminPath}/loginDo
 {
   "code": 20000,
   "message": "请求成功",
-  "data": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IjE4NzM5NTM3MTU5Iiwic2VjcmV0IjoiUWtkT2JTekl2NTZkbmhDMGdwUGljdGQxY0drLy85Qk8vSE1xeitYM2xVMD0iLCJleHAiOjE2ODkzNDc4MDd9.F_CnjpiI4ooN-vXHFM2yxD3wQaOqtxyla2Wy9mZNUVc"
+  "data": {
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "mfaRequired": false
+  }
+}
+```
+
+启用二步验证（TOTP / Passkey）时不下发 token，改为返回挑战票据，票据 5 分钟有效且不能用于接口鉴权：
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": {
+    "token": null,
+    "mfaRequired": true,
+    "method": "totp",
+    "ticket": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+  }
 }
 ```
 

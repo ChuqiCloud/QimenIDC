@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.SysuserDao;
@@ -9,7 +10,10 @@ import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
 import com.chuqiyun.proxmoxveams.utils.ModUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+
+import java.util.Objects;
 
 /**
  * (Sysuser)表服务实现类
@@ -121,6 +125,90 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
     @Override
     public boolean deleteSysuserById(Integer id) {
         return this.removeById(id);
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 管理员重置自己的密码，原密码校验通过后写入新密码
+    * @DateTime: 2026/10/17 15:30
+    * @Params: Integer userId 管理员ID String oldPassword 原密码 String newPassword 新密码
+    * @Return String 失败原因，成功返回 null
+    */
+    @Override
+    public String resetOwnPassword(Integer userId, String oldPassword, String newPassword) {
+        if (StringUtils.isAnyBlank(oldPassword, newPassword)) {
+            return "原密码和新密码不能为空";
+        }
+        if (newPassword.length() < 8 || newPassword.length() > 64) {
+            return "新密码长度需为 8-64 位";
+        }
+        if (oldPassword.equals(newPassword)) {
+            return "新密码不能与原密码相同";
+        }
+        Sysuser sysuser = this.getById(userId);
+        if (Objects.isNull(sysuser)) {
+            return "账号不存在";
+        }
+        if (!EncryptUtil.verifyPassword(oldPassword, sysuser.getPassword())) {
+            return "原密码错误";
+        }
+        // 更新登录时间即让已签发的 token 失效，强制其它会话重新登录
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId)
+                .set("password", EncryptUtil.md5(newPassword))
+                .set("logindate", System.currentTimeMillis());
+        return this.update(wrapper) ? null : "密码修改失败";
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 校验指定账号的密码
+    * @DateTime: 2026/10/17 17:10
+    * @Params: Integer userId 管理员ID String password 明文密码
+    * @Return boolean 是否匹配
+    */
+    @Override
+    public boolean verifyPassword(Integer userId, String password) {
+        if (Objects.isNull(userId) || StringUtils.isBlank(password)) {
+            return false;
+        }
+        Sysuser sysuser = this.getById(userId);
+        return !Objects.isNull(sysuser) && EncryptUtil.verifyPassword(password, sysuser.getPassword());
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: 更新二步验证相关字段，避免整行覆盖写回旧值
+    * @DateTime: 2026/10/17 15:30
+    * @Params: Sysuser sysuser 需要更新的字段
+    * @Return boolean 是否更新成功
+    */
+    @Override
+    public boolean updateMfaSettings(Sysuser sysuser) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", sysuser.getId())
+                .set("mfa_type", sysuser.getMfaType())
+                .set("totp_secret", sysuser.getTotpSecret())
+                .set("totp_confirmed_time", sysuser.getTotpConfirmedTime())
+                .set("totp_last_step", sysuser.getTotpLastStep())
+                .set("passkey_enabled", Objects.isNull(sysuser.getPasskeyEnabled()) ? 0 : sysuser.getPasskeyEnabled());
+        return this.update(wrapper);
+    }
+
+    /**
+    * @Author: 星禾
+    * @Description: TOTP 时间片重放防护，只有比已消费时间片更新时才写入
+    * @DateTime: 2026/10/17 15:30
+    * @Params: Integer userId 管理员ID long step 命中的时间片
+    * @Return boolean true 表示消费成功，false 表示该时间片已被使用
+    */
+    @Override
+    public boolean consumeTotpStep(Integer userId, long step) {
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId)
+                .and(wrapper1 -> wrapper1.isNull("totp_last_step").or().lt("totp_last_step", step))
+                .set("totp_last_step", step);
+        return this.update(wrapper);
     }
 
 }

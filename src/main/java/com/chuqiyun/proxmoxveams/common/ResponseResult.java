@@ -93,7 +93,14 @@ public class ResponseResult<T> implements Serializable {
         ACCOUNT_LOCK(4010001,"该账号被锁定,请联系系统管理员"),
         ACCOUNT_HAS_DELETED_ERROR(4010001,"该账号已被删除，请联系系统管理员"),
         TOKEN_PAST_DUE(4010002,"token失效,请刷新token"),
-        NOT_PERMISSION(4030001,"没有权限访问该资源");
+        NOT_PERMISSION(4030001,"没有权限访问该资源"),
+        MFA_REQUIRED(20410,"需要完成二步验证"),
+        MFA_FAIL(20411,"动态验证码错误或已失效"),
+        MFA_TICKET_INVALID(20412,"二步验证票据无效或已过期，请重新登录"),
+        PASSKEY_NOT_BOUND(20413,"该账号未绑定Passkey"),
+        PASSKEY_FAIL(20414,"Passkey校验失败"),
+        PASSKEY_CHALLENGE_EXPIRED(20415,"Passkey挑战已过期，请重试"),
+        OAUTH_PASSWORD_FAIL(20416,"原密码错误");
 
         RespCode(int code, String message) {
             this.code = code;
