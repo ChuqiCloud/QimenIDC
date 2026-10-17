@@ -9,6 +9,7 @@ import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.common.VmCreateLock;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.constant.VgaType;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
@@ -76,6 +77,9 @@ public class CreateVmServiceImpl implements CreateVmService {
     @Override
     public UnifiedResultDto<Object> createPveVmToParams(VmParams vmParams, boolean isApi){
 
+        if (!VgaType.isVgaTypeExist(vmParams.getVga())) {
+            return invalidParam("vga只能是" + String.join("、", VgaType.getVgaTypeList()));
+        }
         if (!FlowTypeUtil.isValid(vmParams.getFlowType())) {
             return invalidParam("flowType只能是in、out或in+out");
         }
@@ -135,6 +139,9 @@ public class CreateVmServiceImpl implements CreateVmService {
             vmParams.setArch(configuretemplate.getArch());
             vmParams.setAcpi(configuretemplate.getAcpi());
             vmParams.setStorage(configuretemplate.getStorage());
+            if (StringUtils.isNotBlank(configuretemplate.getVga())) {
+                vmParams.setVga(configuretemplate.getVga());
+            }
             vmParams.setSystemDiskSize(configuretemplate.getSystemDiskSize());
             // 转换Map为HashMap
             HashMap<Object, Object> map = new HashMap<>();
@@ -611,6 +618,11 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 设置kvm
         param.put("kvm", vmParams.getKvm());
+        // 设置显示设备类型，决定VNC控制台帧缓冲的默认分辨率(如qxl默认1024x768)
+        String vgaType = VgaType.normalize(vmParams.getVga());
+        if (vgaType != null) {
+            param.put("vga", vgaType);
+        }
 
         boolean dualNicIpv6 = isNatIpv6Scenario(vmParams);
         String primaryIpConfig = dualNicIpv6

@@ -59,6 +59,11 @@ public class Configuretemplate extends Model<Configuretemplate> {
     private Integer memory;
     
     private String storage;
+
+    /**
+     * 显示设备类型(std/cirrus/vmware/qxl/qxl2/qxl3/qxl4/virtio/none)
+     */
+    private String vga;
     
     private Integer systemDiskSize;
 

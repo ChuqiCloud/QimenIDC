@@ -171,6 +171,11 @@ public class VmParams {
     private List<IpDto> ipData;
     private String dns1;
     /**
+     * 显示设备类型(std/cirrus/vmware/qxl/qxl2/qxl3/qxl4/virtio/none)
+     * 决定 VNC 控制台画面的默认分辨率，为空则使用 PVE 默认值
+     */
+    private String vga;
+    /**
      * 操作系统
      */
     private String os;
