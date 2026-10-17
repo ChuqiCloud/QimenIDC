@@ -111,7 +111,7 @@ public final class CertificateUtil {
         long now = System.currentTimeMillis();
         Instant notBefore = certificate.getNotBefore().toInstant();
         Instant notAfter = certificate.getNotAfter().toInstant();
-        long remainingDays = Math.floorDiv(notAfter.toMillis() - now, 86_400_000L);
+        long remainingDays = Math.floorDiv(notAfter.toEpochMilli() - now, 86_400_000L);
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("valid", remainingDays >= 0);
         info.put("notBefore", notBefore.toEpochMilli());

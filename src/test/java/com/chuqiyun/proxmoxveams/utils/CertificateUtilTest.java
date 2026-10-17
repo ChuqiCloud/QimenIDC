@@ -1,27 +1,18 @@
 package com.chuqiyun.proxmoxveams.utils;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Base64;
-import java.util.Date;
 import java.util.Map;
-
-import sun.security.x509.AlgorithmId;
-import sun.security.x509.CertificateAlgorithmId;
-import sun.security.x509.CertificateSerialNumber;
-import sun.security.x509.CertificateValidity;
-import sun.security.x509.CertificateX509Key;
-import sun.security.x509.X500Name;
-import sun.security.x509.X509CertImpl;
-import sun.security.x509.X509CertInfo;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,24 +23,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CertificateUtilTest {
 
-    private static String pem(long notAfterDays) throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        java.security.KeyPair pair = generator.generateKeyPair();
-        X509CertInfo info = new X509CertInfo();
-        info.set(X509CertInfo.VERSION, new sun.security.x509.CertificateVersion(
-                sun.security.x509.CertificateVersion.V3));
-        info.set(X509CertInfo.SERIAL_NUMBER, new CertificateSerialNumber(new BigInteger("4096")));
-        info.set(X509CertInfo.SUBJECT, new X500Name("CN=QimenIDC node"));
-        info.set(X509CertInfo.ISSUER, new X500Name("CN=QimenIDC node"));
-        Date from = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
-        Date to = Date.from(Instant.now().plus(notAfterDays, ChronoUnit.DAYS));
-        info.set(X509CertInfo.VALIDITY, new CertificateValidity(from, to));
-        info.set(X509CertInfo.KEY, new CertificateX509Key(pair.getPublic()));
-        info.set(X509CertInfo.ALGORITHM_ID,
-                new CertificateAlgorithmId(AlgorithmId.get("SHA256withRSA")));
-        X509CertImpl certificate = new X509CertImpl(info);
-        certificate.sign(pair.getPrivate(), "SHA256withRSA");
+    @TempDir
+    Path temporaryDirectory;
+
+    private String pem(long notAfterDays) throws Exception {
+        Path store = temporaryDirectory.resolve(java.util.UUID.randomUUID() + ".p12");
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "keytool.exe" : "keytool";
+        // 使用 JDK 公共工具生成证书，避免依赖随 JDK 版本变化的内部 API。
+        Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", executable).toString(),
+                "-genkeypair", "-alias", "test", "-keyalg", "RSA", "-keysize", "2048",
+                "-dname", "CN=QimenIDC node", "-startdate", "-10d",
+                "-validity", Long.toString(notAfterDays + 10), "-storetype", "PKCS12",
+                "-keystore", store.toString(), "-storepass", "changeit", "-noprompt")
+                .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (var input = Files.newInputStream(store)) {
+            keyStore.load(input, "changeit".toCharArray());
+        }
+        X509Certificate certificate = (X509Certificate) keyStore.getCertificate("test");
         String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
                 .encodeToString(certificate.getEncoded());
         return "-----BEGIN CERTIFICATE-----\n" + body + "\n-----END CERTIFICATE-----\n";

@@ -136,7 +136,7 @@ public class TrustedNetworkManager {
         }
         String cluster = getClusterId();
         localAddresses = detectLocalAddresses();
-        memberAddresses.put(getMemberKey(), splitAddresses(localAddresses));
+        memberAddresses.put(getMemberKey(), new LinkedHashSet<>(splitAddresses(localAddresses)));
         lastFullSyncAt = System.currentTimeMillis();
 
         int succeeded = 0;
@@ -174,7 +174,7 @@ public class TrustedNetworkManager {
      * 心跳时登记被控端回传的对端地址：被控端说看到的主控出口，与主控自报不一致就记一笔
      */
     public void observeAgentReport(Integer nodeId, JSONObject result) {
-        if (result == null) {
+        if (result == null || !Integer.valueOf(200).equals(result.getInteger("code"))) {
             return;
         }
         JSONObject data = result.getJSONObject("data");
@@ -186,8 +186,10 @@ public class TrustedNetworkManager {
             return;
         }
         if (!memberAddresses.containsKey(getMemberKey())) {
-            localAddresses = detectLocalAddresses();
-            memberAddresses.put(getMemberKey(), splitAddresses(localAddresses));
+            if (localAddresses.isEmpty()) {
+                localAddresses = detectLocalAddresses();
+            }
+            memberAddresses.put(getMemberKey(), new LinkedHashSet<>(splitAddresses(localAddresses)));
         }
         List<String> local = splitAddresses(localAddresses);
         List<String> missing = new ArrayList<>();
@@ -222,7 +224,7 @@ public class TrustedNetworkManager {
         if (memberAddresses.isEmpty() && localAddresses.isEmpty()) {
             // 未走启动同步时（如单元测试或手触发的补下发）现探一次，空白名单会把主控挡在门外
             localAddresses = detectLocalAddresses();
-            memberAddresses.put(getMemberKey(), splitAddresses(localAddresses));
+            memberAddresses.put(getMemberKey(), new LinkedHashSet<>(splitAddresses(localAddresses)));
         }
         for (Set<String> addresses : memberAddresses.values()) {
             networks.addAll(addresses);

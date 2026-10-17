@@ -98,7 +98,7 @@ class TrustedNetworkManagerTest {
         List<String> networks = manager.collectNetworks();
         assertTrue(networks.contains("198.51.100.7/32"));
         assertTrue(networks.contains("10.0.0.5/32"));
-        assertEquals("[7]", field(manager, "syncedAt").toString().replaceAll("=\\d+", ""));
+        assertEquals(java.util.Set.of(7), ((java.util.Map<?, ?>) field(manager, "syncedAt")).keySet());
     }
 
     @Test

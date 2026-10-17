@@ -156,6 +156,9 @@ public final class PublicIpProbe {
      * 形如 1.2.3.4.5 的版本号不会被误判成 IP。
      */
     public static String sanitize(String body) {
+        if (body == null) {
+            return "";
+        }
         String text = body.replace("\uFEFF", "").trim();
         if (text.isEmpty() || text.length() > 1024) {
             return "";
