@@ -116,9 +116,18 @@ class IptablesForwardRuleManager:
         result = self.run(['iptables', '-w', '5', '-t', 'nat', '-C', *rule], check=False)
         if result.returncode == 0:
             return True
-        if result.returncode == 1 and (not result.stderr.strip() or 'does a matching rule exist' in result.stderr):
-            return False
-        raise RuntimeError('Unable to inspect NAT rule: ' + result.stderr.strip())
+        detail = result.stderr.strip()
+        if result.returncode == 1:
+            if not detail or 'does a matching rule exist' in detail:
+                return False
+            if detail.endswith('No chain/target/match by that name.'):
+                # legacy 的 -C 未命中也用此提示；先确认链可读，不能吞掉表或链故障。
+                chain = self.run(['iptables', '-w', '5', '-t', 'nat', '-S', rule[0]], check=False)
+                if chain.returncode == 0:
+                    return False
+                raise RuntimeError(f'Unable to inspect NAT chain {rule[0]} (exit {chain.returncode}): '
+                                   + chain.stderr.strip())
+        raise RuntimeError('Unable to inspect NAT rule: ' + detail)
 
     def change_rule(self, rule, delete=False):
         if self.rule_exists(rule) == (not delete):

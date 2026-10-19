@@ -125,3 +125,7 @@ NAT/VPC creation uses the existing authenticated and encrypted QAgent NAT APIs. 
 早期构建会把节点业务失败统一报为“宿主机拒绝NAT规则，请检查源端口是否已占用”，无法据此认定端口冲突。更新后主控保留节点失败原因；节点日志即时记录数据库、端口策略和 iptables 错误详情。查看日志时使用 `journalctl -u qagent -n 100 --no-pager`。HTTP `200 OK` 只表示请求完成，业务成功仍须检查解密后的 `code=200`。
 
 端口策略校验在开启 IP 转发之前执行。若日志报 `Source port is reserved or outside the allowed range` 且 `net.ipv4.ip_forward=0`，仅手动打开 IP 转发不能解决规则校验失败；应先处理兼容规则或日志列出的不合规记录。成功同步包含转发的规则快照时，QAgent 会开启运行中的 IPv4 转发，并在启动时恢复。
+
+若报 `Unable to inspect NAT rule: iptables: No chain/target/match by that name.`，且节点使用 `iptables-legacy`，可能是旧 QAgent 把 `iptables -C` 检查规则未命中的正常结果当成了故障。legacy 对缺失规则与缺失链可能给出相同提示；修复后的 QAgent 仅在退出码为 1 且匹配此提示时，用 `iptables -w 5 -t nat -S <chain>` 确认链可读，再继续添加或幂等删除。链、表、权限或后续实际添加失败仍保留错误与回滚，不把这些故障当成成功。
+
+此项修复部署在被控端，主控无需重编译。已经部署当前 QAgent 的节点可替换 `/home/software/QAgent/service/Nat.py` 后重启 `qagent.service`，再重试创建 NAT；先保留旧源码副本，现有 token、证书与规则数据库无需重建。
