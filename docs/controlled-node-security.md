@@ -129,3 +129,20 @@ NAT/VPC creation uses the existing authenticated and encrypted QAgent NAT APIs. 
 若报 `Unable to inspect NAT rule: iptables: No chain/target/match by that name.`，且节点使用 `iptables-legacy`，可能是旧 QAgent 把 `iptables -C` 检查规则未命中的正常结果当成了故障。legacy 对缺失规则与缺失链可能给出相同提示；修复后的 QAgent 仅在退出码为 1 且匹配此提示时，用 `iptables -w 5 -t nat -S <chain>` 确认链可读，再继续添加或幂等删除。链、表、权限或后续实际添加失败仍保留错误与回滚，不把这些故障当成成功。
 
 此项修复部署在被控端，主控无需重编译。已经部署当前 QAgent 的节点可替换 `/home/software/QAgent/service/Nat.py` 后重启 `qagent.service`，再重试创建 NAT；先保留旧源码副本，现有 token、证书与规则数据库无需重建。
+
+### Python 依赖使用自有镜像站
+
+QAgent `1.0.5` 的安装、更新统一使用 `https://mirror.chuqiyun.com/software/QAgent/dependencies/` 下的离线 wheel 包。支持 Linux x86_64、aarch64 和 Python 3.10；不支持的架构在停服前明确报错。QAgent 与 noVNC/websockify 0.11.0 的全部 Python 依赖及 pip 引导包一并固定，无需节点访问 PyPI、GitHub 或国内第三方 Python 源。
+
+包名含内容哈希，`dependencies.json` 固定整包 SHA-256，包内锁文件固定每个 wheel 的版本和 SHA-256。下载缓存位于 `/home/software/.qagent-dependencies`。更新先在暂存目录校验整包、缓存、全部 wheel 以及离线依赖解析，成功后才停止 QAgent、替换源码。`lib.sh` 也在停止 noVNC 前完成离线依赖安装。系统 apt 软件源仍需节点可访问；此变更只替换 Python 依赖安装路径。
+
+若升级旧版本已因 `setup.py install` 失败，新版不再执行该命令，也不会退回 easy_install。先保存更新失败时留下的备份，再重新更新。也可只补装当前发布的依赖（不会停止或重启服务）：
+
+```bash
+cd /home/software/QAgent
+curl -fL --proto '=https' --proto-redir '=https' -o dependencies.json https://mirror.chuqiyun.com/software/QAgent/dependencies.json
+curl -fL --proto '=https' --proto-redir '=https' -o service/DependencyBundle.py https://mirror.chuqiyun.com/software/QAgent/service/DependencyBundle.py
+/usr/bin/python3.10 service/DependencyBundle.py install
+```
+
+发布维护：在具备网络的构建机安装 `setuptools==80.9.0 wheel==0.45.1`，执行 `python scripts/build_qagent_dependencies.py --output <新的输出目录>`，同时上传两个架构的 `.tar.gz` 并更新 QAgent 中的 `dependencies.json`。此脚本只用于发布机；节点始终通过 `--no-index --require-hashes --only-binary=:all:` 安装，不读取外部索引。

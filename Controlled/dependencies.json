@@ -1,0 +1,19 @@
+{
+  "python": "3.10",
+  "websockify_source": {
+    "url": "https://mirror.chuqiyun.com/software/noVNC/noVNC.tar.gz",
+    "sha256": "199d56fe2d2399c54a8ceea4056d34fe68166df8f98ca93a0c6b69bc5bd7ec66"
+  },
+  "bundles": {
+    "x86_64": {
+      "file": "qagent-cp310-manylinux2014-x86_64-43b49050c59a74d2.tar.gz",
+      "sha256": "43b49050c59a74d2fe5b2d07d2fd0654efaecd4c2dfd146503faa5a60fbddfa0",
+      "wheels": 35
+    },
+    "aarch64": {
+      "file": "qagent-cp310-manylinux2014-aarch64-f9a24f5f3c2de823.tar.gz",
+      "sha256": "f9a24f5f3c2de823bbb647e2d0defe38865575f240271820fdf34fc40aa67350",
+      "wheels": 35
+    }
+  }
+}

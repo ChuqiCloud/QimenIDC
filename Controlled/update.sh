@@ -90,12 +90,13 @@ function stage_package(){
     trap '[ -z "${STAGING_DIR}" ] || rm -rf -- "${STAGING_DIR}"' EXIT
     tar -zxf "${PACKAGE_PATH}" -C "${STAGING_DIR}" || fail "extract package error"
     local required
-    for required in main.py lib.sh qa.sh harden.sh security.sh service/SecurityConfig.py; do
+    for required in main.py lib.sh qa.sh harden.sh security.sh service/SecurityConfig.py service/DependencyBundle.py dependencies.json; do
         [ -f "${STAGING_DIR}/${required}" ] && [ ! -L "${STAGING_DIR}/${required}" ] || fail "invalid package: missing ${required}"
     done
     normalize_shell_scripts "${STAGING_DIR}"
     # 新包也先读已有配置，失败时原目录、运行服务与证书仍然保留。
     bash "${STAGING_DIR}/harden.sh" --prepare-config || fail "security settings are incomplete; existing QAgent was not replaced"
+    /usr/bin/python3.10 "${STAGING_DIR}/service/DependencyBundle.py" prepare || fail "offline dependencies are not ready; existing QAgent was not replaced"
 }
 
 function install_package(){

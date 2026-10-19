@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tarfile
 import unittest
 
 
@@ -184,6 +185,30 @@ fi
         self.assertNotEqual(0, result.returncode)
         self.assertIn('missing QAGENT_MANAGER_IPS', result.stderr)
         self.assertFalse(self.config.exists())
+        self.assert_preserved()
+
+    def test_staged_dependency_failure_preserves_running_node(self):
+        payload = self.root / 'payload'
+        for name in ('main.py', 'lib.sh', 'qa.sh', 'security.sh',
+                     'service/SecurityConfig.py', 'dependencies.json'):
+            self.write(payload / name, '# isolated package fixture\n')
+        self.write(payload / 'harden.sh', '#!/bin/bash\nexit 0\n')
+        self.write(payload / 'service/DependencyBundle.py',
+                   'import sys\nprint("simulated missing dependency wheel", file=sys.stderr)\nsys.exit(9)\n')
+        with tarfile.open(self.root / 'software/QAgent.tar.gz', 'w:gz') as archive:
+            for path in payload.rglob('*'):
+                if path.is_file():
+                    archive.add(path, arcname=path.relative_to(payload).as_posix())
+        # 真实解包和清理仅作用于隔离目录；服务命令仍由拒绝执行的桩保护。
+        for command in ('tar', 'find', 'rm'):
+            self.command(command, f'exec /usr/bin/{command} "$@"\n')
+        source = (self.agent / 'update.sh').read_text(encoding='utf-8')
+        self.write(self.agent / 'update.sh', source.rsplit('\nmain\n', 1)[0] + '\n')
+        result = self.run_shell('source ' + shlex.quote((self.agent / 'update.sh').as_posix()) +
+                                '\nstage_package\n')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('offline dependencies are not ready', result.stderr)
+        self.assertIn('simulated missing dependency wheel', result.stderr)
         self.assert_preserved()
 
     def test_existing_config_is_reused_without_promoting_dynamic_sources(self):

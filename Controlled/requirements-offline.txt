@@ -1,0 +1,30 @@
+# Python 3.10/Linux 离线包的完整依赖，升级时重新生成两种架构及 dependencies.json。
+-r requirements.txt
+pip == 25.2
+setuptools == 80.9.0
+wheel == 0.45.1
+pydantic == 1.10.26
+starlette == 0.27.0
+anyio == 3.7.1
+idna == 3.11
+sniffio == 1.3.1
+exceptiongroup == 1.3.0
+typing_extensions == 4.15.0
+click == 8.1.8
+h11 == 0.16.0
+greenlet == 3.1.1
+six == 1.17.0
+pytz == 2025.2
+tzlocal == 5.3.1
+cffi == 1.17.1
+pycparser == 2.23
+requests == 2.32.5
+certifi == 2025.8.3
+charset_normalizer == 3.4.3
+urllib3 == 2.5.0
+jwcrypto == 1.5.6
+redis == 5.0.8
+async_timeout == 4.0.3
+packaging == 25.0
+colorama == 0.4.6
+tzdata == 2025.2

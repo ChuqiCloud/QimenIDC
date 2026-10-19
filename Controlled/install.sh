@@ -65,7 +65,6 @@ function install_python_source(){
 function install_python(){
     #判断是否安装python3.10.5
     if [ -f "/usr/bin/python3.10" ];then
-        apt-get install -y python3-pip
         echo "python3.10.5 has been installed!"
     else
         cd /home/software
@@ -77,9 +76,6 @@ function install_python(){
         make && make install
         ln -s /home/software/python3.10.5/bin/python3.10 /usr/bin/python3.10
         ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
-        pip3.10 config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple/
-        pip3.10 install --upgrade pip
-        pip3.10 install -r /home/software/QAgent/requirements.txt
     fi
 }
 
@@ -93,7 +89,7 @@ function download_qimenidc_controller(){
 
 # 安装QimenIDC Controller依赖
 function install_qimenidc_controller_source(){
-    pip3.10 install -r /home/software/QAgent/requirements.txt
+    /usr/bin/python3.10 /home/software/QAgent/service/DependencyBundle.py install
 }
 
 # 配置QimenIDC Controller token文件
@@ -208,7 +204,8 @@ function download_noVNC(){
 # 安装websockify
 function install_websockify(){
     cd /home/software/noVNC/utils/websockify
-    python3.10 setup.py install
+    # websockify 及其全部依赖已从自有离线包安装，不再调用 easy_install。
+    /usr/bin/python3.10 -c 'import websockify, redis, jwcrypto, requests'
     chmod +x /home/software/noVNC/utils/websockify/run
 }
 

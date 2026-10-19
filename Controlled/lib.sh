@@ -7,6 +7,9 @@ find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/
 # 存量节点先补录并验证安全配置，缺失时不安装依赖、不停止 noVNC。
 bash /home/software/QAgent/harden.sh --prepare-config
 
+# 校验、解析并安装自有镜像站依赖，完成前不能停止 noVNC 或替换其目录。
+/usr/bin/python3.10 /home/software/QAgent/service/DependencyBundle.py install
+
 apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
 
 # lsof is required by the VNC proxy process to detect its listening port.
@@ -30,7 +33,6 @@ function ensure_lsof(){
 }
 
 ensure_lsof
-pip3.10 install -r /home/software/QAgent/requirements.txt
 rm -rf /usr/share/qemu-server/bootsplash.jpg
 mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
 
@@ -101,7 +103,7 @@ function download_noVNC(){
 # 安装websockify
 function install_websockify(){
     cd /home/software/noVNC/utils/websockify
-    python3.10 setup.py install
+    /usr/bin/python3.10 -c 'import websockify, redis, jwcrypto, requests'
     chmod +x /home/software/noVNC/utils/websockify/run
 }
 
