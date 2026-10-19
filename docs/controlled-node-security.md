@@ -11,7 +11,7 @@ cd /home/software/QAgent
 bash harden.sh --manager-ips '198.51.100.42/32 2001:db8::42/128' --cert-hosts 'pve-01.example.net 203.0.113.17' --vnc-proxy-ips '203.0.113.17/32 203.0.113.18/32'
 ```
 
-The default action rotates this node's QAgent token and revokes all existing noVNC sessions. The command generates or preserves a TLS certificate at `/etc/qimenidc/qagent/qimenidc-qagent.crt`; import that certificate into the manager JVM trust store before API traffic resumes. The certificate includes the supplied certificate hosts and current interface addresses. Replace and re-import it when its one-year validity ends.
+The default action preserves this node's manager-supplied QAgent token and existing noVNC sessions. Use `--token-stdin` to install a replacement manager token and `--clear-vnc` to explicitly revoke sessions. The command generates or preserves a TLS certificate at `/etc/qimenidc/qagent/qimenidc-qagent.crt`; save that node certificate in the manager before API traffic resumes. The certificate includes the supplied certificate hosts and current interface addresses. Replace it and update the manager's saved certificate before its validity ends.
 
 The manager currently stores one shared QAgent token for all nodes. Rotate once, securely distribute that same value to every managed node, then update the manager's shared token before resuming traffic. The rotate command writes the value to the protected `token.key` file; the remediation script suppresses token output. Stream its contents over SSH directly into each other node; do not put the value in shell arguments or logs:
 
@@ -23,6 +23,27 @@ ssh -T first-node 'sudo -n cat /home/software/QAgent/token.key' |
 Run the stream once per node and then update the manager's shared token using its protected configuration workflow. `--token-stdin` validates and atomically installs the piped 64-character lowercase hex token without printing it. Omit `--clear-vnc` only when keeping existing noVNC sessions is intended. A subsequent package update preserves the token, whitelist, and certificates.
 
 ## 管理源白名单自动同步
+
+### 更新失败：`Invalid manager whitelist`
+
+`easy-install.pth`、`Finished processing dependencies for websockify` 是依赖安装的正常输出。真正的失败发生在其后的 `harden.sh`：旧节点没有 `/etc/qimenidc/security.conf`，也没有提供 `QAGENT_MANAGER_IPS`，因此拒绝空白名单。还需要同时提供节点的证书 SAN（`QAGENT_CERT_HOSTS`）和 noVNC 控制节点的来源 IP/CIDR（`QAGENT_VNC_PROXY_IPS`）；不能用放通所有来源代替这些配置。
+
+修复后的 `update.sh` 会在下载、停服和替换源码前读取现有配置，交互终端只询问缺失项；无人值守时缺项直接失败，原服务保持原状。完整配置会被复用，自动同步得到的动态来源不会变成静态白名单。新包先解压到暂存目录，通过新包的配置检查才替换程序；全部服务健康后才删除旧 QAgent 源码与数据备份。后续失败会保留备份供人工恢复，这不代表 nginx、systemd 和 noVNC 的完整自动回滚。
+
+首次使用此流程应部署修复后的入口脚本；仍在运行旧版 `qa`/`update.sh` 时，它们会提前停止 QAgent 并替换程序，新包无法撤销此前的操作。新包 `lib.sh` 也会在安装依赖或停止 noVNC 前检查配置，以便此类升级尽早补录缺失项。
+
+也可先保存配置，再更新。以下为示例地址，必须替换为实际管理出口、主控访问该节点的地址，以及 noVNC 控制节点来源：
+
+```bash
+cd /home/software/QAgent
+sudo bash harden.sh --prepare-config \
+  --manager-ips '198.51.100.42/32' \
+  --cert-hosts 'pve-01.example.net' \
+  --vnc-proxy-ips '203.0.113.17/32 203.0.113.18/32'
+sudo bash update.sh
+```
+
+`--prepare-config` 只验证并保存配置，不改 token、证书或服务。服务配置阶段仍会校验现有证书的有效期和 SAN，证书异常时需先修复证书并更新主控中保存的证书。
 
 安装时写进 `security.conf` 的 `QAGENT_MANAGER_IPS` 只是初始值。主控或机房出口 IP 一变，节点会以「连接超时」的方式整体失联，所以白名单需要能自动跟随。
 

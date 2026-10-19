@@ -4,6 +4,9 @@ umask 077
 
 find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
+# 存量节点先补录并验证安全配置，缺失时不安装依赖、不停止 noVNC。
+bash /home/software/QAgent/harden.sh --prepare-config
+
 apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
 
 # lsof is required by the VNC proxy process to detect its listening port.
@@ -34,8 +37,14 @@ mv /home/software/QAgent/images/bootsplash.jpg /usr/share/qemu-server/
 # 停止novnc服务
 systemctl stop noVNC.service
 
-# 删除noVNC文件夹
+# 替换前保留旧目录中的证书；已有私钥必须沿用，不能重新生成。
 if [ -d /home/software/noVNC ]; then
+    bash -euo pipefail -c '
+        source /home/software/QAgent/security.sh
+        security_init_directory
+        security_ensure_novnc_user
+        security_prepare_novnc_certificate
+    '
     rm -rf /home/software/noVNC
 fi
 
