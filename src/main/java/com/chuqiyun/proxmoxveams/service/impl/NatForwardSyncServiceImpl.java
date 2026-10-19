@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * @Author: 星禾
@@ -50,6 +51,11 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
         String normalizedProtocol = normalizeProtocol(protocol);
         String ruleKey = buildPortRuleKey(nodeId, sourceIp, sourcePort, normalizedProtocol);
         NatForwardRule rule = getRuleByKey(ruleKey);
+        if (rule != null && (!Objects.equals(rule.getHostId(), hostId)
+                || !Objects.equals(rule.getDestinationIp(), normalize(destinationIp))
+                || !Objects.equals(rule.getDestinationPort(), destinationPort))) {
+            return false;
+        }
         long now = System.currentTimeMillis();
         if (rule == null) {
             rule = new NatForwardRule();
@@ -70,15 +76,19 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
 
     @Override
     public synchronized boolean deletePortRule(Integer nodeId, String sourceIp, Integer sourcePort, String protocol) {
-        natForwardRuleService.remove(new QueryWrapper<NatForwardRule>()
-                .eq("rule_key", buildPortRuleKey(nodeId, sourceIp, sourcePort, normalizeProtocol(protocol))));
-        return true;
+        String ruleKey = buildPortRuleKey(nodeId, sourceIp, sourcePort, normalizeProtocol(protocol));
+        natForwardRuleService.remove(new QueryWrapper<NatForwardRule>().eq("rule_key", ruleKey));
+        return getRuleByKey(ruleKey) == null;
     }
 
     @Override
     public synchronized boolean saveIpForwardRule(Integer nodeId, Integer hostId, String sourceIp, String destinationIp) {
         String ruleKey = buildIpRuleKey(nodeId, sourceIp);
         NatForwardRule rule = getRuleByKey(ruleKey);
+        if (rule != null && (!Objects.equals(rule.getHostId(), hostId)
+                || !Objects.equals(rule.getDestinationIp(), normalize(destinationIp)))) {
+            return false;
+        }
         long now = System.currentTimeMillis();
         if (rule == null) {
             rule = new NatForwardRule();
@@ -96,9 +106,9 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
 
     @Override
     public synchronized boolean deleteIpForwardRule(Integer nodeId, String sourceIp) {
-        natForwardRuleService.remove(new QueryWrapper<NatForwardRule>()
-                .eq("rule_key", buildIpRuleKey(nodeId, sourceIp)));
-        return true;
+        String ruleKey = buildIpRuleKey(nodeId, sourceIp);
+        natForwardRuleService.remove(new QueryWrapper<NatForwardRule>().eq("rule_key", ruleKey));
+        return getRuleByKey(ruleKey) == null;
     }
 
     @Override
@@ -125,14 +135,13 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
     @Override
     @Scheduled(initialDelay = 30_000, fixedDelay = 5 * 60 * 1000)
     public void syncAllNodes() {
-        if (!isLegacyQAgentNatAvailable()) {
-            return;
-        }
         for (Master node : masterService.list()) {
             if (node == null || node.getId() == null || StringUtils.isBlank(node.getHost()) || node.getControllerPort() == null) {
                 continue;
             }
-            syncNode(node);
+            synchronized (NatForwardSyncService.class) {
+                syncNode(node);
+            }
         }
     }
 
@@ -168,10 +177,6 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
             updateState(state, false, abbreviate(e.getMessage()), true);
             log.warn("[NAT-SYNC] 节点同步失败 nodeId={}, host={}", node.getId(), node.getHost(), e);
         }
-    }
-
-    private boolean isLegacyQAgentNatAvailable() {
-        return false;
     }
 
     private boolean importNodeRules(Master node) {

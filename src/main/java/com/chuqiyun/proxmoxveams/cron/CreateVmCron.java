@@ -1,8 +1,11 @@
 package com.chuqiyun.proxmoxveams.cron;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.TimedLock;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
@@ -16,6 +19,7 @@ import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.EntityHashMapConverterUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -58,6 +62,8 @@ public class CreateVmCron {
     private SubnetpoolService subnetpoolService;
     @Resource
     private MasterService masterService;
+    @Resource
+    private ConfigService configService;
     @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
     @Resource(name = "createVmExecutor")
@@ -127,15 +133,6 @@ public class CreateVmCron {
                 task.setStatus(3);
                 task.setError("创建虚拟机任务参数缺少主机名");
                 taskService.updateById(task);
-                return;
-            }
-            if (isVpcNetwork(vmParams) || Objects.equals(vmParams.getIfnat(), 1)) {
-                String error = "QAgent NAT端点已停用，暂不支持 NAT/VPC 网络虚拟机创建";
-                if (isVpcNetwork(vmParams)) {
-                    finishCreateVmFailed(task, null, vmParams, 0, error);
-                } else {
-                    markCreateTaskFailed(task, null, error);
-                }
                 return;
             }
             String hostname = vmParams.getHostname();
@@ -252,9 +249,12 @@ public class CreateVmCron {
                 }
                 Master node = masterService.getById(vmParams.getNodeid());
                 int s_port = nextNatSourcePort();
-                if (!vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId)){
+                if (!Boolean.TRUE.equals(vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId))) {
                     s_port = nextNatSourcePort();
-                    vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId);
+                    if (!Boolean.TRUE.equals(vmhostService.addVmhostNat(node.getHost(), s_port, dest_ip, dest_port, "tcp", vmhostId))) {
+                        finishCreateVmFailed(task, vmhostId, vmParams, vmIdInit, "创建默认NAT失败: 远程转发规则创建失败");
+                        return;
+                    }
                 }
                 System.out.println("[NAT] 创建默认远程NAT: 虚拟机ID:" + vmhostId + " VM-ID:" + task.getHostid() + " 完成");
             }
@@ -465,7 +465,7 @@ public class CreateVmCron {
                 } catch (Exception cleanupException) {
                     // 清理流程自身异常时仍保证主任务和虚拟机状态可恢复，避免永久停留在创建中。
                     log.error("创建虚拟机失败后的清理异常: HostId={}, VM-ID={}", vmhostId, vmIdInit, cleanupException);
-                    markCreateTaskFailed(task, vmhostId, error);
+                    markCreateTaskFailed(task, vmhostId, error + "；清理失败，IP分配已保留: " + getExceptionMessage(cleanupException));
                 }
                 log.error("创建虚拟机任务异常: NodeID={}, VM-ID={}",
                         vmParams.getNodeid(), vmIdInit, e);
@@ -578,14 +578,20 @@ public class CreateVmCron {
         return true;
     }
 
-    private void rollbackVpcIpForwards(Integer vmhostId, VmParams vmParams, int createdCount) {
-        if (vmhostId == null || vmParams == null || vmParams.getIpList() == null || vmParams.getPublicIpList() == null) {
-            return;
+    private boolean rollbackVpcIpForwards(Integer vmhostId, VmParams vmParams, int createdCount) {
+        if (vmParams == null || vmParams.getIpList() == null || vmParams.getPublicIpList() == null) {
+            return true;
         }
         int max = Math.min(createdCount, Math.min(vmParams.getIpList().size(), vmParams.getPublicIpList().size()));
-        for (int i = 0; i < max; i++) {
-            vmhostService.delVmhostVpcIpForward(vmhostId, vmParams.getPublicIpList().get(i), vmParams.getIpList().get(i));
+        if (vmhostId == null) {
+            return max == 0;
         }
+        for (int i = 0; i < max; i++) {
+            if (!Boolean.TRUE.equals(vmhostService.delVmhostVpcIpForward(vmhostId, vmParams.getPublicIpList().get(i), vmParams.getIpList().get(i)))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isVpcNetwork(VmParams vmParams) {
@@ -610,6 +616,33 @@ public class CreateVmCron {
         if (isVpcNetwork(vmParams)) {
             releaseCreatedVpcIps(vmParams, vmId);
             return;
+        }
+        if (Objects.equals(vmParams.getIfnat(), 1) && vmhostId != null) {
+            Object result = vmhostService.getVmhostNatByVmid(1, Integer.MAX_VALUE, vmhostId);
+            if (!(result instanceof ResponseResult<?> response)
+                    || !Objects.equals(response.getCode(), ResponseResult.RespCode.OK.getCode())
+                    || !(response.getData() instanceof JSONArray rules)) {
+                throw new IllegalStateException("读取NAT转发失败，保留IP分配");
+            }
+            Master node = masterService.getById(vmParams.getNodeid());
+            JSONObject remote = node == null ? null : ClientApiUtil.exportNatRules(node.getHost(), configService.getToken(), node.getControllerPort());
+            if (remote == null || remote.getJSONObject("data") == null
+                    || remote.getJSONObject("data").getJSONArray("port_rules") == null) {
+                throw new IllegalStateException("读取被控端NAT转发失败，保留IP分配");
+            }
+            for (JSONObject rule : remote.getJSONObject("data").getJSONArray("port_rules").toJavaList(JSONObject.class)) {
+                if (Objects.equals(rule.getInteger("vm"), vmhostId)) {
+                    rules.add(rule);
+                }
+            }
+            for (int i = 0; i < rules.size(); i++) {
+                JSONObject rule = rules.getJSONObject(i);
+                if (!Objects.equals(rule.getInteger("vm"), vmhostId)
+                        || !Boolean.TRUE.equals(vmhostService.delVmhostNat(rule.getString("source_ip"), rule.getIntValue("source_port"),
+                        rule.getString("destination_ip"), rule.getIntValue("destination_port"), rule.getString("protocol"), vmhostId))) {
+                    throw new IllegalStateException("清理NAT转发失败，保留IP分配");
+                }
+            }
         }
         releaseCreatedIps(vmParams, vmId);
     }
@@ -649,7 +682,10 @@ public class CreateVmCron {
             return;
         }
         int releaseCount = 0;
-        rollbackVpcIpForwards(vmParams.getHostid(), vmParams, vmParams.getPublicIpList() == null ? 0 : vmParams.getPublicIpList().size());
+        if (vmParams.getHostid() != null && !rollbackVpcIpForwards(vmParams.getHostid(), vmParams,
+                vmParams.getPublicIpList() == null ? 0 : vmParams.getPublicIpList().size())) {
+            throw new IllegalStateException("清理VPC公网转发失败，保留IP分配");
+        }
         for (String ip : vmParams.getIpList()) {
             Subnetpool subnetpool = getSubnetpoolByIpAndNodeId(ip, vmParams.getNodeid(), vmParams.getVpcSubnetId());
             if (subnetpool == null || (!Objects.equals(subnetpool.getVmId(), vmId) && !Objects.equals(subnetpool.getVmId(), 0))) {

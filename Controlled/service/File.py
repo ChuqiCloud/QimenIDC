@@ -1,6 +1,43 @@
 import os
+import stat
 
-from service.Security import check_file_path
+from service.Security import check_file_path, is_valid_filename
+
+def open_directory(path):
+    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.strip('/').split('/'):
+            if not part:
+                continue
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def delete_image(path, filename):
+    if not isinstance(filename, str) or not is_valid_filename(filename) or '\\' in filename:
+        raise ValueError('invalid image file name')
+    real_path = check_file_path('delete', path, filename)
+    try:
+        directory = open_directory(real_path)
+    except FileNotFoundError:
+        return True
+    try:
+        try:
+            info = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            return True
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError('image is not a regular file')
+        os.unlink(filename, dir_fd=directory)
+        return True
+    finally:
+        os.close(directory)
+
 
 # 读取文件大小上限（字节），避免大文件把内存打满
 MAX_READ_SIZE = 8 * 1024 * 1024

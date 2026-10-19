@@ -316,6 +316,15 @@ create table if not exists sys_passkey
     index idx_sys_passkey_userid (userid)
 ) comment '管理员Passkey凭据';
 
+create table if not exists sys_passkey_challenge
+(
+    challenge  varchar(64) character set ascii collate ascii_bin primary key,
+    type       varchar(24) not null,
+    user_uuid  varchar(64) null,
+    expires_at bigint not null,
+    index idx_passkey_challenge_expiry (expires_at)
+);
+
 create table task
 (
     id          int auto_increment
@@ -635,12 +644,13 @@ create table agent_trust
 (
     id            bigint auto_increment primary key,
     cluster_id    varchar(64)   not null comment '集群标识，同一套主控库共用',
+    member_id     varchar(64)   default 'legacy' not null comment '主控实例标识',
     address       varchar(128)  not null comment '可信管理源地址(CIDR)',
     source        varchar(16)   not null comment '来源 local主控自报 probe节点实测',
     node_id       int           null comment '上报该地址的被控节点ID',
     create_time   bigint        not null comment '创建时间戳(毫秒)',
     last_seen     bigint        not null comment '最近一次上报时间戳(毫秒)',
-    unique index uk_agent_trust_cluster_addr (cluster_id, address),
+    unique index uk_agent_trust_member (cluster_id, member_id, source, node_id, address),
     index idx_agent_trust_seen (last_seen)
 );
 

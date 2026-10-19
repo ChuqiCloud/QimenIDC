@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Request
 
 from common.CodeEnum import CodeEnum
@@ -18,7 +20,7 @@ Add port forwarding rules
 async def nat_add(request: Request, item: ForwardRule = None):
     item = bind_entity(ForwardRule, await get_payload(request))
     nat = Nat.NatManager(item.source_ip,item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
-    result = nat.add_forward_rule()
+    result = await asyncio.to_thread(nat.add_forward_rule)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -34,7 +36,7 @@ Delete port forwarding rules
 async def nat_delete(request: Request, item: ForwardRule = None):
     item = bind_entity(ForwardRule, await get_payload(request))
     nat = Nat.NatManager(item.source_ip,item.source_port, item.destination_ip, item.destination_port, item.protocol, item.vm)
-    result = nat.delete_forward_rule()
+    result = await asyncio.to_thread(nat.delete_forward_rule)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -49,7 +51,7 @@ Get port forwarding rules
 @nat_router.get('/nat/getVm/{page}/{size}')
 async def nat_get(request: Request, page: int = None, size: int = None, vm: int = None):
     nat = Nat.NatManager('', '', '', '', '', vm)
-    result = nat.get_forward_rules_by_vm(size, page)
+    result = await asyncio.to_thread(nat.get_forward_rules_by_vm, size, page)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -63,7 +65,7 @@ async def nat_addBridge(request: Request):
     nataddr = str(payload.get('nataddr') or '')
     bridge = str(payload.get('bridge') or '')
     nat = Nat.NatManager('', '', '', '', '', '')
-    result = nat.add_forward_nat_bridge(nataddr, bridge)
+    result = await asyncio.to_thread(nat.add_forward_nat_bridge, nataddr, bridge)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -76,7 +78,7 @@ async def nat_addBridge(request: Request):
 async def nat_add_ip_forward(request: Request, item: IpForwardRule = None):
     item = bind_entity(IpForwardRule, await get_payload(request))
     nat = Nat.IpForwardManager(item.source_ip, item.destination_ip, item.vm)
-    result = nat.add_ip_forward_rule()
+    result = await asyncio.to_thread(nat.add_ip_forward_rule)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -89,7 +91,7 @@ async def nat_add_ip_forward(request: Request, item: IpForwardRule = None):
 async def nat_delete_ip_forward(request: Request, item: IpForwardRule = None):
     item = bind_entity(IpForwardRule, await get_payload(request))
     nat = Nat.IpForwardManager(item.source_ip, item.destination_ip, item.vm)
-    result = nat.delete_ip_forward_rule()
+    result = await asyncio.to_thread(nat.delete_ip_forward_rule)
     code = result['code']
     message = result['message']
     if (code == 0):
@@ -100,7 +102,7 @@ async def nat_delete_ip_forward(request: Request, item: IpForwardRule = None):
 
 @nat_router.get('/nat/export')
 async def nat_export(request: Request):
-    result = Nat.Manager().export_rules()
+    result = await asyncio.to_thread(lambda: Nat.Manager().export_rules())
     if result['code'] == 0:
         return secured_response(request, CodeEnum.SUCCESS, result['message'], result['data'])
     return secured_response(request, CodeEnum.FAIL, result['message'], {})
@@ -111,7 +113,7 @@ async def nat_sync(request: Request, item: NatSyncRequest = None):
     item = bind_entity(NatSyncRequest, await get_payload(request))
     port_rules = [rule.dict() for rule in item.port_rules]
     ip_forward_rules = [rule.dict() for rule in item.ip_forward_rules]
-    result = Nat.Manager().sync_rules(port_rules, ip_forward_rules)
+    result = await asyncio.to_thread(lambda: Nat.Manager().sync_rules(port_rules, ip_forward_rules))
     if result['code'] == 0:
         return secured_response(request, CodeEnum.SUCCESS, result['message'], result['data'])
     return secured_response(request, CodeEnum.FAIL, result['message'], result['data'])

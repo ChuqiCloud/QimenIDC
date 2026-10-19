@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import re
+import stat
 import threading
 import time
 
@@ -245,8 +246,34 @@ FILE_POLICIES = {
 }
 
 
+def image_directories():
+    path = '/etc/qimenidc/image-paths.json'
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return ['/home/images']
+    with os.fdopen(descriptor, encoding='utf-8') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('image path configuration must be root-owned and not writable by others')
+        paths = json.load(stream)
+    if not isinstance(paths, list) or any(not isinstance(item, str) or not os.path.isabs(item) for item in paths):
+        raise ValueError('image path configuration must be an array of absolute directories')
+    result = ['/home/images']
+    for path in paths:
+        path = os.path.realpath(path)
+        if path in ('/', '/home', '/var', '/usr', '/mnt', '/media', '/opt', '/srv', '/tmp', '/root') or in_scope(
+                path, ['/etc', '/proc', '/sys', '/dev', '/boot', '/run']):
+            raise ValueError('image directory is too broad or reserved')
+        if path not in result:
+            result.append(path)
+    return result
+
+
 def check_file_path(policy, path, filename=''):
-    allowed_paths = FILE_POLICIES.get(policy, [])
+    allowed_paths = list(FILE_POLICIES.get(policy, []))
+    if policy in ('list', 'delete'):
+        allowed_paths.extend(image_directories())
     if not allowed_paths:
         unauthorized('path not allowed')
     real_path = resolve_path(path)

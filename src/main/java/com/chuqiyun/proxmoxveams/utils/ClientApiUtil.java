@@ -325,10 +325,14 @@ public class ClientApiUtil {
     * @Return Boolean 是否删除成功
     */
     public static Boolean deleteOsFile(String ip, Integer port, String token, String osName){
+        return deleteOsFile(ip, port, token, "/home/images", osName);
+    }
+
+    public static Boolean deleteOsFile(String ip, Integer port, String token, String path, String osName){
         String url = AGENT_SCHEME + ip + ":" + port + "/deleteFile";
         Map<String, Object> paramMap = new HashMap<>();
-        paramMap.put("path","/home/images/");
-        paramMap.put("file",osName);
+        paramMap.put("path", path);
+        paramMap.put("file", osName);
         JSONObject result = postControllerApi(url, paramMap, token);
         return result != null && result.getInteger("code") == 200;
     }

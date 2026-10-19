@@ -1,10 +1,13 @@
+import fcntl
 import ipaddress
+import json
 import os
 import re
-import socket
-import ssl
 import subprocess
 import tempfile
+import time
+
+from service.SecurityConfig import read_config, render_config
 
 DEFAULT_SECURITY_CONFIG = '/etc/qimenidc/security.conf'
 DEFAULT_NGINX_CONFIG = '/etc/nginx/conf.d/qimenidc-qagent.conf'
@@ -18,16 +21,6 @@ def get_config_path():
 
 def get_nginx_config_path():
     return os.environ.get('QIMENIDC_NGINX_CONFIG', DEFAULT_NGINX_CONFIG)
-
-
-def get_manager_endpoint():
-    endpoint = os.environ.get('QIMENIDC_MANAGER_ENDPOINT', '').strip()
-    if not endpoint:
-        raise ValueError('manager endpoint is not configured on this node')
-    host, _, port = endpoint.rpartition(':')
-    if not host or not port.isdigit():
-        raise ValueError('manager endpoint must be host:port')
-    return host, int(port)
 
 
 def get_cluster_id():
@@ -92,58 +85,19 @@ def missing_networks(networks, declared):
 
 
 def read_networks(config_path=None):
-    networks = {'managers': [], 'probes': []}
-    path = config_path or get_config_path()
-    try:
-        with open(path, 'r', encoding='utf-8') as stream:
-            lines = stream.read().splitlines()
-    except OSError:
-        return networks
-    for line in lines:
-        name, _, value = line.partition('=')
-        key = {'QAGENT_MANAGER_IPS': 'managers', 'QAGENT_MANAGER_PROBES': 'probes'}.get(name.strip())
-        if key is None:
-            continue
-        networks[key] = normalize_networks(value.strip().strip('\'"'), allow_empty=True)
-    return networks
-
-
-'''
-主控出口地址探测：
-用主控的 QAgent TLS 端口读它自己的证书，取本节点这次 TCP 连接的来源地址。
-不依赖主控提供接口，主控版本无需同步升级。
-'''
-def probe_manager_addresses(host, port, timeout=8):
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    with socket.create_connection((host, int(port)), timeout=timeout) as raw:
-        with context.wrap_socket(raw) as tls:
-            certificate = tls.getpeercert(binary_form=True)
-    if not certificate:
-        raise ValueError('manager did not present a certificate')
-    descriptor, path = tempfile.mkstemp(prefix='qimen-probe-', suffix='.pem')
-    try:
-        with os.fdopen(descriptor, 'w', encoding='ascii') as stream:
-            stream.write(ssl.DER_cert_to_PEM_cert(certificate))
-        result = subprocess.run(['openssl', 'x509', '-in', path, '-noout', '-in_ip'],
-                                capture_output=True, text=True, check=False)
-    finally:
-        os.unlink(path)
-    addresses = []
-    for line in result.stdout.splitlines():
-        match = re.search(r'IP Address:\s*(\S+)', line)
-        if match:
-            addresses.append(str(parse_address(match.group(1))))
-    return addresses
+    values = read_config(config_path or get_config_path())
+    return {
+        'managers': normalize_networks(values.get('QAGENT_MANAGER_IPS', ''), allow_empty=True),
+        'probes': normalize_networks(values.get('QAGENT_MANAGER_PROBES', ''), allow_empty=True),
+    }
 
 
 def render_security_config(networks, previous=''):
     lines = [line for line in (previous or '').splitlines()
              if not line.startswith(('QAGENT_MANAGER_IPS=', 'QAGENT_MANAGER_PROBES='))]
-    lines.append('QAGENT_MANAGER_IPS=%s' % ' '.join(networks.get('managers', [])))
-    lines.append('QAGENT_MANAGER_PROBES=%s' % ' '.join(networks.get('probes', [])))
-    return '\n'.join(lines) + '\n'
+    values = {'QAGENT_MANAGER_IPS': ' '.join(networks.get('managers', [])),
+              'QAGENT_MANAGER_PROBES': ' '.join(networks.get('probes', []))}
+    return '\n'.join(lines) + '\n' + render_config(values)
 
 
 def render_nginx_acl(networks, path=None):
@@ -190,59 +144,93 @@ def apply_networks(networks, config_path=None):
     with open(nginx_path, 'r', encoding='utf-8') as stream:
         previous_nginx = stream.read()
     next_nginx = render_nginx_acl(networks, nginx_path)
-    write_atomic(config_path, render_security_config(networks, previous), 0o600)
-    write_atomic(nginx_path, next_nginx, 0o644)
     try:
-        test = subprocess.run(['nginx', '-t'], capture_output=True, text=True, check=False)
+        write_atomic(config_path, render_security_config(networks, previous), 0o600)
+        write_atomic(nginx_path, next_nginx, 0o644)
+        test = subprocess.run(['nginx', '-t'], capture_output=True, text=True, check=False, timeout=5)
         if test.returncode == 0:
-            reload = subprocess.run(['systemctl', 'reload', 'nginx'], capture_output=True, text=True, check=False)
+            reload = subprocess.run(['systemctl', 'reload', 'nginx'], capture_output=True,
+                                    text=True, check=False, timeout=5)
             if reload.returncode == 0:
                 return
             detail = reload.stderr or reload.stdout or ''
         else:
             detail = test.stderr or test.stdout or ''
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         detail = str(error)
-    # 白名单写坏会把主控挡在门外，校验或重载失败一律回滚
+    # 白名单写坏会把主控挡在门外，文件和运行中的配置都恢复到更新前。
     write_atomic(config_path, previous, 0o600)
     write_atomic(nginx_path, previous_nginx, 0o644)
+    try:
+        subprocess.run(['systemctl', 'reload', 'nginx'], capture_output=True, check=False, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     raise ValueError('nginx reload failed: %s' % detail.strip()[:200])
 
 
 class TrustStore:
-    def __init__(self, config_path=None, probe=None, apply=None):
+    LEASE_SECONDS = 24 * 60 * 60
+
+    def __init__(self, config_path=None, apply=None):
         self.config_path = config_path or get_config_path()
-        self.probe = probe or probe_manager_addresses
+        self.state_path = self.config_path + '.trust.json'
         self.apply = apply or apply_networks
 
-    def security(self, networks=(), cluster_id=''):
-        try:
-            return self._security(networks, cluster_id)
-        except ValueError:
-            raise
-        except Exception as error:
-            raise ValueError('whitelist sync failed: %s' % str(error)[:120])
-
-    def _security(self, networks, cluster_id):
-        probe_sources, probe_error = [], []
-        try:
-            probe_sources = normalize_networks(self.probe(*get_manager_endpoint()), allow_empty=True)
-        except Exception as error:  # 探测失败不阻塞同步
-            probe_error = [str(error)[:120]]
+    def security(self, networks=(), cluster_id='', source=''):
         declared = normalize_networks(networks, allow_empty=True)
-        if not probe_sources and not declared:
-            raise ValueError('manager source cannot be identified')
+        sources = normalize_networks([source] if source else [], allow_empty=True)
+        if not declared and not sources:
+            return self.refresh()
         cluster = normalize_cluster_id(cluster_id) or get_cluster_id() or 'default'
-        current = read_networks(self.config_path)
-        merged = merge_networks(declared + probe_sources)
-        changed = merged != current.get('managers', [])
-        if changed:
-            self.apply({'managers': merged, 'probes': probe_sources}, self.config_path)
-        return {
-            'cluster': cluster,
-            'changed': changed,
-            'addresses': merged,
-            'probes': probe_sources,
-            'rejected': missing_networks(merged, declared),
-            'probe_error': probe_error,
-        }
+        return self._update(cluster, declared, sources)
+
+    def refresh(self):
+        return self._update()
+
+    def _update(self, cluster=None, declared=(), sources=()):
+        descriptor = os.open(self.config_path + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, 'r+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            now = time.time()
+            current = read_networks(self.config_path)
+            try:
+                with open(self.state_path, encoding='utf-8') as stream:
+                    previous_state = stream.read()
+                state = json.loads(previous_state)
+            except FileNotFoundError:
+                previous_state = None
+                # 存量动态来源在升级后保留一天；显式静态来源独立保留。
+                state = {'clusters': {}, 'legacy': current['managers'],
+                         'legacy_until': now + self.LEASE_SECONDS}
+            clusters = {key: value for key, value in state['clusters'].items()
+                        if value['expires_at'] > now}
+            if cluster is not None:
+                observed = clusters.get(cluster, {}).get('sources', {})
+                observed = {key: expiry for key, expiry in observed.items() if expiry > now}
+                observed.update({source: now + self.LEASE_SECONDS for source in sources})
+                clusters[cluster] = {'networks': list(declared), 'sources': observed,
+                                     'expires_at': now + self.LEASE_SECONDS}
+            state['clusters'] = clusters
+            values = read_config(self.config_path)
+            merged = normalize_networks(values.get('QAGENT_STATIC_MANAGER_IPS', ''), allow_empty=True)
+            if state['legacy_until'] > now:
+                merged.extend(state['legacy'])
+            probes = []
+            for entry in clusters.values():
+                merged.extend(entry['networks'])
+                probes.extend(source for source, expiry in entry.get('sources', {}).items() if expiry > now)
+            merged = merge_networks(merged + probes)
+            changed = merged != current['managers']
+            write_atomic(self.state_path, json.dumps(state), 0o600)
+            try:
+                if changed or merge_networks(probes) != current['probes']:
+                    self.apply({'managers': merged, 'probes': merge_networks(probes)}, self.config_path)
+            except Exception:
+                if previous_state is None:
+                    os.unlink(self.state_path)
+                else:
+                    write_atomic(self.state_path, previous_state, 0o600)
+                raise
+            return {'cluster': cluster or '', 'changed': changed, 'addresses': merged,
+                    'probes': list(sources), 'rejected': missing_networks(merged, declared),
+                    'probe_error': []}

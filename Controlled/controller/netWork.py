@@ -1,3 +1,6 @@
+import asyncio
+import ipaddress
+
 from fastapi import APIRouter, Request
 
 from common.CodeEnum import CodeEnum
@@ -27,5 +30,9 @@ async def restart(request: Request):
 @netWork_router.post('/net/trust')
 async def trust_network(request: Request):
     item = bind_entity(TrustedNetwork, await get_payload(request))
-    data = TrustStore().security(item.networks, item.cluster_id)
+    peer = request.client.host if request.client else ''
+    # 只有回环 nginx 的覆盖头可作为来源，外部请求头不能自行声明授权地址。
+    source = request.headers.get('X-Real-IP', peer) if peer in ('127.0.0.1', '::1') else peer
+    source = str(ipaddress.ip_address(source))
+    data = await asyncio.to_thread(TrustStore().security, item.networks, item.cluster_id, source)
     return secured_response(request, CodeEnum.SUCCESS, 'success', data)

@@ -143,7 +143,16 @@ public class VncServiceImpl implements VncService {
             vncdataService.updateVncdata(vncdata);
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VNC_CONNECTION, null);
         }
-        this.syncVncInfo(vncinfo);
+        List<Vncnode> availableNodes = new ArrayList<>();
+        for (Vncnode vncnode : vncnodePage.getRecords()) {
+            if (syncVncNode(vncinfo, vncnode, token, vncExpiryTime)) {
+                availableNodes.add(vncnode);
+            }
+        }
+        if (availableNodes.isEmpty()) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_CREATE_VNC_CONNECTION, null);
+        }
+        vncnodePage.setRecords(availableNodes);
         List<Object> vncInfoList = new ArrayList<>();
         HashMap<String,String> vncUrlMap = this.getVncUrlMap(vncinfo,vncnodePage);
         vncInfoList.add(vncUrlMap);
@@ -373,28 +382,29 @@ public class VncServiceImpl implements VncService {
             }
             // 遍历同步VNC连接信息
             for (Vncnode vncnode : vncnodePage.getRecords()) {
-                String vncNodeHost = trimUrlHost(vncnode.getHost());
-                String vncInfoHost = trimUrlHost(vncinfo.getHost());
-                // 判断是否为同一节点
-                if (vncNodeHost == null || vncNodeHost.equals(vncInfoHost) || vncnode.getPort() == null){
-                    continue;
-                }
-                // 与被控通讯同步VNC连接信息
-                try {
-                    Boolean consoleResult = ClientApiUtil.importVncService(vncNodeHost,token, Math.toIntExact(vncinfo.getVmid()),vncinfo.getPort(),vncinfo.getUsername(),vncinfo.getPassword(),vncnode.getPort(),vncinfo.getHost(),vncExpiryTime);
-                    if (!consoleResult){
-                        continue;
-                    }
-                } catch (Exception e) {
-                    UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "Sync VNC info to node failed: " + vncNodeHost + ":" + vncnode.getPort() + ", " + e.getMessage());
-                    continue;
-                }
+                syncVncNode(vncinfo, vncnode, token, vncExpiryTime);
             }
             // 判断是否为最后一页
             if (vncnodePage.getPages() == page){
                 break;
             }
             page++;
+        }
+    }
+
+    private boolean syncVncNode(Vncinfo vncinfo, Vncnode vncnode, String token, int expiryMinutes) {
+        String host = trimUrlHost(vncnode.getHost());
+        if (host == null || vncnode.getPort() == null) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(ClientApiUtil.importVncService(host, token,
+                    Math.toIntExact(vncinfo.getVmid()), vncinfo.getPort(), vncinfo.getUsername(),
+                    vncinfo.getPassword(), vncnode.getPort(), vncinfo.getHost(), expiryMinutes));
+        } catch (Exception e) {
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
+                    "Sync VNC info to node failed: {}:{}", host, vncnode.getPort());
+            return false;
         }
     }
 

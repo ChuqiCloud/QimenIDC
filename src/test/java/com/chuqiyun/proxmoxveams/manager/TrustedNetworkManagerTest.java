@@ -2,7 +2,11 @@ package com.chuqiyun.proxmoxveams.manager;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import com.chuqiyun.proxmoxveams.service.ConfigService;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -11,8 +15,25 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 class TrustedNetworkManagerTest {
+    private TrustedNetworkManager manager;
+    private JdbcTemplate jdbc;
+    private ConfigService config;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        manager = new TrustedNetworkManager();
+        jdbc = mock(JdbcTemplate.class);
+        config = mock(ConfigService.class);
+        when(config.getToken()).thenReturn("shared-cluster-token");
+        setField(manager, "jdbc", jdbc);
+        setField(manager, "configService", config);
+        setField(manager, "transactionManager", mock(PlatformTransactionManager.class));
+        setField(manager, "configuredMemberId", "manager-1");
+    }
 
     private Object field(TrustedNetworkManager manager, String name) throws Exception {
         Field field = TrustedNetworkManager.class.getDeclaredField(name);
@@ -20,7 +41,7 @@ class TrustedNetworkManagerTest {
         return field.get(manager);
     }
 
-    private void setField(TrustedNetworkManager manager, String name, String value) throws Exception {
+    private void setField(TrustedNetworkManager manager, String name, Object value) throws Exception {
         Field field = TrustedNetworkManager.class.getDeclaredField(name);
         field.setAccessible(true);
         field.set(manager, value);
@@ -50,7 +71,6 @@ class TrustedNetworkManagerTest {
 
     @Test
     void splitsAndDeduplicatesDetectedAddresses() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         assertEquals(List.of("10.0.0.5/32", "192.0.2.9/32"),
                 split(manager, " 10.0.0.5/32,192.0.2.9/32 10.0.0.5/32 "));
         assertTrue(split(manager, "").isEmpty());
@@ -59,7 +79,6 @@ class TrustedNetworkManagerTest {
 
     @Test
     void clusterIdIsStableAndDoesNotLeakTheJdbcUrl() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "datasourceUrl", "jdbc:mysql://127.0.0.1:3306/pve?user=root&password=secret");
 
         String clusterId = manager.getClusterId();
@@ -72,14 +91,13 @@ class TrustedNetworkManagerTest {
 
     @Test
     void clusterIdFallsBackWhenDatasourceIsUnknown() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
+        when(config.getToken()).thenReturn("");
         setField(manager, "datasourceUrl", "");
         assertEquals("qimenidc", manager.getClusterId());
     }
 
     @Test
     void localAddressesAreCidrEntries() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         Method method = TrustedNetworkManager.class.getDeclaredMethod("detectLocalAddresses");
         method.setAccessible(true);
         for (String address : split(manager, (String) method.invoke(manager))) {
@@ -89,7 +107,8 @@ class TrustedNetworkManagerTest {
 
     @Test
     void agentReportedAddressesJoinTheWhitelist() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
+        when(jdbc.queryForList(anyString(), eq(String.class), anyString(), anyLong()))
+                .thenReturn(List.of("198.51.100.7/32"));
         setField(manager, "localAddresses", "10.0.0.5/32");
         seedMemberAddresses(manager, "10.0.0.5/32");
 
@@ -98,12 +117,11 @@ class TrustedNetworkManagerTest {
         List<String> networks = manager.collectNetworks();
         assertTrue(networks.contains("198.51.100.7/32"));
         assertTrue(networks.contains("10.0.0.5/32"));
-        assertEquals(java.util.Set.of(7), ((java.util.Map<?, ?>) field(manager, "syncedAt")).keySet());
+        assertTrue(((java.util.Map<?, ?>) field(manager, "syncedAt")).isEmpty());
     }
 
     @Test
     void failedSyncDoesNotMarkNodeAsSynced() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "localAddresses", "10.0.0.5/32");
         seedMemberAddresses(manager, "10.0.0.5/32");
         JSONObject body = agentReport("198.51.100.7/32");
@@ -118,7 +136,6 @@ class TrustedNetworkManagerTest {
 
     @Test
     void multiSourceAddressesAreAllCollected() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "localAddresses", "111.230.93.5/32 159.75.12.57/32");
         seedMemberAddresses(manager, "111.230.93.5/32", "159.75.12.57/32");
 
@@ -128,7 +145,6 @@ class TrustedNetworkManagerTest {
 
     @Test
     void fallbackInterfaceAddressesAreAllCidr() {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
 
         // 探测不到公网时退化为网卡地址，下发的每一条都必须带掩码
         for (String address : manager.detectInterfaceAddresses()) {
@@ -139,7 +155,6 @@ class TrustedNetworkManagerTest {
     @SuppressWarnings("unchecked")
     @Test
     void describeExposesProbeOutcome() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "localAddresses", "198.51.100.7/32");
         seedMemberAddresses(manager, "198.51.100.7/32");
         ((java.util.Map<String, String>) field(manager, "probedAddresses")).put("ip.sb", "198.51.100.7");
@@ -154,7 +169,6 @@ class TrustedNetworkManagerTest {
 
     @Test
     void describeExposesClusterAndAddresses() throws Exception {
-        TrustedNetworkManager manager = new TrustedNetworkManager();
         setField(manager, "datasourceUrl", "jdbc:mysql://db:3306/pve");
         setField(manager, "localAddresses", "10.0.0.5/32");
         seedMemberAddresses(manager, "10.0.0.5/32");

@@ -235,8 +235,9 @@ public class OsCron {
                         if (node == null || node.getControllerStatus() != 0){
                             continue;
                         }
-                        // 文件已不存在（如手动rm）则清理记录，不校验大小与完整性
-                        if (!osService.isOsExistOnNode(os.getFileName(), os.getPath(), osNodeStatus.getNodeId())){
+                        // 只有成功列目录且确认文件缺失时才清理，通信或权限失败保留登记。
+                        if (osService.probeOsFile(os.getFileName(), os.getPath(), osNodeStatus.getNodeId())
+                                == OsService.FilePresence.ABSENT){
                             map.remove(key);
                             changed = true;
                         }

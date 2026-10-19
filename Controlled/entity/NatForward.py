@@ -1,19 +1,49 @@
 from typing import List
+from ipaddress import IPv4Address
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
+
+
+def ipv4_address(value):
+    address = IPv4Address(str(value).strip())
+    if address.is_unspecified or address.is_multicast or address.is_loopback or int(address) == 0xffffffff:
+        raise ValueError('IP must be a unicast IPv4 address')
+    return str(address)
+
+
+def vm_identifier(value):
+    value = str(value).strip()
+    if not value.isascii() or not value.isdigit() or int(value) <= 0:
+        raise ValueError('vm must be a positive integer')
+    return str(int(value))
+
 
 class ForwardRule(BaseModel):
     source_ip: str
-    source_port: int
+    source_port: int = Field(ge=1, le=65535)
     destination_ip: str
-    destination_port: int
+    destination_port: int = Field(ge=1, le=65535)
     protocol: str
     vm: str
+
+    _addresses = validator('source_ip', 'destination_ip', allow_reuse=True)(ipv4_address)
+    _vm = validator('vm', pre=True, allow_reuse=True)(vm_identifier)
+
+    @validator('protocol')
+    def validate_protocol(cls, value):
+        value = value.strip().lower()
+        if value not in ('tcp', 'udp'):
+            raise ValueError('protocol must be tcp or udp')
+        return value
+
 
 class IpForwardRule(BaseModel):
     source_ip: str
     destination_ip: str
     vm: str
+
+    _addresses = validator('source_ip', 'destination_ip', allow_reuse=True)(ipv4_address)
+    _vm = validator('vm', pre=True, allow_reuse=True)(vm_identifier)
 
 
 class NatSyncRequest(BaseModel):

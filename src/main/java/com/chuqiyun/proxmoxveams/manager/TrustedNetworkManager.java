@@ -15,11 +15,18 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.Resource;
-import java.lang.management.ManagementFactory;
+import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.net.DatagramSocket;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -33,6 +40,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -42,9 +50,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 节点就会以「连不上」的方式整体失联。这里把集群内所有主控的出口地址汇总后
  * 下发到每个被控端，由被控端与它自己实测到的对端地址取并集后落盘并重载 nginx。
  * <p>
- * 同步分两段：启动期由启动编排调用 {@link #initialSync()}；周期心跳只重试未完成的节点，
- * 不累积重试也不阻塞心跳线程。网关或容器把来源地址改成 SNAT 时，被控端实测到的
- * 地址与主控自报不同，两侧取并集，因此不会把任一侧挡在门外。
+ * 同步分两段：启动期由启动编排调用 {@link #initialSync()}；周期心跳按间隔重新探测并同步所有节点。
+ * 各成员来源存入共享数据库，节点按租约保留来源，避免主备相互覆盖。
  * <p>
  * 主控自报的出口地址优先取自公共 IP 探测源（{@link PublicIpProbe}），多个源并发后合并；
  * 探测全挂时才退化为本地网卡地址，保证有东西可下发。
@@ -70,12 +77,22 @@ public class TrustedNetworkManager {
 
     @Resource
     private ConfigService configService;
+    @Resource
+    private JdbcTemplate jdbc;
+    @Resource
+    private PlatformTransactionManager transactionManager;
+    @Value("${config.whitelist.member-id:}")
+    private String configuredMemberId;
+    private volatile String memberId;
+    private static final long MEMBER_LEASE_MILLIS = 24 * 60 * 60 * 1000L;
 
     /**
      * JDBC 连接串，用于派生集群标识；不出现在日志里
      */
     @Value("${spring.datasource.url:}")
     private String datasourceUrl;
+    @Value("${config.whitelist.cluster-id:}")
+    private String configuredClusterId;
 
     /**
      * 节点ID -> 上次成功同步时间
@@ -124,7 +141,7 @@ public class TrustedNetworkManager {
      *
      * @return 同步成功的节点数
      */
-    public int initialSync() {
+    public synchronized int initialSync() {
         String token = configService.getToken();
         List<Master> nodes = listAgentNodes();
         if (nodes.isEmpty()) {
@@ -135,9 +152,7 @@ public class TrustedNetworkManager {
             return 0;
         }
         String cluster = getClusterId();
-        localAddresses = detectLocalAddresses();
-        memberAddresses.put(getMemberKey(), new LinkedHashSet<>(splitAddresses(localAddresses)));
-        lastFullSyncAt = System.currentTimeMillis();
+        refreshLocalAddresses();
 
         int succeeded = 0;
         for (Master node : nodes) {
@@ -151,23 +166,54 @@ public class TrustedNetworkManager {
     }
 
     /**
-     * 周期重试：只补偿到点且未成功的节点，被控端内容无变化时不会重载 nginx
+     * 周期同步：成功节点到期也刷新，被控端内容无变化时不会重载 nginx。
      */
-    public void retryPending() {
+    public synchronized void retryPending() {
         String token = configService.getToken();
         if (token == null || token.isEmpty()) {
             return;
         }
         String cluster = getClusterId();
         long now = System.currentTimeMillis();
+        if (now - lastFullSyncAt >= RETRY_INTERVAL_MILLIS) {
+            refreshLocalAddresses();
+        }
         for (Master node : listAgentNodes()) {
-            if (syncedAt.containsKey(node.getId()) || now < nextRetryAt.getOrDefault(node.getId(), 0L)) {
+            long lastSuccess = syncedAt.getOrDefault(node.getId(), 0L);
+            if (now - lastSuccess < RETRY_INTERVAL_MILLIS || now < nextRetryAt.getOrDefault(node.getId(), 0L)) {
                 continue;
             }
-            if (!syncNode(node, token, cluster)) {
-                nextRetryAt.put(node.getId(), now + RETRY_INTERVAL_MILLIS);
-            }
+            syncNode(node, token, cluster);
         }
+    }
+
+    private void refreshLocalAddresses() {
+        String detected = detectLocalAddresses();
+        if (!detected.isEmpty()) {
+            localAddresses = detected;
+        }
+        Set<String> addresses = splitAddresses(localAddresses);
+        memberAddresses.put(getMemberKey(), addresses);
+        storeAddresses("local", 0, addresses);
+        lastFullSyncAt = System.currentTimeMillis();
+    }
+
+    private void storeAddresses(String source, int nodeId, Set<String> addresses) {
+        if (addresses.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            jdbc.update("delete from agent_trust where cluster_id = ? and member_id = ? and source = ? and node_id = ?",
+                    getClusterId(), getMemberKey(), source, nodeId);
+            for (String address : addresses) {
+                jdbc.update("insert into agent_trust (cluster_id, member_id, address, source, node_id, create_time, last_seen) "
+                                + "values (?, ?, ?, ?, ?, ?, ?)",
+                        getClusterId(), getMemberKey(), address, source, nodeId, now, now);
+            }
+            jdbc.update("delete from agent_trust where cluster_id = ? and last_seen < ?",
+                    getClusterId(), now - MEMBER_LEASE_MILLIS);
+        });
     }
 
     /**
@@ -191,6 +237,7 @@ public class TrustedNetworkManager {
             }
             memberAddresses.put(getMemberKey(), new LinkedHashSet<>(splitAddresses(localAddresses)));
         }
+        storeAddresses("probe", nodeId, new LinkedHashSet<>(reported));
         Set<String> local = splitAddresses(localAddresses);
         List<String> missing = new ArrayList<>();
         for (String address : reported) {
@@ -204,10 +251,6 @@ public class TrustedNetworkManager {
             UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
                     "[Whitelist] 节点[{}]看到的主控出口与主控自报不一致: 节点看到={}, 主控自报={}。已按节点实测地址放行，请检查是否有SNAT/反向代理",
                     nodeId, String.join(",", missing), localAddresses);
-        }
-        if (result.getInteger("code") != null && result.getInteger("code") == 200) {
-            syncedAt.put(nodeId, System.currentTimeMillis());
-            nextRetryAt.remove(nodeId);
         }
     }
 
@@ -229,7 +272,8 @@ public class TrustedNetworkManager {
         for (Set<String> addresses : memberAddresses.values()) {
             networks.addAll(addresses);
         }
-        networks.addAll(clientReportedAddresses);
+        networks.addAll(jdbc.queryForList("select distinct address from agent_trust where cluster_id = ? and last_seen >= ? order by address",
+                String.class, getClusterId(), System.currentTimeMillis() - MEMBER_LEASE_MILLIS));
         return new ArrayList<>(networks);
     }
 
@@ -250,21 +294,22 @@ public class TrustedNetworkManager {
     }
 
     private boolean syncNode(Master node, String token, String cluster) {
-        List<String> networks = collectNetworks();
-        JSONObject result = ClientApiUtil.syncTrustedNetworks(node.getHost(), node.getControllerPort(), token,
-                networks, cluster, SYNC_TIMEOUT_MILLIS);
-        if (result == null || result.getInteger("code") == null || result.getInteger("code") != 200) {
-            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "[Whitelist] 节点[{}]白名单同步失败，稍后重试",
-                    node.getName());
-            return false;
+        try {
+            List<String> networks = collectNetworks();
+            JSONObject result = ClientApiUtil.syncTrustedNetworks(node.getHost(), node.getControllerPort(), token,
+                    networks, cluster, SYNC_TIMEOUT_MILLIS);
+            if (result != null && Integer.valueOf(200).equals(result.getInteger("code"))) {
+                observeAgentReport(node.getId(), result);
+                syncedAt.put(node.getId(), System.currentTimeMillis());
+                nextRetryAt.remove(node.getId());
+                return true;
+            }
+        } catch (Exception e) {
+            // 单节点或探测失败不能中断其他节点的补偿。
         }
-        observeAgentReport(node.getId(), result);
-        JSONObject data = result.getJSONObject("data");
-        if (data != null && data.getBooleanValue("changed")) {
-            UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "[Whitelist] 节点[{}]白名单已更新: {}",
-                    node.getName(), data.getJSONArray("addresses"));
-        }
-        return true;
+        nextRetryAt.put(node.getId(), System.currentTimeMillis() + RETRY_INTERVAL_MILLIS);
+        UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "[Whitelist] 节点[{}]白名单同步失败，稍后重试", node.getName());
+        return false;
     }
 
     private List<Master> listAgentNodes() {
@@ -395,13 +440,36 @@ public class TrustedNetworkManager {
         return result;
     }
 
-    private String getMemberKey() {
-        String name = ManagementFactory.getRuntimeMXBean().getName();
-        return "manager-" + (name == null ? "local" : name.split("@")[0]);
+    private synchronized String getMemberKey() {
+        if (memberId != null) {
+            return memberId;
+        }
+        String resolved;
+        if (configuredMemberId != null && !configuredMemberId.isBlank()) {
+            resolved = configuredMemberId.trim();
+        } else {
+            Path path = Path.of("config", "whitelist-member-id");
+            try {
+                Files.createDirectories(path.getParent());
+                try {
+                    Files.writeString(path, UUID.randomUUID().toString(), StandardOpenOption.CREATE_NEW);
+                } catch (FileAlreadyExistsException ignored) {
+                    // 重启继续使用本实例身份；主备各自保存独立配置目录。
+                }
+                resolved = Files.readString(path).trim();
+            } catch (IOException e) {
+                throw new IllegalStateException("无法保存主控白名单成员标识");
+            }
+        }
+        if (!resolved.matches("[a-zA-Z0-9_.-]{3,64}")) {
+            throw new IllegalStateException("主控白名单成员标识无效");
+        }
+        memberId = resolved;
+        return memberId;
     }
 
     /**
-     * 集群标识：JDBC 连接串的摘要，同一套库的主控与节点算出来是同一个值
+     * 集群标识优先显式配置，否则由共享通信密钥派生，不依赖各实例 JDBC 连接地址。
      */
     public String getClusterId() {
         if (clusterId == null) {
@@ -411,11 +479,21 @@ public class TrustedNetworkManager {
     }
 
     private String resolveClusterId() {
-        String seed = datasourceUrl == null ? "" : datasourceUrl.trim();
+        if (configuredClusterId != null && !configuredClusterId.isBlank()) {
+            String configured = configuredClusterId.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!configured.matches("[a-z0-9][a-z0-9_.-]{2,63}")) {
+                throw new IllegalStateException("白名单集群标识无效");
+            }
+            return configured;
+        }
+        String seed = configService.getToken();
+        if (seed == null || seed.isBlank()) {
+            seed = datasourceUrl == null ? "qimenidc" : datasourceUrl.trim();
+        }
         if (seed.isEmpty()) {
             return "qimenidc";
         }
-        // 只把库标识的摘要下发给节点，避免把连接串里的地址和账号带出去
+        // 只下发摘要，通信密钥不会出现在请求参数和日志中。
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(seed.getBytes(StandardCharsets.UTF_8));
             StringBuilder builder = new StringBuilder("db-");

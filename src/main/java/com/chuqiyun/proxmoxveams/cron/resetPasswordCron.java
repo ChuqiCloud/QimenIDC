@@ -109,7 +109,17 @@ public class resetPasswordCron {
             }
         } else {
             // 通过qemu修改密码
-            ClientApiUtil.resetPassword(node.getHost(),node.getControllerPort(),configService.getToken(),vmhost.getVmid(),vmhost.getUsername(),newPassword);
+            try {
+                if (!Boolean.TRUE.equals(ClientApiUtil.resetPassword(node.getHost(), node.getControllerPort(),
+                        configService.getToken(), vmhost.getVmid(), vmhost.getUsername(), newPassword))) {
+                    throw new IllegalStateException("QAgent password change failed");
+                }
+            } catch (Exception e) {
+                task.setStatus(3);
+                task.setError("重置密码失败，请检查 Guest Agent 与被控连接");
+                taskService.updateById(task);
+                return;
+            }
         }
         // 修改vmhost密码
         vmhost.setPassword(newPassword);

@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.utils.WebAuthnUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -22,14 +23,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @Author: 星禾
  * @Description: Passkey 注册与认证实现
  * @DateTime: 2026/10/17 16:00
  *
- * 挑战只保存在服务端内存，一次性使用且 5 分钟过期，避免前端回传挑战被篡改。
+ * 挑战存入共享数据库，一次性消费且 5 分钟过期，支持主备切换。
  */
 @Slf4j
 @Service("passkeyService")
@@ -40,10 +40,8 @@ public class PasskeyServiceImpl implements PasskeyService {
     private static final int CHALLENGE_BYTES = 32;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    /**
-     * 挑战缓存，key 为挑战原文，value 为对应的注册/认证上下文
-     */
-    private final Map<String, PendingChallenge> challenges = new ConcurrentHashMap<>();
+    @Resource
+    private JdbcTemplate jdbc;
 
     @Resource
     private SysPasskeyService sysPasskeyService;
@@ -244,8 +242,8 @@ public class PasskeyServiceImpl implements PasskeyService {
         byte[] raw = new byte[CHALLENGE_BYTES];
         RANDOM.nextBytes(raw);
         String challenge = Base64UrlUtil.encode(raw);
-        challenges.put(challenge, new PendingChallenge(type, userUuid,
-                System.currentTimeMillis() + CHALLENGE_TTL_MILLIS));
+        jdbc.update("insert into sys_passkey_challenge (challenge, type, user_uuid, expires_at) values (?, ?, ?, ?)",
+                challenge, type, userUuid, System.currentTimeMillis() + CHALLENGE_TTL_MILLIS);
         return challenge;
     }
 
@@ -259,7 +257,11 @@ public class PasskeyServiceImpl implements PasskeyService {
         } catch (IllegalArgumentException e) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_CHALLENGE_EXPIRED);
         }
-        PendingChallenge pending = challenges.remove(normalized);
+        List<PendingChallenge> rows = jdbc.query(
+                "select type, user_uuid, expires_at from sys_passkey_challenge where challenge = ?",
+                (rs, rowNum) -> new PendingChallenge(rs.getString("type"), rs.getString("user_uuid"),
+                        rs.getLong("expires_at")), normalized);
+        PendingChallenge pending = rows.isEmpty() ? null : rows.get(0);
         if (Objects.isNull(pending) || pending.expiresAt() < System.currentTimeMillis()
                 || !type.equals(pending.type())) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_CHALLENGE_EXPIRED);
@@ -268,12 +270,16 @@ public class PasskeyServiceImpl implements PasskeyService {
                 && !pending.userUuid().equals(expectedUserUuid)) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_CHALLENGE_EXPIRED);
         }
+        // 条件删除保证并发提交和跨实例重放只有一次能成功。
+        if (jdbc.update("delete from sys_passkey_challenge where challenge = ? and expires_at >= ?",
+                normalized, System.currentTimeMillis()) != 1) {
+            throw new AuthException(ResponseResult.RespCode.PASSKEY_CHALLENGE_EXPIRED);
+        }
         return pending;
     }
 
     private void purgeExpired() {
-        long now = System.currentTimeMillis();
-        challenges.entrySet().removeIf(entry -> entry.getValue().expiresAt() < now);
+        jdbc.update("delete from sys_passkey_challenge where expires_at < ?", System.currentTimeMillis());
     }
 
     /**

@@ -113,6 +113,12 @@ public class DeleteVmCron {
     }
 
     private void deletePortNatForwards(Task task, Master node) {
+        synchronized (NatForwardSyncService.class) {
+            deletePortNatForwardsLocked(task, node);
+        }
+    }
+
+    private void deletePortNatForwardsLocked(Task task, Master node) {
         List<JSONObject> rules = new ArrayList<>();
         for (int page = 1; ; page++) {
             JSONArray pageRules = natForwardSyncService.getPortRulesByHost(

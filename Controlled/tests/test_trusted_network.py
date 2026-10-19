@@ -49,7 +49,7 @@ class TrustedNetworkTest(unittest.TestCase):
         self.subprocess.start()
         self.addCleanup(self.subprocess.stop)
         self.applied = []
-        self.store = TrustedNetwork.TrustStore(self.security_config, probe=self.probe, apply=self.apply)
+        self.store = TrustedNetwork.TrustStore(self.security_config, apply=self.apply)
 
     def fake_run(self, command, *args, **kwargs):
         if command[:1] == ['systemctl']:
@@ -59,17 +59,6 @@ class TrustedNetworkTest(unittest.TestCase):
     @property
     def reload_result(self):
         return type('Result', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
-
-    def probe(self, host, port, timeout=8):
-        return list(self.probe_addresses)
-
-    @property
-    def probe_addresses(self):
-        return getattr(self, '_probe_addresses', ['198.51.100.7'])
-
-    @probe_addresses.setter
-    def probe_addresses(self, value):
-        self._probe_addresses = value
 
     def apply(self, networks, config_path):
         self.applied.append(networks)
@@ -81,11 +70,11 @@ class TrustedNetworkTest(unittest.TestCase):
 
     def test_sync_adds_probe_source_to_whitelist_and_reloads_nginx(self):
         self.assertIsNotNone(self.store)
-        result = self.store.security(['10.0.0.1/32', '198.51.100.7'], 'pool-hk')
+        result = self.store.security(['10.0.0.1/32', '198.51.100.7'], 'pool-hk', '198.51.100.7')
         self.assertTrue(result['changed'])
         self.assertEqual(['10.0.0.1/32', '198.51.100.7/32'], result['addresses'])
         self.assertEqual([], result['rejected'])
-        self.assertIn('QAGENT_MANAGER_IPS=10.0.0.1/32 198.51.100.7/32', self.read(self.security_config))
+        self.assertIn("QAGENT_MANAGER_IPS='10.0.0.1/32 198.51.100.7/32'", self.read(self.security_config))
         self.assertIn('QAGENT_MANAGER_PROBES=198.51.100.7/32', self.read(self.security_config))
         nginx = self.read(self.nginx_config)
         self.assertIn('198.51.100.7/32 1;', nginx)
@@ -101,22 +90,19 @@ class TrustedNetworkTest(unittest.TestCase):
 
     def test_undeclared_probe_source_is_still_whitelisted(self):
         # 主控自报漏了自己时，本节点实测到的来源也会并入，避免同步把自己挡在门外
-        result = self.store.security(['10.0.0.1/32'], 'pool-hk')
+        result = self.store.security(['10.0.0.1/32'], 'pool-hk', '198.51.100.7')
         self.assertEqual([], result['rejected'])
         self.assertEqual(['10.0.0.1/32', '198.51.100.7/32'], result['addresses'])
 
-    def test_probe_failure_keeps_declared_sources_only(self):
-        def broken(host, port, timeout=8):
-            raise OSError('unreachable')
-        store = TrustedNetwork.TrustStore(self.security_config, probe=broken, apply=self.apply)
-        result = store.security(['10.0.0.5/32'], 'pool-hk')
-        self.assertEqual(['10.0.0.5/32'], result['addresses'])
-        self.assertTrue(result['probe_error'])
+    def test_missing_observation_keeps_legacy_and_declared_sources(self):
+        result = self.store.security(['10.0.0.5/32'], 'pool-hk')
+        self.assertEqual(['10.0.0.1/32', '10.0.0.5/32'], result['addresses'])
+        self.assertEqual([], result['probes'])
 
-    def test_empty_request_is_rejected(self):
-        self.probe_addresses = []
-        with self.assertRaises(ValueError):
-            self.store.security([], 'pool-hk')
+    def test_refresh_preserves_existing_sources_during_upgrade(self):
+        result = self.store.refresh()
+        self.assertEqual(['10.0.0.1/32'], result['addresses'])
+        self.assertFalse(result['changed'])
 
     def test_allow_all_network_is_rejected(self):
         with self.assertRaises(ValueError):

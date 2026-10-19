@@ -87,7 +87,10 @@ public class SqlUpdateLoader {
                 }
             }
 
-            stepList.sort((left, right) -> compareBuildVersion(buildStepKey(left), buildStepKey(right)));
+            stepList.sort((left, right) -> {
+                int version = compareBuildVersion(buildStepKey(left), buildStepKey(right));
+                return version != 0 ? version : Integer.compare(left.getIteration(), right.getIteration());
+            });
             return stepList;
         }
     }
@@ -112,7 +115,9 @@ public class SqlUpdateLoader {
     }
 
     private static String buildStepKey(BuildSqlStep buildSqlStep) {
-        return buildSqlStep.getBuildVersion() + "_" + buildSqlStep.getIteration();
+        return buildSqlStep.getBuildVersion().contains("_")
+                ? buildSqlStep.getBuildVersion()
+                : buildSqlStep.getBuildVersion() + "_" + buildSqlStep.getIteration();
     }
 
     private static int compareVersionParts(int[] leftParts, int[] rightParts) {
@@ -216,6 +221,10 @@ public class SqlUpdateLoader {
 
         public String getBuildVersion() {
             return buildVersion;
+        }
+
+        public String getStepBuildVersion() {
+            return buildStepKey(this);
         }
 
         public int getIteration() {

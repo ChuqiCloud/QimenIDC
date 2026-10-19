@@ -273,7 +273,17 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public boolean deleteNodeOs(String osName, Integer nodeId){
-        return false;
+        Os os = selectOsByFileName(osName);
+        Master node = masterService.getById(nodeId);
+        if (os == null || node == null) {
+            return false;
+        }
+        String path = os.getPath();
+        if (path == null || path.isBlank() || "default".equals(path)) {
+            path = "/home/images";
+        }
+        return Boolean.TRUE.equals(ClientApiUtil.deleteOsFile(node.getHost(), node.getControllerPort(),
+                configService.getToken(), path, os.getFileName()));
     }
     
     /**
@@ -291,17 +301,20 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
         }
         Map<String,Object> map = os.getNodeStatus();
         if (map!=null){
+            // 先校验全部节点，避免删除一部分后才发现另一个节点仍在下载。
+            for (Object value : map.values()) {
+                OsNodeStatus status = JSONObject.parseObject(JSONObject.toJSONString(value), OsNodeStatus.class);
+                if (Objects.equals(status.getStatus(), 1)) {
+                    return false;
+                }
+            }
             // 删除宿主机上的os
             String osName = os.getFileName();
             for (String key : map.keySet()) {
                 Object osNodeStatusObj = map.get(key);
                 OsNodeStatus osNodeStatus = JSONObject.parseObject(JSONObject.toJSONString(osNodeStatusObj), OsNodeStatus.class);
-                // 如果为下载中，返回false
-                if (osNodeStatus.getStatus()==1){
-                    return false;
-                }
                 // 如果为2,3则删除宿主机上的os
-                if (osNodeStatus.getStatus()==2||osNodeStatus.getStatus()==3){
+                if (Objects.equals(osNodeStatus.getStatus(), 2) || Objects.equals(osNodeStatus.getStatus(), 3)){
                     boolean result = this.deleteNodeOs(osName,osNodeStatus.getNodeId());
                     if (!result){
                         return false;
@@ -403,19 +416,27 @@ public class OsServiceImpl extends ServiceImpl<OsDao, Os> implements OsService {
     */
     @Override
     public boolean isOsExistOnNode(String fileName, String path, Integer nodeId){
+        return probeOsFile(fileName, path, nodeId) == FilePresence.PRESENT;
+    }
+
+    @Override
+    public FilePresence probeOsFile(String fileName, String path, Integer nodeId){
         if (fileName == null || fileName.trim().isEmpty() || nodeId == null){
-            return false;
+            return FilePresence.UNKNOWN;
         }
         String osPath = path == null || path.trim().isEmpty() || "default".equals(path) ? "/home/images" : path.trim();
         Master node = masterService.getById(nodeId);
         if (node == null){
-            return false;
+            return FilePresence.UNKNOWN;
         }
         try {
             JSONArray files = ClientApiUtil.getPathFileList(node.getHost(), node.getControllerPort(), configService.getToken(), osPath);
-            return files != null && files.contains(fileName);
+            if (files == null || files.stream().anyMatch(file -> !(file instanceof String))) {
+                return FilePresence.UNKNOWN;
+            }
+            return files.contains(fileName) ? FilePresence.PRESENT : FilePresence.ABSENT;
         } catch (Exception e){
-            return false;
+            return FilePresence.UNKNOWN;
         }
     }
 

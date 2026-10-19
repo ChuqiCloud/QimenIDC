@@ -9,6 +9,7 @@ source "${SCRIPT_DIR}/security.sh"
 clear_vnc=0
 token_stdin=0
 manager_ips="${QAGENT_MANAGER_IPS:-}"
+static_manager_ips="${manager_ips}"
 cert_hosts="${QAGENT_CERT_HOSTS:-}"
 vnc_proxy_ips="${QAGENT_VNC_PROXY_IPS:-}"
 backend_port="${QAGENT_BACKEND_PORT:-}"
@@ -19,7 +20,7 @@ while [ "$#" -gt 0 ]; do
         --configure) shift ;;
         --clear-vnc) clear_vnc=1; shift ;;
         --token-stdin) token_stdin=1; shift ;;
-        --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; shift 2 ;;
+        --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; static_manager_ips="${manager_ips}"; shift 2 ;;
         --cert-hosts) cert_hosts="${2:?provide node IP/DNS identities used by the manager}"; shift 2 ;;
         --vnc-proxy-ips) vnc_proxy_ips="${2:?provide noVNC controller source IP/CIDRs}"; shift 2 ;;
         --backend-port) backend_port="${2:?provide internal backend port}"; shift 2 ;;
@@ -36,6 +37,9 @@ done
 security_require_root
 command -v /usr/bin/python3.10 >/dev/null || security_fail "install Python 3.10 first"
 security_load_config
+if [ -n "${static_manager_ips}" ] || [ ! -f "${SECURITY_CONFIG}" ]; then
+    QAGENT_STATIC_MANAGER_IPS=$(security_validate_manager_ips "${static_manager_ips:-${manager_ips}}")
+fi
 QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${manager_ips:-${QAGENT_MANAGER_IPS:-}}")
 QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${cert_hosts:-${QAGENT_CERT_HOSTS:-}}")
 QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${vnc_proxy_ips:-${QAGENT_VNC_PROXY_IPS:-}}")

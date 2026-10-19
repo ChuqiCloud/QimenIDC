@@ -68,13 +68,12 @@ class ControllerPayloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('_encrypted', response.json())
 
     async def test_encrypted_change_password_binds_on_pydantic_one(self):
-        with patch('controller.changePassword.threading.Thread') as thread:
+        with patch('controller.changePassword.run_change_password', return_value=True) as change_password:
             response, body = await self.post('/changePassword', {
                 'id': 100, 'username': 'root', 'password': 'test-password'})
         self.assertEqual(200, response.status_code)
         self.assertEqual(200, body['code'])
-        self.assertEqual((100, 'root', 'test-password'), thread.call_args.kwargs['args'])
-        thread.return_value.start.assert_called_once()
+        change_password.assert_called_once_with(100, 'root', 'test-password')
 
     async def test_encrypted_import_security_group_and_vnc_bind_entities(self):
         cases = [

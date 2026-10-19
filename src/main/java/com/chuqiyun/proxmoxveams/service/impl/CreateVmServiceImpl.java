@@ -257,7 +257,16 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         normalizeNetworkType(vmParams);
         if (isVpcNetwork(vmParams) || Objects.equals(vmParams.getIfnat(), 1)) {
-            return invalidParam("QAgent NAT端点已停用，暂不支持 NAT/VPC 网络虚拟机创建");
+            if (!isVpcNetwork(vmParams) && !Objects.equals(node.getNaton(), 1)) {
+                return invalidParam("该宿主机未开启NAT");
+            }
+            try {
+                if (ClientApiUtil.exportNatRules(node.getHost(), configService.getToken(), node.getControllerPort()) == null) {
+                    return invalidParam("被控端NAT接口不可用，请先升级或检查被控端");
+                }
+            } catch (Exception e) {
+                return invalidParam("无法连接被控端NAT接口，请检查被控端状态");
+            }
         }
         // 设置网桥
         if (isVpcNetwork(vmParams)) {
@@ -475,7 +484,7 @@ public class CreateVmServiceImpl implements CreateVmService {
         }
         // 判断natnum是否为空
         if (vmParams.getNatnum() == null) {
-            vmParams.setNatnum(0);
+            vmParams.setNatnum(Objects.equals(vmParams.getIfnat(), 1) ? 1 : 0);
         }
         if (vmParams.getExtraFlowLimit() == null)
         {

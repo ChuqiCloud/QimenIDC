@@ -42,8 +42,16 @@ security_load_config() {
     if [ -f "${SECURITY_CONFIG}" ]; then
         [ "$(stat -c '%u:%a' "${SECURITY_CONFIG}")" = '0:600' ] ||
             security_fail "${SECURITY_CONFIG} must be root-owned mode 600"
-        # 此文件由本脚本生成，只允许 root 修改。
-        source "${SECURITY_CONFIG}"
+        local parsed name value
+        parsed=$(/usr/bin/python3.10 "${QAGENT_HOME}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
+        while IFS='=' read -r name value; do
+            case "${name}" in
+                QAGENT_MANAGER_IPS|QAGENT_MANAGER_PROBES|QAGENT_STATIC_MANAGER_IPS|QAGENT_CERT_HOSTS|QAGENT_VNC_PROXY_IPS|QAGENT_BACKEND_PORT|QIMENIDC_MANAGER_ENDPOINT|QIMENIDC_CLUSTER_ID)
+                    printf -v "${name}" '%s' "${value}" ;;
+            esac
+        done <<< "${parsed}"
+        MANAGER_ENDPOINT="${QIMENIDC_MANAGER_ENDPOINT:-${MANAGER_ENDPOINT}}"
+        CLUSTER_ID="${QIMENIDC_CLUSTER_ID:-${CLUSTER_ID}}"
     fi
 }
 
@@ -120,21 +128,16 @@ security_validate_port() {
 
 security_save_config() {
     security_init_directory
-    local temporary
-    temporary=$(mktemp "${SECURITY_DIR}/security.conf.XXXXXX")
-    # 白名单同步会就地改写 QAGENT_MANAGER_IPS / QAGENT_MANAGER_PROBES，
-    # 这里先读回当前值，避免 --configure 把同步结果覆盖回安装时的初始值。
-    # 显式传入的新白名单优先，只有沿用旧值时保留同步结果。
-    local current_manager="${QAGENT_MANAGER_IPS}" current_probes=""
-    if [ -f "${SECURITY_CONFIG}" ]; then
-        current_probes=$(sed -n 's/^QAGENT_MANAGER_PROBES=//p' "${SECURITY_CONFIG}" | tail -n 1)
-    fi
-    printf 'QAGENT_MANAGER_IPS=%q\nQAGENT_CERT_HOSTS=%q\nQAGENT_VNC_PROXY_IPS=%q\nQAGENT_BACKEND_PORT=%q\nQAGENT_MANAGER_PROBES=%q\nQIMENIDC_MANAGER_ENDPOINT=%q\nQIMENIDC_CLUSTER_ID=%q\n' \
-        "${current_manager}" "${QAGENT_CERT_HOSTS}" "${QAGENT_VNC_PROXY_IPS}" "${QAGENT_BACKEND_PORT}" \
-        "${current_probes}" "${MANAGER_ENDPOINT}" "${CLUSTER_ID}" > "${temporary}"
-    chown root:root "${temporary}"
-    chmod 600 "${temporary}"
-    mv -f "${temporary}" "${SECURITY_CONFIG}"
+    # 和 Python 同步接口使用相同的引用格式，不执行历史配置。
+    /usr/bin/python3.10 "${QAGENT_HOME}/service/SecurityConfig.py" --write "${SECURITY_CONFIG}" \
+        "QAGENT_MANAGER_IPS=${QAGENT_MANAGER_IPS}" \
+        "QAGENT_MANAGER_PROBES=${QAGENT_MANAGER_PROBES:-}" \
+        "QAGENT_STATIC_MANAGER_IPS=${QAGENT_STATIC_MANAGER_IPS:-}" \
+        "QAGENT_CERT_HOSTS=${QAGENT_CERT_HOSTS}" \
+        "QAGENT_VNC_PROXY_IPS=${QAGENT_VNC_PROXY_IPS}" \
+        "QAGENT_BACKEND_PORT=${QAGENT_BACKEND_PORT}" \
+        "QIMENIDC_MANAGER_ENDPOINT=${MANAGER_ENDPOINT}" \
+        "QIMENIDC_CLUSTER_ID=${CLUSTER_ID}"
 }
 
 security_ensure_novnc_user() {
@@ -186,15 +189,23 @@ security_ensure_certificate() {
     security_regular_file "${key}"
     [ ! -L "${directory}" ] || security_fail "refusing symlink: ${directory}"
     install -d -o root -g "${key_owner}" -m 710 "${directory}"
-    if [ ! -s "${certificate}" ] || [ ! -s "${key}" ] ||
-        ! openssl x509 -in "${certificate}" -noout -checkend 86400 >/dev/null 2>&1; then
+    if [ ! -s "${certificate}" ] && [ ! -s "${key}" ]; then
         regenerate=1
     else
+        [ -s "${certificate}" ] && [ -s "${key}" ] ||
+            security_fail "certificate/key pair incomplete; restore the pinned pair before retrying"
+        openssl x509 -in "${certificate}" -noout -checkend 0 >/dev/null 2>&1 ||
+            security_fail "certificate expired or invalid; explicitly replace it and update the manager trust"
+        if ! openssl x509 -in "${certificate}" -noout -checkend 86400 >/dev/null 2>&1; then
+            printf '%s\n' "Certificate expires within 24 hours; arrange renewal and update manager trust: ${certificate}" >&2
+        fi
         for ip_addr in ${cert_hosts}; do
             if [[ "${ip_addr}" == *:* ]] || [[ "${ip_addr}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
-                openssl x509 -in "${certificate}" -noout -checkip "${ip_addr}" >/dev/null 2>&1 || regenerate=1
+                openssl x509 -in "${certificate}" -noout -checkip "${ip_addr}" >/dev/null 2>&1 ||
+                    security_fail "certificate does not cover ${ip_addr}; explicitly renew it and update manager trust"
             else
-                openssl x509 -in "${certificate}" -noout -checkhost "${ip_addr}" >/dev/null 2>&1 || regenerate=1
+                openssl x509 -in "${certificate}" -noout -checkhost "${ip_addr}" >/dev/null 2>&1 ||
+                    security_fail "certificate does not cover ${ip_addr}; explicitly renew it and update manager trust"
             fi
         done
     fi
@@ -324,10 +335,7 @@ EOF
 }
 
 security_allowed_networks() {
-    # 主控出口IP漂移时由 /net/trust 追加的探测结果，与安装白名单一起生效
-    local probes
-    probes=$(sed -n 's/^QAGENT_MANAGER_PROBES=//p' "${SECURITY_CONFIG}" 2>/dev/null | tail -n 1)
-    printf '%s %s\n' "${QAGENT_MANAGER_IPS}" "${probes}" | tr ' ' '\n' | sed '/^$/d' | awk '!seen[$0]++'
+    printf '%s %s\n' "${QAGENT_MANAGER_IPS}" "${QAGENT_MANAGER_PROBES:-}" | tr ' ' '\n' | sed '/^$/d' | awk '!seen[$0]++'
 }
 
 security_write_nginx_config() {
@@ -350,9 +358,20 @@ server {
     ssl_certificate_key ${SECURITY_DIR}/qagent/qimenidc-qagent.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     access_log off;
-    # ACL 使用原始 TCP 对端；全局 real_ip 规则和请求头不能改变授权来源。
-    if (\$qimenidc_qagent_allowed = 0) { return 403; }
+    # 自救入口仍由 QAgent 校验 Token、密文和请求签名，其他业务继续限制来源。
+    location = /net/trust {
+        limit_except POST { deny all; }
+        client_max_body_size 64k;
+        proxy_pass http://127.0.0.1:${QAGENT_BACKEND_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$realip_remote_addr;
+        proxy_set_header X-Forwarded-For \$realip_remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 30s;
+    }
     location / {
+        # ACL 使用原始 TCP 对端；请求头不能改变授权来源。
+        if (\$qimenidc_qagent_allowed = 0) { return 403; }
         proxy_pass http://127.0.0.1:${QAGENT_BACKEND_PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$realip_remote_addr;

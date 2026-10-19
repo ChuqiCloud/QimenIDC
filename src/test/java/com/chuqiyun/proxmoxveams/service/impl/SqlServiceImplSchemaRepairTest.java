@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
+import com.chuqiyun.proxmoxveams.security.SecuritySchemaMigration;
 import com.chuqiyun.proxmoxveams.utils.SqlUpdateLoader;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
@@ -35,6 +36,7 @@ class SqlServiceImplSchemaRepairTest {
     void unknownBuildRepairsColumnsWithoutReplayingHistoricalMigrations() {
         SqlServiceImpl checked = spy(service);
         ReflectionTestUtils.setField(checked, "configService", mock(ConfigServiceImpl.class));
+        ReflectionTestUtils.setField(checked, "securitySchemaMigration", mock(SecuritySchemaMigration.class));
         ReflectionTestUtils.setField(checked, "nowBuildVersion", "1.3.4_6");
         doReturn(true).when(checked).ensureColumn(anyString(), anyString(), anyString());
         assertTrue(checked.checkAndUpdateDatabase());

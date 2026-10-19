@@ -1,4 +1,4 @@
-import threading
+import asyncio
 from fastapi import APIRouter, Request
 
 from common.CodeEnum import CodeEnum
@@ -19,7 +19,10 @@ Change the virtual machine password through qemu
 @changePassword_router.post('/changePassword')
 async def changePassword(request: Request, item: ChangePassword = None):
     item = bind_entity(ChangePassword, await get_payload(request))
-    # 创建一个线程执行修改密码脚本
-    thread = threading.Thread(target=run_change_password, args=(item.id,item.username,item.password))  
-    thread.start()
-    return secured_response(request, CodeEnum.SUCCESS,'success',{})
+    try:
+        success = await asyncio.to_thread(run_change_password, item.id, item.username, item.password)
+    except OSError:
+        success = False
+    if not success:
+        return secured_response(request, CodeEnum.FAIL, 'password change failed', {})
+    return secured_response(request, CodeEnum.SUCCESS, 'success', {})

@@ -15,21 +15,20 @@ from common.CodeEnum import CodeEnum
 from service.Authentication import get_token
 from service.EndpointPolicy import is_retired_endpoint
 from service.Security import decode_request
+from service.Nat import Manager as NatManager
 from service.VncFileEditor import VncFileEditor
 
 # 被控端程序版本，随代码一起发布，主控心跳时读取
 VERSION = '1.0.3'
 
-async def probe_manager_endpoint():
-    # 启动后先用主控的 TLS 端口探测一次，把主控出口地址并入白名单，
-    # 避免主控换了出口IP后连 /net/trust 都进不来。
-    if not os.environ.get('QIMENIDC_MANAGER_ENDPOINT', '').strip():
-        return
+async def refresh_trusted_networks():
     from service.TrustedNetwork import TrustStore
-    try:
-        await asyncio.to_thread(TrustStore().security)
-    except Exception as ex:
-        print('[WARN] 主控出口地址探测未完成: %s' % str(ex)[:120])
+    while True:
+        try:
+            await asyncio.to_thread(TrustStore().refresh)
+        except Exception:
+            print('[WARN] 可信来源状态未完成刷新，保留现有配置')
+        await asyncio.sleep(300)
 
 
 async def clean_vnc_tokens():
@@ -45,13 +44,24 @@ async def lifespan(app):
     editor = VncFileEditor(os.environ.get('QIMEN_VNC_TOKEN_FILE', '/home/software/vnc'))
     await asyncio.to_thread(editor.clean_file)
     cleanup_task = asyncio.create_task(clean_vnc_tokens())
-    asyncio.create_task(probe_manager_endpoint())
+    trust_task = asyncio.create_task(refresh_trusted_networks())
+    nat_manager = None
+    try:
+        nat_manager = await asyncio.to_thread(NatManager)
+        await asyncio.to_thread(nat_manager.active_forward_rules_scheduler)
+    except Exception as error:
+        print(f'[ERROR] NAT rule recovery could not start: {error}')
     try:
         yield
     finally:
+        if nat_manager is not None and nat_manager.scheduler is not None:
+            await asyncio.to_thread(nat_manager.scheduler.shutdown)
         cleanup_task.cancel()
+        trust_task.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup_task
+        with suppress(asyncio.CancelledError):
+            await trust_task
 
 
 app=FastAPI(
@@ -65,7 +75,7 @@ app=FastAPI(
 )
 
 # 路由
-from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk,migration
+from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk,migration,natForward
 
 # 挂载路由
 app.include_router(changePassword.changePassword_router,tags=["changePassword"])
@@ -74,6 +84,7 @@ app.include_router(status.status_router,tags=["status"])
 app.include_router(file.file_router,tags=["file"])
 app.include_router(vnc.vnc_router,tags=["vnc"])
 app.include_router(netWork.netWork_router,tags=["netWork"])
+app.include_router(natForward.nat_router,tags=["nat"])
 app.include_router(securityGroup.security_group_router,tags=["securityGroup"])
 app.include_router(disk.disk_router,tags=["disk"])
 # 迁移阶段接口：主控逐步调用，仅节点间鉴权后可访问

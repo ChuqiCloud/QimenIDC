@@ -37,11 +37,13 @@ while true; do
     echo "4. 检查 QAgent 状态"
     echo "5. 查看 QAgent 运行状态"
     echo "6. 查看 QAgent token"
-    echo "7. 设置主控 token"
+    echo "7. 设置 QAgent token"
     echo "8. 查看 QAgent port"
     echo "9. 重置 QAgent port"
-    echo "10. 更新被控端程序"
+    echo "10. 更新 QAgent 程序"
     echo "11. 查看主控可信白名单"
+    echo "12. 输出 QAgent 公钥"
+    echo "13. 更新 QAgent 证书"
     echo "q. 退出"
     read -p "请选择序号操作: " choice
 
@@ -116,6 +118,16 @@ while true; do
                 sudo systemctl start qagent.service
                 exit 1
             fi
+            ;;
+        12)
+            echo -e "\033[33m--->节点公钥（复制完整 PEM 证书到主控）:\033[0m"
+            if ! sudo openssl x509 -in /etc/qimenidc/qagent/qimenidc-qagent.crt -outform PEM; then
+                echo "输出失败，请确认节点证书已生成，可通过 harden.sh 完成安全配置。"
+            fi
+            ;;
+        13)
+            echo "更新后请在主控重新保存节点公钥，否则主控将无法信任新证书。"
+            sudo bash /home/software/QAgent/renew-certificate.sh
             ;;
         q)
             echo "退出菜单"

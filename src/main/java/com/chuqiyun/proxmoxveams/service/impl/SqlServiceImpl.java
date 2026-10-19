@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.baomidou.mybatisplus.extension.toolkit.SqlRunner;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
+import com.chuqiyun.proxmoxveams.security.SecuritySchemaMigration;
 import com.chuqiyun.proxmoxveams.service.SqlService;
 import com.chuqiyun.proxmoxveams.utils.SqlUpdateLoader;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,8 @@ public class SqlServiceImpl implements SqlService {
 
     @Resource
     private ConfigServiceImpl configService;
+    @Resource
+    private SecuritySchemaMigration securitySchemaMigration;
 
     /**
     * @Author: mryunqi
@@ -100,19 +103,12 @@ public class SqlServiceImpl implements SqlService {
     public boolean checkAndUpdateDatabase() {
         // 获取数据库中的版本号
         String dbBuildVersion = configService.getBuild();
-        // 版本号为空或与当前一致时，历史上是直接跳过。但 build 号只说明「程序曾经写过这一版」，
-        // 不代表这一版的表结构真的落到库里了：回滚过、手动改过库、多实例并发启动失败重试等情况，
-        // 都会留下「build 号已经是新版、列却不存在」的库，启动后在实体查询里报 Unknown column。
-        // 所以这里不再提前返回，而是照常进入下面的幂等修复。
-        if (dbBuildVersion == null) {
-            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
-                    "数据库未记录构建号，将按当前版本执行结构校验与修复: 当前版本={}", nowBuildVersion);
-            // 无法确定旧库已执行哪些迁移，不能重放全部历史 SQL；仅检查启动必需的列。
-            return ensureRequiredColumns();
-        } else if (dbBuildVersion.equals(nowBuildVersion)) {
-            UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
-                    "数据库构建号与当前版本一致({})，执行结构校验", dbBuildVersion);
-        } else if (SqlUpdateLoader.compareBuildVersion(nowBuildVersion, dbBuildVersion) < 0) {
+        // 未知版本不重放历史 SQL；版本已记账也按实际结构补齐安全字段。
+        if (dbBuildVersion == null || dbBuildVersion.equals(nowBuildVersion)) {
+            return migrateSecuritySchema();
+        }
+
+        if (SqlUpdateLoader.compareBuildVersion(nowBuildVersion, dbBuildVersion) < 0) {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM,
                     "版本号异常，当前版本号小于数据库中的版本号: 当前版本={}, 数据库版本={}", nowBuildVersion, dbBuildVersion);
             return false;
@@ -122,12 +118,12 @@ public class SqlServiceImpl implements SqlService {
         try {
             List<SqlUpdateLoader.BuildSqlStep> buildSqlStepList = sqlUpdateLoader.getOrderedBuildSqlSteps();
             for (SqlUpdateLoader.BuildSqlStep buildSqlStep : buildSqlStepList) {
-                String stepBuildVersion = buildSqlStep.getBuildVersion() + "_" + buildSqlStep.getIteration();
-                if (dbBuildVersion != null
-                        && SqlUpdateLoader.compareBuildVersion(stepBuildVersion, dbBuildVersion) <= 0) {
+                String stepBuildVersion = buildSqlStep.getStepBuildVersion();
+                if (isSecuritySchemaStep(stepBuildVersion)) {
                     continue;
                 }
-                if (SqlUpdateLoader.compareBuildVersion(stepBuildVersion, nowBuildVersion) > 0) {
+                if (SqlUpdateLoader.compareBuildVersion(stepBuildVersion, dbBuildVersion) <= 0
+                        || SqlUpdateLoader.compareBuildVersion(stepBuildVersion, nowBuildVersion) > 0) {
                     continue;
                 }
                 UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "执行数据库升级SQL: {}", stepBuildVersion);
@@ -140,17 +136,24 @@ public class SqlServiceImpl implements SqlService {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "获取SQL更新语句失败:{}", e);
             return false;
         }
-        // 列级结构校验：升级 SQL 在历史库上可能因为「半套结构 + build 号已推进」而被整体跳过，
-        // 这里按列补一次，保证实体查询用到的列一定存在。
-        return ensureRequiredColumns();
+        return migrateSecuritySchema();
     }
 
-    /**
-     * 启动必需的列。缺列时实体查询会直接抛 Unknown column，整个应用起不来，
-     * 所以这些列在启动阶段无条件校验并补齐。
-     * <p>
-     * 只收录「缺失就等于起不来」的列，避免把结构修复扩散成一整套重复的迁移脚本。
-     */
+    private boolean migrateSecuritySchema() {
+        try {
+            securitySchemaMigration.migrate();
+            return ensureRequiredColumns();
+        } catch (RuntimeException e) {
+            UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "安全数据库结构升级失败，停止启动");
+            return false;
+        }
+    }
+
+    private boolean isSecuritySchemaStep(String version) {
+        return version.equals("1.3.4_4") || version.equals("1.3.4_5") || version.equals("1.3.4_6");
+    }
+
+    // 保留启动流程使用的列级校验与初始化辅助接口。
     private static final List<RequiredColumn> REQUIRED_COLUMNS = List.of(
             new RequiredColumn("master", "node_public_key",
                     "text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'")

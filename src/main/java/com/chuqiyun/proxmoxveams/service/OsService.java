@@ -48,6 +48,10 @@ public interface OsService extends IService<Os> {
 
     boolean isNodeOsDownloaded(Os os, Integer nodeId);
 
+    enum FilePresence { PRESENT, ABSENT, UNKNOWN }
+
+    FilePresence probeOsFile(String fileName, String path, Integer nodeId);
+
     boolean isOsExistOnNode(String fileName, String path, Integer nodeId);
 }
 

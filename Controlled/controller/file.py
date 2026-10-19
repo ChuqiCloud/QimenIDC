@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from fastapi import APIRouter, Request
@@ -7,7 +8,7 @@ from common.ResponseResult import secured_response
 from controller._payload import bind_entity, get_payload
 from entity.WriteFile import WriteFile
 from service.Security import check_file_path
-from service.File import write_file
+from service.File import delete_image, open_directory, write_file
 
 
 file_router = APIRouter()
@@ -23,11 +24,26 @@ Get the file list under the specified directory
 async def pathFile(request: Request):
     payload = await get_payload(request)
     real_path = check_file_path('list', str(payload.get('path') or ''))
-    if not os.path.exists(real_path):
+    try:
+        directory = open_directory(real_path)
+        try:
+            files = os.listdir(directory)
+        finally:
+            os.close(directory)
+    except (FileNotFoundError, NotADirectoryError):
         return secured_response(request, CodeEnum.NOT_FOUND, 'path not found', {})
-    if not os.path.isdir(real_path):
-        return secured_response(request, CodeEnum.NOT_FOUND, 'path is not a directory', {})
-    return secured_response(request, CodeEnum.SUCCESS, 'success', {'files': os.listdir(real_path)})
+    return secured_response(request, CodeEnum.SUCCESS, 'success', {'files': files})
+
+
+@file_router.post('/deleteFile')
+async def deleteFile(request: Request):
+    payload = await get_payload(request)
+    try:
+        success = await asyncio.to_thread(delete_image, str(payload.get('path') or ''), payload.get('file'))
+    except (OSError, ValueError):
+        return secured_response(request, CodeEnum.FAIL, 'image delete failed', {})
+    return secured_response(request, CodeEnum.SUCCESS if success else CodeEnum.FAIL,
+                            'success' if success else 'image delete failed', {})
 
 
 @file_router.post('/writeFile')

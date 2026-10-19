@@ -11,6 +11,8 @@ import com.chuqiyun.proxmoxveams.utils.Base64UrlUtil;
 import com.chuqiyun.proxmoxveams.utils.WebAuthnUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.ByteArrayOutputStream;
@@ -19,7 +21,10 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.security.interfaces.RSAPublicKey;
+import java.sql.ResultSet;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,8 +54,30 @@ class PasskeyAuthenticationBindingTest {
     private KeyPair keyPair;
 
     @BeforeEach
+    @SuppressWarnings({"rawtypes", "unchecked"})
     void setUp() throws Exception {
         service = new PasskeyServiceImpl();
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object[]> pending = new HashMap<>();
+        when(jdbc.update(startsWith("insert "), anyString(), anyString(), nullable(String.class), anyLong()))
+                .thenAnswer(call -> {
+                    pending.put(call.getArgument(1), new Object[]{call.getArgument(2), call.getArgument(3), call.getArgument(4)});
+                    return 1;
+                });
+        when(jdbc.update(startsWith("delete "), anyString(), anyLong()))
+                .thenAnswer(call -> pending.remove(call.getArgument(1)) == null ? 0 : 1);
+        when(jdbc.query(anyString(), any(RowMapper.class), anyString())).thenAnswer(call -> {
+            Object[] row = pending.get(call.getArgument(2));
+            if (row == null) {
+                return List.of();
+            }
+            ResultSet result = mock(ResultSet.class);
+            when(result.getString("type")).thenReturn((String) row[0]);
+            when(result.getString("user_uuid")).thenReturn((String) row[1]);
+            when(result.getLong("expires_at")).thenReturn((Long) row[2]);
+            return List.of(((RowMapper<?>) call.getArgument(1)).mapRow(result, 0));
+        });
+        ReflectionTestUtils.setField(service, "jdbc", jdbc);
         credentials = mock(SysPasskeyService.class);
         SysuserService users = mock(SysuserService.class);
         ReflectionTestUtils.setField(service, "sysPasskeyService", credentials);
