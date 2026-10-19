@@ -5,6 +5,7 @@ QAGENT_HOME="/home/software/QAgent"
 NOVNC_HOME="/home/software/noVNC"
 SECURITY_DIR="/etc/qimenidc"
 SECURITY_CONFIG="${SECURITY_DIR}/security.conf"
+SECURITY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VNC_TOKEN_FILE="/home/software/vnc"
 VNC_TOKEN_USER="qimenvnc"
 # 主控出口地址探测目标与集群标识，随 security.conf 一起落盘
@@ -38,12 +39,12 @@ security_init_directory() {
 }
 
 security_load_config() {
-    security_regular_file "${SECURITY_CONFIG}"
+    security_regular_file "${SECURITY_CONFIG}" || return 1
     if [ -f "${SECURITY_CONFIG}" ]; then
         [ "$(stat -c '%u:%a' "${SECURITY_CONFIG}")" = '0:600' ] ||
-            security_fail "${SECURITY_CONFIG} must be root-owned mode 600"
+            { security_fail "${SECURITY_CONFIG} must be root-owned mode 600"; return 1; }
         local parsed name value
-        parsed=$(/usr/bin/python3.10 "${QAGENT_HOME}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
+        parsed=$(/usr/bin/python3.10 "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
         while IFS='=' read -r name value; do
             case "${name}" in
                 QAGENT_MANAGER_IPS|QAGENT_MANAGER_PROBES|QAGENT_STATIC_MANAGER_IPS|QAGENT_CERT_HOSTS|QAGENT_VNC_PROXY_IPS|QAGENT_BACKEND_PORT|QIMENIDC_MANAGER_ENDPOINT|QIMENIDC_CLUSTER_ID)
@@ -53,6 +54,53 @@ security_load_config() {
         MANAGER_ENDPOINT="${QIMENIDC_MANAGER_ENDPOINT:-${MANAGER_ENDPOINT}}"
         CLUSTER_ID="${QIMENIDC_CLUSTER_ID:-${CLUSTER_ID}}"
     fi
+}
+
+security_require_setting() {
+    local name="$1" description="$2"
+    if [ -z "${!name:-}" ]; then
+        if [ ! -t 0 ]; then
+            security_fail "missing ${name}; configure manager IPs, node certificate hosts and VNC proxy IPs with harden.sh, or export QAGENT_MANAGER_IPS, QAGENT_CERT_HOSTS and QAGENT_VNC_PROXY_IPS before updating"
+            return 1
+        fi
+        read -r -p "${description}: " "${name}" || return 1
+        [ -n "${!name}" ] || { security_fail "${name} cannot be empty"; return 1; }
+    fi
+}
+
+# 在替换程序或停止服务前补齐旧节点配置；不推测主控出口或自动放通来源。
+security_resolve_config() {
+    local manager_ips="$1" cert_hosts="$2" vnc_proxy_ips="$3" backend_port="$4"
+    local manager_endpoint="$5" cluster_id="$6" explicit_manager=0
+    [ -z "${manager_ips}" ] || explicit_manager=1
+    security_load_config || return 1
+    QAGENT_MANAGER_IPS="${manager_ips:-${QAGENT_MANAGER_IPS:-}}"
+    QAGENT_CERT_HOSTS="${cert_hosts:-${QAGENT_CERT_HOSTS:-}}"
+    QAGENT_VNC_PROXY_IPS="${vnc_proxy_ips:-${QAGENT_VNC_PROXY_IPS:-}}"
+    [ -n "${QAGENT_MANAGER_IPS}" ] || explicit_manager=1
+    security_require_setting QAGENT_MANAGER_IPS 'Manager source IP/CIDRs (space-separated)' || return 1
+    security_require_setting QAGENT_CERT_HOSTS 'Node IP/DNS used by manager API calls (certificate SANs)' || return 1
+    security_require_setting QAGENT_VNC_PROXY_IPS 'noVNC controller source IP/CIDRs (space-separated)' || return 1
+    QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${QAGENT_MANAGER_IPS}") || return 1
+    if [ "${explicit_manager}" = 1 ] || [ ! -f "${SECURITY_CONFIG}" ]; then
+        QAGENT_STATIC_MANAGER_IPS="${QAGENT_MANAGER_IPS}"
+    fi
+    QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${QAGENT_CERT_HOSTS}") || return 1
+    QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${QAGENT_VNC_PROXY_IPS}") || return 1
+    QAGENT_BACKEND_PORT="${backend_port:-${QAGENT_BACKEND_PORT:-17600}}"
+    MANAGER_ENDPOINT="${manager_endpoint:-${MANAGER_ENDPOINT:-}}"
+    CLUSTER_ID="${cluster_id:-${CLUSTER_ID:-}}"
+    security_validate_manager_endpoint "${MANAGER_ENDPOINT}" || return 1
+    security_validate_cluster_id "${CLUSTER_ID}" || return 1
+    security_regular_file "${QAGENT_HOME}/port" || return 1
+    QAGENT_TLS_PORT=7600
+    if [ -f "${QAGENT_HOME}/port" ]; then
+        QAGENT_TLS_PORT=$(cat "${QAGENT_HOME}/port")
+    fi
+    security_validate_port "${QAGENT_TLS_PORT}" || return 1
+    security_validate_port "${QAGENT_BACKEND_PORT}" || return 1
+    [ "${QAGENT_TLS_PORT}" != "${QAGENT_BACKEND_PORT}" ] || { security_fail "TLS and backend ports must differ"; return 1; }
+    [ "${QAGENT_TLS_PORT}" != 6080 ] || { security_fail "QAgent TLS port cannot collide with noVNC port 6080"; return 1; }
 }
 
 security_validate_manager_ips() {
@@ -129,7 +177,7 @@ security_validate_port() {
 security_save_config() {
     security_init_directory
     # 和 Python 同步接口使用相同的引用格式，不执行历史配置。
-    /usr/bin/python3.10 "${QAGENT_HOME}/service/SecurityConfig.py" --write "${SECURITY_CONFIG}" \
+    /usr/bin/python3.10 "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" --write "${SECURITY_CONFIG}" \
         "QAGENT_MANAGER_IPS=${QAGENT_MANAGER_IPS}" \
         "QAGENT_MANAGER_PROBES=${QAGENT_MANAGER_PROBES:-}" \
         "QAGENT_STATIC_MANAGER_IPS=${QAGENT_STATIC_MANAGER_IPS:-}" \

@@ -106,16 +106,13 @@ while true; do
         10)
             echo "---> 5秒后将更新最新版被控程序..."
             sleep 5
-            # 停止QAgent
-            sudo systemctl stop qagent.service
-            # 运行/home/software/QAgent中的update.sh文件
+            # 更新脚本先检查白名单和证书参数，通过后才停止 QAgent。
             chmod +x /home/software/QAgent/update.sh
             # 执行update.sh文件
-            if /home/software/QAgent/update.sh; then
+            if sudo bash /home/software/QAgent/update.sh; then
                 exit 0
             else
                 echo -e "\033[31m--->QAgent update failed!\033[0m"
-                sudo systemctl start qagent.service
                 exit 1
             fi
             ;;

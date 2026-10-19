@@ -8,8 +8,8 @@ source "${SCRIPT_DIR}/security.sh"
 # 配置只保留主控下发的 token；需要更换时通过 --token-stdin 输入。
 clear_vnc=0
 token_stdin=0
+prepare_config=0
 manager_ips="${QAGENT_MANAGER_IPS:-}"
-static_manager_ips="${manager_ips}"
 cert_hosts="${QAGENT_CERT_HOSTS:-}"
 vnc_proxy_ips="${QAGENT_VNC_PROXY_IPS:-}"
 backend_port="${QAGENT_BACKEND_PORT:-}"
@@ -18,17 +18,19 @@ cluster_id="${QIMENIDC_CLUSTER_ID:-}"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --configure) shift ;;
+        --prepare-config) prepare_config=1; shift ;;
         --clear-vnc) clear_vnc=1; shift ;;
         --token-stdin) token_stdin=1; shift ;;
-        --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; static_manager_ips="${manager_ips}"; shift 2 ;;
+        --manager-ips) manager_ips="${2:?provide manager source IP/CIDRs}"; shift 2 ;;
         --cert-hosts) cert_hosts="${2:?provide node IP/DNS identities used by the manager}"; shift 2 ;;
         --vnc-proxy-ips) vnc_proxy_ips="${2:?provide noVNC controller source IP/CIDRs}"; shift 2 ;;
         --backend-port) backend_port="${2:?provide internal backend port}"; shift 2 ;;
         --manager-endpoint) manager_endpoint="${2:?provide manager host:port used for source probing}"; shift 2 ;;
         --cluster-id) cluster_id="${2:?provide cluster id shared by every manager in this cluster}"; shift 2 ;;
         --help)
-            echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--manager-endpoint host:port] [--cluster-id id] [--configure|--token-stdin] [--clear-vnc]"
+            echo "Usage: bash harden.sh --manager-ips 'IP/CIDR ...' --cert-hosts 'node-ip-or-dns ...' --vnc-proxy-ips 'IP/CIDR ...' [--backend-port 17600] [--manager-endpoint host:port] [--cluster-id id] [--configure|--token-stdin|--prepare-config] [--clear-vnc]"
             echo "Default: preserve the manager token and noVNC sessions. --token-stdin installs the manager-supplied token."
+            echo "--prepare-config only validates and saves settings; it does not stop services or change certificates."
             exit 0 ;;
         *) security_fail "unknown option: $1"; exit 1 ;;
     esac
@@ -36,24 +38,18 @@ done
 
 security_require_root
 command -v /usr/bin/python3.10 >/dev/null || security_fail "install Python 3.10 first"
-security_load_config
-if [ -n "${static_manager_ips}" ] || [ ! -f "${SECURITY_CONFIG}" ]; then
-    QAGENT_STATIC_MANAGER_IPS=$(security_validate_manager_ips "${static_manager_ips:-${manager_ips}}")
+# --token-stdin 的标准输入包含密钥，不可作为缺失配置的交互输入。
+if [ "${token_stdin}" = 1 ]; then
+    security_resolve_config "${manager_ips}" "${cert_hosts}" "${vnc_proxy_ips}" "${backend_port}" "${manager_endpoint}" "${cluster_id}" < /dev/null
+else
+    security_resolve_config "${manager_ips}" "${cert_hosts}" "${vnc_proxy_ips}" "${backend_port}" "${manager_endpoint}" "${cluster_id}"
 fi
-QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${manager_ips:-${QAGENT_MANAGER_IPS:-}}")
-QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${cert_hosts:-${QAGENT_CERT_HOSTS:-}}")
-QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${vnc_proxy_ips:-${QAGENT_VNC_PROXY_IPS:-}}")
-QAGENT_BACKEND_PORT="${backend_port:-${QAGENT_BACKEND_PORT:-17600}}"
-MANAGER_ENDPOINT="${manager_endpoint:-${MANAGER_ENDPOINT:-}}"
-CLUSTER_ID="${cluster_id:-${CLUSTER_ID:-}}"
-security_validate_manager_endpoint "${MANAGER_ENDPOINT}"
-security_validate_cluster_id "${CLUSTER_ID}"
-security_regular_file "${QAGENT_HOME}/port"
-QAGENT_TLS_PORT=$(cat "${QAGENT_HOME}/port")
-security_validate_port "${QAGENT_TLS_PORT}"
-security_validate_port "${QAGENT_BACKEND_PORT}"
-[ "${QAGENT_TLS_PORT}" != "${QAGENT_BACKEND_PORT}" ] || security_fail "TLS and backend ports must differ"
-[ "${QAGENT_TLS_PORT}" != 6080 ] || security_fail "QAgent TLS port cannot collide with noVNC port 6080"
+if [ "${prepare_config}" = 1 ]; then
+    [ "${token_stdin}" = 0 ] && [ "${clear_vnc}" = 0 ] || security_fail "--prepare-config cannot change tokens or VNC sessions"
+    security_save_config
+    echo "QAgent security settings are ready; services and certificates have not been changed."
+    exit 0
+fi
 [ -f "${QAGENT_HOME}/service/VncTokenPlugin.py" ] || security_fail "deploy the updated QAgent code before hardening"
 [ -f "${NOVNC_HOME}/utils/websockify/run" ] || security_fail "install noVNC/websockify before hardening"
 security_install_dependencies
@@ -100,7 +96,9 @@ systemctl daemon-reload
 systemctl enable qagent.service noVNC.service nginx.service
 systemctl restart nginx.service
 systemctl start qagent.service noVNC.service
-systemctl is-active --quiet nginx.service qagent.service noVNC.service
+for unit in nginx.service qagent.service noVNC.service; do
+    systemctl is-active --quiet "${unit}"
+done
 trap - ERR
 echo "QAgent TLS whitelist enabled on port ${QAGENT_TLS_PORT}; backend is 127.0.0.1:${QAGENT_BACKEND_PORT}."
 echo "noVNC runs as ${VNC_TOKEN_USER}; tokens and metadata are mode 600."
