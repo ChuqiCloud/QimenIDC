@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.chuqiyun.proxmoxveams.dto.SecurityGroupApplyDto;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import org.slf4j.Logger;
@@ -242,10 +243,20 @@ public class ClientApiUtil {
 
     /**
     * @Author: 星禾
-    * @Description: 读取被控端版本文件，用于判定被控端是否具备新接口能力（免鉴权接口，仅返回固定值）
+    * @Description: 读取被控端程序版本（免鉴权接口，仅返回固定值）
     * @Return String 被控端版本，不可用时返回null
     */
     public static String getAgentVersion(String ip, Integer port, String token){
+        JSONObject info = getAgentVersionInfo(ip, port, token);
+        return info == null ? null : info.getString("version");
+    }
+
+    /**
+     * @Author: 星禾
+     * @Description: 一次读取被控端程序版本与接口协议版本，避免混用两个版本号
+     * @DateTime: 2026/10/19 15:45
+     */
+    public static JSONObject getAgentVersionInfo(String ip, Integer port, String token){
         String url = AGENT_SCHEME + ip + ":" + port + "/version";
         RestTemplate restTemplate = createNodeRestTemplate(url, DEFAULT_TIMEOUT_MILLIS);
         HttpHeaders headers = new HttpHeaders();
@@ -254,8 +265,8 @@ public class ClientApiUtil {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET,
                     new HttpEntity<>(headers), String.class);
             JSONObject body = JSON.parseObject(response.getBody());
-            JSONObject data = body == null ? null : body.getJSONObject("data");
-            return data == null ? null : data.getString("version");
+            return body != null && Objects.equals(body.getInteger("code"), 200)
+                    ? body.getJSONObject("data") : null;
         } catch (RestClientException e) {
             log.error("获取被控端版本失败: ip={}, port={}, error={}", ip, port, e.getMessage());
             return null;
@@ -657,6 +668,13 @@ public class ClientApiUtil {
     public static Boolean addPortForward(String ip, String token, Integer controllerPort, Integer hostId,
                                          String sourceIp, Integer source_port, String destination_ip,
                                          Integer destination_port, String protocol){
+        return addPortForwardWithResult(ip, token, controllerPort, hostId, sourceIp,
+                source_port, destination_ip, destination_port, protocol).isSuccess();
+    }
+
+    public static NatOperationResult addPortForwardWithResult(String ip, String token, Integer controllerPort, Integer hostId,
+                                                              String sourceIp, Integer source_port, String destination_ip,
+                                                              Integer destination_port, String protocol) {
         String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/add";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm",hostId);
@@ -668,22 +686,23 @@ public class ClientApiUtil {
         if (Objects.equals(protocol, "all")) //处理tcp+udp请求
         {
             paramMap.put("protocol","tcp");
-            JSONObject result = postControllerApi(url, paramMap, token);
-            if ( result != null && result.getInteger("code") == 200 ) {
+            NatOperationResult result = natOperationResult(postControllerApi(url, paramMap, token), "添加");
+            if (result.isSuccess()) {
                 paramMap.put("protocol","udp");
-                JSONObject result_udp = postControllerApi(url, paramMap, token);
-                if (result_udp != null && result_udp.getInteger("code") == 200) {
-                    return true;
+                NatOperationResult udpResult = natOperationResult(postControllerApi(url, paramMap, token), "添加");
+                if (udpResult.isSuccess()) {
+                    return udpResult;
                 }
                 paramMap.put("protocol", "tcp");
-                postControllerApi(AGENT_SCHEME + ip + ":" + controllerPort + "/nat/delete", paramMap, token);
-                return false;
+                NatOperationResult rollback = natOperationResult(postControllerApi(
+                        AGENT_SCHEME + ip + ":" + controllerPort + "/nat/delete", paramMap, token), "回滚");
+                return rollback.isSuccess() ? udpResult : NatOperationResult.failure(
+                        udpResult.getMessage() + "；TCP规则回滚失败：" + rollback.getMessage());
             } else {
-                return result != null && result.getInteger("code") == 200;
+                return result;
             }
         } else {
-            JSONObject result = postControllerApi(url, paramMap, token);
-            return result != null && result.getInteger("code") == 200;
+            return natOperationResult(postControllerApi(url, paramMap, token), "添加");
         }
     }
 
@@ -708,6 +727,13 @@ public class ClientApiUtil {
     public static Boolean deletePortForward(String ip, String token, Integer controllerPort, Integer hostId,
                                             String sourceIp, Integer source_port, String destination_ip,
                                             Integer destination_port, String protocol) {
+        return deletePortForwardWithResult(ip, token, controllerPort, hostId, sourceIp,
+                source_port, destination_ip, destination_port, protocol).isSuccess();
+    }
+
+    public static NatOperationResult deletePortForwardWithResult(String ip, String token, Integer controllerPort, Integer hostId,
+                                                                 String sourceIp, Integer source_port, String destination_ip,
+                                                                 Integer destination_port, String protocol) {
         String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/delete";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
@@ -718,14 +744,36 @@ public class ClientApiUtil {
         paramMap.put("protocol", protocol);
         if (Objects.equals(protocol, "all")) {
             paramMap.put("protocol", "tcp");
-            JSONObject tcpResult = postControllerApi(url, paramMap, token);
+            NatOperationResult tcpResult = natOperationResult(postControllerApi(url, paramMap, token), "删除");
             paramMap.put("protocol", "udp");
-            JSONObject udpResult = postControllerApi(url, paramMap, token);
-            return tcpResult != null && tcpResult.getInteger("code") == 200
-                    && udpResult != null && udpResult.getInteger("code") == 200;
+            NatOperationResult udpResult = natOperationResult(postControllerApi(url, paramMap, token), "删除");
+            if (!tcpResult.isSuccess() && !udpResult.isSuccess()) {
+                return NatOperationResult.failure(tcpResult.getMessage() + "；" + udpResult.getMessage());
+            }
+            return tcpResult.isSuccess() ? udpResult : tcpResult;
         }
-        JSONObject result = postControllerApi(url, paramMap, token);
-        return result != null && result.getInteger("code") == 200;
+        return natOperationResult(postControllerApi(url, paramMap, token), "删除");
+    }
+
+    // 保留节点业务错误，不再将数据库、iptables 等故障一律解释为端口占用。
+    static NatOperationResult natOperationResult(JSONObject response, String action) {
+        if (response == null) {
+            return NatOperationResult.failure("QAgent " + action + "NAT规则失败：未收到有效响应，请检查主控连接和解密日志");
+        }
+        Integer code = response.getInteger("code");
+        if (Integer.valueOf(200).equals(code)) {
+            return NatOperationResult.success();
+        }
+        String message = response.getString("message");
+        if (message == null || message.trim().isEmpty()) {
+            message = "节点未提供错误详情，请查看被控日志";
+        }
+        // 不回显请求体或完整响应；限制节点错误的长度并移除日志控制字符。
+        message = message.replaceAll("[\\p{Cntrl}]", " ").trim();
+        if (message.length() > 1024) {
+            message = message.substring(0, 1024) + "…";
+        }
+        return NatOperationResult.failure("QAgent " + action + "NAT规则失败（code=" + code + "）：" + message);
     }
 
     public static Boolean addIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {

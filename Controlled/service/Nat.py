@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 from functools import wraps
@@ -17,6 +18,23 @@ from entity.NatForward import ForwardRule as PortRuleParams, IpForwardRule as Ip
 Base = declarative_base()
 NAT_RULE_LOCK = threading.RLock()
 DATABASE_PATH = Path(__file__).resolve().parent.parent / 'forward_rules.db'
+ERROR_DETAIL_LIMIT = 2000
+
+
+# @Author: 星禾
+# @Description: 保留命令错误详情，避免控制字符或超长输出破坏日志与接口响应。
+# @DateTime: 2026/10/19 15:46
+def error_detail(error):
+    detail = str(error)
+    if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+        stderr = error.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode('utf-8', errors='replace')
+        detail += ': ' + stderr
+    detail = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', detail)
+    if len(detail) > ERROR_DETAIL_LIMIT:
+        detail = detail[:ERROR_DETAIL_LIMIT - 3] + '...'
+    return detail
 
 
 def nat_rule_locked(function):
@@ -124,7 +142,7 @@ class IptablesForwardRuleManager:
         try:
             self.run(['conntrack', '-D', *arguments], check=False)
         except (OSError, subprocess.SubprocessError) as error:
-            print(f'[WARN] Failed to clear NAT connections: {error}')
+            print(f'[WARN] Failed to clear NAT connections: {error_detail(error)}', file=sys.stderr, flush=True)
 
     def rollback(self, changes):
         errors = []
@@ -132,7 +150,7 @@ class IptablesForwardRuleManager:
             try:
                 self.change_rule(rule, delete=not deleted)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-                errors.append(str(error))
+                errors.append(error_detail(error))
         return errors
 
     @staticmethod
@@ -164,6 +182,9 @@ class Manager:
 
     @staticmethod
     def response(code, message, data=None):
+        if code != 0:
+            message = error_detail(message)
+            print(f'[ERROR] NAT: {message}', file=sys.stderr, flush=True)
         return {'code': code, 'message': message, 'data': data}
 
     @staticmethod
@@ -194,12 +215,27 @@ class Manager:
         return ports, ips
 
     @staticmethod
-    def validate_source_ports(port_rules):
+    def validate_source_ports(port_rules, existing_port_rules=()):
+        # 仅兼容已经落库的 HTTP/HTTPS 业务规则，六字段保持一致才可原样恢复。
+        legacy_web_rules = {Manager.port_rule_key(rule) for rule in existing_port_rules
+                            if rule['source_port'] in (80, 443)}
+        invalid_rules = []
+        invalid_count = 0
         for rule in port_rules:
             port = rule['source_port']
+            if port in (80, 443) and Manager.port_rule_key(rule) in legacy_web_rules:
+                continue
             if (port < 1000 or port > 60050 or port in (3128, 5404, 5405, 6080, 7600, 8006, 17600)
                     or 5900 <= port <= 5999 or 59000 <= port <= 60050):
-                raise ValueError('Source port is reserved or outside the allowed range')
+                invalid_count += 1
+                # 历史规则逐条保留，只报告前十项，便于定位阻塞整个快照的记录。
+                if len(invalid_rules) < 10:
+                    invalid_rules.append(f"vm={rule['vm']}, source_port={port}, protocol={rule['protocol']}")
+        if invalid_count:
+            detail = '; '.join(invalid_rules)
+            if invalid_count > len(invalid_rules):
+                detail += f'; {invalid_count - len(invalid_rules)} additional invalid rule(s) omitted'
+            raise ValueError(f'Source port is reserved or outside the allowed range: {detail}')
 
     def saved_rules(self):
         return self.normalize_rules(self.forward_rule_manager.get_all_forward_rules(),
@@ -211,7 +247,7 @@ class Manager:
             ports, ips = self.saved_rules()
             return self.response(0, 'success', {'port_rules': ports, 'ip_forward_rules': ips})
         except Exception as error:
-            return self.response(1, f'Failed to export NAT rules: {error}', {})
+            return self.response(1, f'Failed to export NAT rules: {error_detail(error)}', {})
 
     @nat_rule_locked
     def sync_rules(self, port_rules, ip_forward_rules):
@@ -219,8 +255,8 @@ class Manager:
         executor = self.iptables_forward_rule_manager
         try:
             ports, ips = self.normalize_rules(port_rules, ip_forward_rules)
-            self.validate_source_ports(ports)
             old_ports, old_ips = self.saved_rules()
+            self.validate_source_ports(ports, old_ports)
             desired_port_keys = {self.port_rule_key(rule) for rule in ports}
             desired_ip_keys = {self.ip_forward_rule_key(rule) for rule in ips}
             if ports or ips:
@@ -240,8 +276,9 @@ class Manager:
             self.forward_rule_manager.replace_rules(ports, ips)
         except Exception as error:
             rollback_errors = executor.rollback(changes)
-            errors = [str(error), *rollback_errors]
-            return self.response(1, f'NAT rule synchronization failed: {error}', {'errors': errors})
+            detail = error_detail(error)
+            errors = [detail, *rollback_errors]
+            return self.response(1, f'NAT rule synchronization failed: {detail}', {'errors': errors})
 
         # 仅清理发生变化的映射，不影响其他虚拟机的已建立连接。
         changed_rules = {rule for rule, _deleted in changes}
@@ -279,7 +316,7 @@ class Manager:
                 return result
             return self.response(0, 'success')
         except Exception as error:
-            return self.response(1, f'Failed to update NAT rule: {error}')
+            return self.response(1, f'Failed to update NAT rule: {error_detail(error)}')
 
     @nat_rule_locked
     def active_forward_rules(self, page_size=50):
@@ -287,10 +324,10 @@ class Manager:
             ports, ips = self.saved_rules()
             result = self.sync_rules(ports, ips)
             if result['code'] != 0:
-                print(f"[ERROR] Failed to restore NAT rules: {result['data']}")
+                print(f"[ERROR] Failed to restore NAT rules: {error_detail(result['data'])}", file=sys.stderr, flush=True)
             return result['code'] == 0
         except Exception as error:
-            print(f'[ERROR] Failed to read NAT forwarding database: {error}')
+            print(f'[ERROR] Failed to read NAT forwarding database: {error_detail(error)}', file=sys.stderr, flush=True)
             return False
 
     def active_forward_rules_scheduler(self):

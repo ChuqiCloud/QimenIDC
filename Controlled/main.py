@@ -11,15 +11,13 @@ from urllib.parse import unquote
 
 from common.UnicornException import UnicornException
 from common.CodeEnum import CodeEnum
+from common.Version import VERSION
 
 from service.Authentication import get_token
 from service.EndpointPolicy import is_retired_endpoint
 from service.Security import decode_request
 from service.Nat import Manager as NatManager
 from service.VncFileEditor import VncFileEditor
-
-# 被控端程序版本，随代码一起发布，主控心跳时读取
-VERSION = '1.0.3'
 
 async def refresh_trusted_networks():
     from service.TrustedNetwork import TrustStore
