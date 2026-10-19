@@ -28,6 +28,9 @@ import java.util.Objects;
 @Component
 @EnableScheduling
 public class ControllerCron {
+    // 与 Controlled/common/Version.py 的 API_VERSION 保持一致，独立于两端程序版本。
+    private static final String EXPECTED_AGENT_API_VERSION = "1.0.1";
+
     @Resource
     private MasterService masterService;
     @Resource
@@ -38,7 +41,7 @@ public class ControllerCron {
     @Resource
     private TrustedNetworkManager trustedNetworkManager;
     /**
-     * 主控版本，用于与被控端做一致性校验
+     * 主控程序版本，仅用于排查部署版本，不参与被控接口兼容性判断
      */
     @Value("${info.application.version}")
     private String masterVersion;
@@ -98,21 +101,30 @@ public class ControllerCron {
 
     /**
     * @Author: 星禾
-    * @Description: 读取被控端版本，仅用于版本不一致时告警。
+    * @Description: 按接口协议版本检查兼容性，程序版本仅作诊断。
      * 读写路径类接口已下线，加密负载是被控端API的唯一约定，不再做运行时能力协商，
      * 避免协商结果被中间人利用降级到明文。
     */
     private void syncAgentSecurity(Master node, String token) {
-        String agentVersion = ClientApiUtil.getAgentVersion(node.getHost(), node.getControllerPort(), token);
-        if (agentVersion == null) {
+        JSONObject versionInfo = ClientApiUtil.getAgentVersionInfo(node.getHost(), node.getControllerPort(), token);
+        ClientPayloadUtil.setEncryptEnabled(true);
+        reportAgentCompatibility(node, versionInfo);
+    }
+
+    private void reportAgentCompatibility(Master node, JSONObject versionInfo) {
+        if (versionInfo == null) {
             log.warn("无法获取节点[{}]被控端版本信息: nodeId={}", node.getName(), node.getId());
             return;
         }
-        ClientPayloadUtil.setEncryptEnabled(true);
-        if (!Objects.equals(agentVersion, masterVersion)) {
-            log.warn("节点[{}]被控端版本与主控不一致: 主控={}, 被控={}, nodeId={}",
-                    node.getName(), masterVersion, agentVersion, node.getId());
+        String apiVersion = versionInfo.getString("api_version");
+        String agentVersion = versionInfo.getString("version");
+        if (!Objects.equals(apiVersion, EXPECTED_AGENT_API_VERSION)) {
+            log.warn("节点[{}]被控端接口协议不兼容或未声明: 预期协议={}, 被控协议={}, 被控程序={}, nodeId={}",
+                    node.getName(), EXPECTED_AGENT_API_VERSION, apiVersion, agentVersion, node.getId());
+            return;
         }
+        log.debug("节点[{}]接口协议兼容: 协议={}, 主控程序={}, 被控程序={}, nodeId={}",
+                node.getName(), apiVersion, masterVersion, agentVersion, node.getId());
     }
 
 }

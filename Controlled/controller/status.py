@@ -1,11 +1,9 @@
 from fastapi import APIRouter
 
 from common.CodeEnum import CodeEnum
+from common.Version import API_VERSION, VERSION
 
 status_router = APIRouter()
-
-# 接口语义版本，与程序版本无关
-API_VERSION = '1.0.1'
 
 '''
 获取运行状态
@@ -22,7 +20,6 @@ async def status():
 '''
 @status_router.get('/version')
 async def version():
-    from main import VERSION
     return {
         'code': CodeEnum.SUCCESS,
         'message': 'success',

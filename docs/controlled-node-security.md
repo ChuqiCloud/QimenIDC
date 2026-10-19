@@ -97,3 +97,13 @@ bash harden.sh --configure --manager-ips '198.51.100.42/32' --cert-hosts 'pve-01
 Changing the QAgent TLS port updates nginx when the `qa` menu applies the change. The QAgent backend stays on port `17600`; keep firewall rules closed for that loopback-only port. Confirm with `ss -lntp` that the Python backend has no public listener, and check `systemctl status qagent noVNC nginx` before restoring manager traffic.
 
 NAT/VPC creation uses the existing authenticated and encrypted QAgent NAT APIs. Upgrade the managed nodes before the manager: creation checks `/nat/export` before allocating resources. NAT commands use validated arguments without a shell; forwarding changes roll back on failure and the two rule tables commit together. Saved rules are validated before startup recovery and periodic synchronization. VM deletion and creation-failure cleanup retain IP allocations when forwarding cleanup fails. The retired `/migration` routes remain unavailable; migration uses the existing `/migrationAction` routes.
+
+### NAT 升级后的端口校验与版本提示
+
+主控与 QAgent 分别发布，程序版本号不要求相同。主控按 `/version` 返回的 `api_version` 检查接口协议；QAgent 的程序版本统一从包内 `version` 文件读取。主控 `1.3.4` 与 QAgent `1.0.4` 的协议均为 `1.0.1` 时，不再报告程序版本不一致。
+
+若历史数据库已有源端口 `80`、`443` 的网站转发，升级时会按源 IP、源端口、目标 IP、目标端口、协议和 VM 全部一致的原规则继续同步、恢复；不会自动删除或更换目标。此兼容规则只覆盖节点数据库中仍存在的原记录，新增、删除后重建或变更目标仍按新建规则校验，系统保留端口也继续拒绝。其余不合规历史端口会在错误详情中列出 VM、端口和协议。
+
+早期构建会把节点业务失败统一报为“宿主机拒绝NAT规则，请检查源端口是否已占用”，无法据此认定端口冲突。更新后主控保留节点失败原因；节点日志即时记录数据库、端口策略和 iptables 错误详情。查看日志时使用 `journalctl -u qagent -n 100 --no-pager`。HTTP `200 OK` 只表示请求完成，业务成功仍须检查解密后的 `code=200`。
+
+端口策略校验在开启 IP 转发之前执行。若日志报 `Source port is reserved or outside the allowed range` 且 `net.ipv4.ip_forward=0`，仅手动打开 IP 转发不能解决规则校验失败；应先处理兼容规则或日志列出的不合规记录。成功同步包含转发的规则快照时，QAgent 会开启运行中的 IPv4 转发，并在启动时恢复。

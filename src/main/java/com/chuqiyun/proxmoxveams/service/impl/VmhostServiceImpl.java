@@ -4096,9 +4096,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         List<String> createdProtocols = new ArrayList<>();
         try {
             for (String itemProtocol : protocols) {
-                if (!Boolean.TRUE.equals(ClientApiUtil.addPortForward(node.getHost(), token, node.getControllerPort(), vm,
-                        effectiveSourceIp, source_port, destination_ip, destination_port, itemProtocol))) {
-                    throw new IllegalStateException("宿主机拒绝NAT规则，请检查源端口是否已占用");
+                NatOperationResult remoteResult = ClientApiUtil.addPortForwardWithResult(node.getHost(), token,
+                        node.getControllerPort(), vm, effectiveSourceIp, source_port,
+                        destination_ip, destination_port, itemProtocol);
+                if (!remoteResult.isSuccess()) {
+                    throw new IllegalStateException(remoteResult.getMessage());
                 }
                 if (!existingProtocols.contains(itemProtocol)) {
                     createdProtocols.add(itemProtocol);
@@ -4192,17 +4194,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return NatOperationResult.failure("转发规则不属于该虚拟机或目标不匹配");
             }
         }
-        Boolean result;
+        NatOperationResult result;
         try {
-            result = ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), vm,
+            result = ClientApiUtil.deletePortForwardWithResult(node.getHost(), token, node.getControllerPort(), vm,
                     effectiveSourceIp, source_port, destination_ip, destination_port, protocol);
         } catch (Exception e) {
             log.warn("[NAT] 删除规则时连接宿主机失败 nodeId={}, vm={}, sourcePort={}, destinationIp={}, destinationPort={}",
                     node.getId(), vm, source_port, destination_ip, destination_port, e);
             return NatOperationResult.failure("连接宿主机失败: " + describeNatException(e));
         }
-        if (!Boolean.TRUE.equals(result)) {
-            return NatOperationResult.failure("宿主机删除 NAT 规则失败或规则不存在");
+        if (!result.isSuccess()) {
+            return result;
         }
         for (String itemProtocol : protocols) {
             if (!natForwardSyncService.deletePortRule(node.getId(), effectiveSourceIp, source_port, itemProtocol)) {
