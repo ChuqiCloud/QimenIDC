@@ -4041,8 +4041,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         String effectiveSourceIp = resolveNatSourceIp(node, source_ip);
         protocol = StringUtils.lowerCase(StringUtils.trimToEmpty(protocol));
         destination_ip = StringUtils.trimToNull(destination_ip);
-        if (source_port < NAT_SOURCE_PORT_MIN || source_port > NAT_SOURCE_PORT_MAX) {
-            return NatOperationResult.failure("源端口范围必须为 " + NAT_SOURCE_PORT_MIN + "-" + NAT_SOURCE_PORT_MAX);
+        if (source_port < 1 || source_port > NAT_DESTINATION_PORT_MAX) {
+            return NatOperationResult.failure("源端口范围必须为 1-" + NAT_DESTINATION_PORT_MAX);
         }
         if (destination_port < NAT_DESTINATION_PORT_MIN || destination_port > NAT_DESTINATION_PORT_MAX) {
             return NatOperationResult.failure("目标端口范围必须为 " + NAT_DESTINATION_PORT_MIN + "-" + NAT_DESTINATION_PORT_MAX);
@@ -4055,24 +4055,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         if (!Objects.equals(protocol, "tcp") && !Objects.equals(protocol, "udp") && !Objects.equals(protocol, "all")) {
             return NatOperationResult.failure("协议只支持 tcp、udp 或 all");
-        }
-        if (Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort())) {
-            return NatOperationResult.failure("源端口不能使用宿主机 Web 或控制台端口");
-        }
-        if (source_port == 3128) {
-            return NatOperationResult.failure("源端口 3128 为 SPICE 代理保留端口");
-        }
-        if (source_port == 5404 || source_port == 5405) {
-            return NatOperationResult.failure("源端口 5404、5405 为集群通信保留端口");
-        }
-        if (source_port == 6080) {
-            return NatOperationResult.failure("源端口 6080 为 PVE WebSocket 保留端口");
-        }
-        if (source_port >= NAT_LEGACY_RESERVED_PORT_MIN && source_port <= NAT_LEGACY_RESERVED_PORT_MAX) {
-            return NatOperationResult.failure("源端口 5900-5999 为系统保留端口");
-        }
-        if (source_port >= 59000 && source_port <= 60050) {
-            return NatOperationResult.failure("源端口 59000-60050 为 VNC/迁移保留端口");
         }
         List<String> protocols = Objects.equals(protocol, "all")
                 ? Arrays.asList("tcp", "udp") : Collections.singletonList(protocol);
@@ -4087,6 +4069,31 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 return NatOperationResult.failure("源端口已被其他转发占用");
             }
             existingProtocols.add(itemProtocol);
+        }
+        // 已保存且目标、VM、协议均一致的旧规则允许幂等重试，即使端口不符合当前分配策略。
+        // 只要有一个协议需要新建，就继续执行完整的保留端口校验。
+        if (existingProtocols.size() != protocols.size()) {
+            if (Objects.equals(source_port, node.getPort()) || Objects.equals(source_port, node.getControllerPort())) {
+                return NatOperationResult.failure("源端口不能使用宿主机 Web 或控制台端口");
+            }
+            if (source_port == 3128) {
+                return NatOperationResult.failure("源端口 3128 为 SPICE 代理保留端口");
+            }
+            if (source_port == 5404 || source_port == 5405) {
+                return NatOperationResult.failure("源端口 5404、5405 为集群通信保留端口");
+            }
+            if (source_port == 6080) {
+                return NatOperationResult.failure("源端口 6080 为 PVE WebSocket 保留端口");
+            }
+            if (source_port >= NAT_LEGACY_RESERVED_PORT_MIN && source_port <= NAT_LEGACY_RESERVED_PORT_MAX) {
+                return NatOperationResult.failure("源端口 5900-5999 为系统保留端口");
+            }
+            if (source_port >= 59000 && source_port <= 60050) {
+                return NatOperationResult.failure("源端口 59000-60050 为 VNC/迁移保留端口");
+            }
+            if (source_port < NAT_SOURCE_PORT_MIN || source_port > NAT_SOURCE_PORT_MAX) {
+                return NatOperationResult.failure("源端口范围必须为 " + NAT_SOURCE_PORT_MIN + "-" + NAT_SOURCE_PORT_MAX);
+            }
         }
         int newRuleCount = protocols.size() - existingProtocols.size();
         if (newRuleCount > 0 && (vmhost.getNatnum() == null

@@ -225,19 +225,18 @@ class Manager:
 
     @staticmethod
     def validate_source_ports(port_rules, existing_port_rules=()):
-        # 仅兼容已经落库的 HTTP/HTTPS 业务规则，六字段保持一致才可原样恢复。
-        legacy_web_rules = {Manager.port_rule_key(rule) for rule in existing_port_rules
-                            if rule['source_port'] in (80, 443)}
+        # 已落库的不合规规则按六字段精确匹配继续恢复，新增或变更规则仍需经过端口策略校验。
+        existing_rule_keys = {Manager.port_rule_key(rule) for rule in existing_port_rules}
         invalid_rules = []
         invalid_count = 0
         for rule in port_rules:
             port = rule['source_port']
-            if port in (80, 443) and Manager.port_rule_key(rule) in legacy_web_rules:
+            if Manager.port_rule_key(rule) in existing_rule_keys:
                 continue
             if (port < 1000 or port > 60050 or port in (3128, 5404, 5405, 6080, 7600, 8006, 17600)
                     or 5900 <= port <= 5999 or 59000 <= port <= 60050):
                 invalid_count += 1
-                # 历史规则逐条保留，只报告前十项，便于定位阻塞整个快照的记录。
+                # 只报告前十项被拒绝的新规则，避免错误响应过长。
                 if len(invalid_rules) < 10:
                     invalid_rules.append(f"vm={rule['vm']}, source_port={port}, protocol={rule['protocol']}")
         if invalid_count:
@@ -355,7 +354,7 @@ class NatManager:
     def add_forward_rule(self):
         try:
             rule = PortRuleParams(**self.rule).dict()
-            Manager.validate_source_ports([rule])
+            # 由 update_rule 读取旧快照后校验；旧快照中六字段完全一致的不合规规则允许幂等恢复。
             return Manager().update_rule(rule)
         except (TypeError, ValueError) as error:
             return Manager.response(1, str(error))

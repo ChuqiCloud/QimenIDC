@@ -120,15 +120,15 @@ NAT/VPC creation uses the existing authenticated and encrypted QAgent NAT APIs. 
 
 主控与 QAgent 分别发布，程序版本号不要求相同。主控按 `/version` 返回的 `api_version` 检查接口协议；QAgent 的程序版本统一从包内 `version` 文件读取。主控 `1.3.4` 与 QAgent `1.0.4` 的协议均为 `1.0.1` 时，不再报告程序版本不一致。
 
-若历史数据库已有源端口 `80`、`443` 的网站转发，升级时会按源 IP、源端口、目标 IP、目标端口、协议和 VM 全部一致的原规则继续同步、恢复；不会自动删除或更换目标。此兼容规则只覆盖节点数据库中仍存在的原记录，新增、删除后重建或变更目标仍按新建规则校验，系统保留端口也继续拒绝。其余不合规历史端口会在错误详情中列出 VM、端口和协议。
+若历史数据库已有不符合当前端口策略的转发，升级、全量同步和对同一规则的幂等重试时会按源 IP、源端口、目标 IP、目标端口、协议和 VM 全部一致的原规则继续同步、恢复；不会自动删除或更换目标。此兼容规则覆盖节点数据库中仍存在的原记录，包括源端口 `65147`、`64525`、`59978`、`62093` 及其他不符合当前策略的端口。新增、删除后重建或变更目标仍按新建规则校验，新建规则仍禁止使用保留端口。主控添加接口同样只对主控数据库中各协议都已存在且完全匹配的规则免除端口分配策略检查；不能借已有 TCP 规则在违规端口上新增 UDP 规则。
 
 早期构建会把节点业务失败统一报为“宿主机拒绝NAT规则，请检查源端口是否已占用”，无法据此认定端口冲突。更新后主控保留节点失败原因；节点日志即时记录数据库、端口策略和 iptables 错误详情。查看日志时使用 `journalctl -u qagent -n 100 --no-pager`。HTTP `200 OK` 只表示请求完成，业务成功仍须检查解密后的 `code=200`。
 
-端口策略校验在开启 IP 转发之前执行。若日志报 `Source port is reserved or outside the allowed range` 且 `net.ipv4.ip_forward=0`，仅手动打开 IP 转发不能解决规则校验失败；应先处理兼容规则或日志列出的不合规记录。成功同步包含转发的规则快照时，QAgent 会开启运行中的 IPv4 转发，并在启动时恢复。
+端口策略校验在开启 IP 转发之前执行。若新增或变更规则日志报 `Source port is reserved or outside the allowed range` 且 `net.ipv4.ip_forward=0`，仅手动打开 IP 转发不能解决规则校验失败；已有数据库中保持六字段一致的不合规规则会继续兼容恢复。成功同步包含转发的规则快照时，QAgent 会开启运行中的 IPv4 转发，并在启动时恢复。
 
 若报 `Unable to inspect NAT rule: iptables: No chain/target/match by that name.`，且节点使用 `iptables-legacy`，可能是旧 QAgent 把 `iptables -C` 检查规则未命中的正常结果当成了故障。legacy 对缺失规则与缺失链可能给出相同提示；修复后的 QAgent 仅在退出码为 1 且匹配此提示时，用 `iptables -w 5 -t nat -S <chain>` 确认链可读，再继续添加或幂等删除。链、表、权限或后续实际添加失败仍保留错误与回滚，不把这些故障当成成功。
 
-此项修复部署在被控端，主控无需重编译。已经部署当前 QAgent 的节点可替换 `/home/software/QAgent/service/Nat.py` 后重启 `qagent.service`，再重试创建 NAT；先保留旧源码副本，现有 token、证书与规则数据库无需重建。
+iptables-legacy 兼容和旧规则全量同步修复部署在被控端。已经部署当前 QAgent 的节点可替换 `/home/software/QAgent/service/Nat.py` 后重启 `qagent.service`，再重试创建 NAT；先保留旧源码副本，现有 token、证书与规则数据库无需重建。若要通过主控添加接口幂等重试不合规旧规则，还需更新主控程序；两端各自依据本地已保存的原规则判断兼容资格。
 
 ### Python 依赖使用自有镜像站
 

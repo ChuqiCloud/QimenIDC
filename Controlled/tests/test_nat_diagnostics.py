@@ -17,6 +17,9 @@ from service import Nat
 # @Description: 使用隔离数据库与模拟命令验证 NAT 错误详情、日志和失败回滚。
 # @DateTime: 2026/10/19 15:46
 class NatDiagnosticsTest(unittest.TestCase):
+    LEGACY_RESERVED_PORTS = (65147, 64525, 59978, 62093)
+    SYSTEM_RESERVED_PORTS = (7600, 59201)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -57,6 +60,12 @@ class NatDiagnosticsTest(unittest.TestCase):
     def legacy_web_rules(self):
         return [dict(self.rule, source_port=port, destination_ip='10.0.0.108',
                      destination_port=port, vm='108') for port in (80, 443)]
+
+    def legacy_reserved_rules(self, ports=None):
+        if ports is None:
+            ports = self.LEGACY_RESERVED_PORTS
+        return [dict(self.rule, source_port=port, vm=str(1000 + index))
+                for index, port in enumerate(ports)]
 
     def allow_rule_commands(self):
         self.command.side_effect = lambda command, **kwargs: subprocess.CompletedProcess(
@@ -133,24 +142,19 @@ class NatDiagnosticsTest(unittest.TestCase):
         self.command.assert_not_called()
         self.log.assert_called_once()
 
-    def test_legacy_reserved_port_blocks_new_rule_with_identifiable_detail(self):
-        Nat.Manager()
-        with closing(sqlite3.connect(self.database)) as connection:
-            connection.execute('INSERT INTO forward_rules '
-                               '(source_ip, source_port, destination_ip, destination_port, protocol, vm) '
-                               'VALUES (?, ?, ?, ?, ?, ?)',
-                               ('203.0.113.10', 59201, '10.0.0.3', 22, 'tcp', '300'))
-            connection.commit()
+    def test_legacy_reserved_port_does_not_block_new_rule(self):
+        manager = Nat.Manager()
+        legacy = self.legacy_reserved_rules()
+        manager.forward_rule_manager.replace_rules(legacy, [])
 
+        self.allow_rule_commands()
         result = Nat.NatManager(**self.rule).add_forward_rule()
 
-        self.assertEqual(1, result['code'])
-        self.assertIn('Source port is reserved or outside the allowed range', result['message'])
-        self.assertIn('vm=300, source_port=59201, protocol=tcp', result['message'])
-        self.assertEqual(1, self.saved_rule_count())
-        self.command.assert_not_called()
-        self.forwarding.assert_not_called()
-        self.log.assert_called_once()
+        self.assertEqual(0, result['code'])
+        self.assertEqual(legacy + [self.rule], manager.saved_rules()[0])
+        self.assertEqual(5, self.saved_rule_count())
+        self.forwarding.assert_called_once()
+        self.log.assert_not_called()
 
     def test_reserved_port_details_are_limited_to_first_ten_rules(self):
         rules = [dict(self.rule, source_port=59000 + offset, vm=str(1000 + offset))
@@ -191,20 +195,21 @@ class NatDiagnosticsTest(unittest.TestCase):
         for port in ('80', '443'):
             self.assertTrue(any('--dport' in command and port in command for command in additions))
 
-    def test_existing_web_rule_requires_all_six_fields_to_match(self):
+    def test_existing_reserved_rule_requires_all_six_fields_to_match(self):
         manager = Nat.Manager()
-        legacy = self.legacy_web_rules()
-        manager.forward_rule_manager.replace_rules(legacy, [])
-        changes = dict(source_ip='203.0.113.11', source_port=443,
+        old = dict(self.rule, source_port=65147, vm='108')
+        manager.forward_rule_manager.replace_rules([old], [])
+        changes = dict(source_ip='203.0.113.11', source_port=64525,
                        destination_ip='10.0.0.109', destination_port=8080,
                        protocol='udp', vm='109')
         for field, value in changes.items():
             with self.subTest(field=field):
-                changed = dict(legacy[0], **{field: value})
+                changed = dict(old, **{field: value})
                 result = manager.sync_rules([changed], [])
                 self.assertEqual(1, result['code'])
                 self.assertIn('Source port is reserved', result['message'])
-                self.assertEqual(legacy, manager.saved_rules()[0])
+                self.assertEqual(1, Nat.NatManager(**changed).add_forward_rule()['code'])
+                self.assertEqual([old], manager.saved_rules()[0])
         self.command.assert_not_called()
         self.forwarding.assert_not_called()
 
@@ -219,29 +224,105 @@ class NatDiagnosticsTest(unittest.TestCase):
         self.command.assert_not_called()
         self.forwarding.assert_not_called()
 
-    def test_existing_web_rule_cannot_be_reactivated_through_add(self):
+    def test_existing_web_rule_is_idempotent_through_add(self):
         manager = Nat.Manager()
         legacy = self.legacy_web_rules()
         manager.forward_rule_manager.replace_rules(legacy, [])
+        self.command.return_value = subprocess.CompletedProcess(['iptables'], 0, '', '')
         for rule in legacy:
             with self.subTest(port=rule['source_port']):
-                self.assertEqual(1, Nat.NatManager(**rule).add_forward_rule()['code'])
+                for _ in range(2):
+                    self.assertEqual(0, Nat.NatManager(**rule).add_forward_rule()['code'])
         self.assertEqual(legacy, manager.saved_rules()[0])
+        self.assertTrue(all('-C' in call.args[0] for call in self.command.call_args_list))
+
+    def test_existing_reserved_rules_are_grandfathered_when_unchanged(self):
+        manager = Nat.Manager()
+        self.allow_rule_commands()
+        for port in self.LEGACY_RESERVED_PORTS + self.SYSTEM_RESERVED_PORTS:
+            with self.subTest(port=port):
+                old = dict(self.rule, source_port=port, vm=str(port))
+                manager.forward_rule_manager.replace_rules([old], [])
+                result = manager.sync_rules([old, self.rule], [])
+                self.assertEqual(0, result['code'])
+                self.assertEqual([old, self.rule], manager.saved_rules()[0])
+
+    def test_existing_reserved_rule_can_be_retried_through_add_endpoint(self):
+        manager = Nat.Manager()
+        self.command.return_value = subprocess.CompletedProcess(['iptables'], 0, '', '')
+        for port in self.LEGACY_RESERVED_PORTS:
+            with self.subTest(port=port):
+                old = dict(self.rule, source_port=port, vm=str(port))
+                manager.forward_rule_manager.replace_rules([old], [])
+                self.command.reset_mock()
+                for _ in range(2):
+                    result = Nat.NatManager(**old).add_forward_rule()
+                    self.assertEqual(0, result['code'])
+                self.assertEqual([old], manager.saved_rules()[0])
+                self.assertTrue(all('-C' in call.args[0] for call in self.command.call_args_list))
+
+    def test_new_reserved_ports_are_still_rejected(self):
+        manager = Nat.Manager()
+        for port in self.LEGACY_RESERVED_PORTS + self.SYSTEM_RESERVED_PORTS:
+            with self.subTest(port=port):
+                reserved = dict(self.rule, source_port=port)
+                add_result = Nat.NatManager(**reserved).add_forward_rule()
+                sync_result = manager.sync_rules([reserved], [])
+
+                self.assertEqual(1, add_result['code'])
+                self.assertEqual(1, sync_result['code'])
+                self.assertIn(f'source_port={port}', sync_result['message'])
+                self.assertEqual(0, self.saved_rule_count())
+                self.command.assert_not_called()
+                self.forwarding.assert_not_called()
+
+    def test_modified_existing_reserved_rule_is_not_grandfathered(self):
+        manager = Nat.Manager()
+        old = dict(self.rule, source_port=59201, vm='108')
+        changed = dict(old, destination_ip='10.0.0.108')
+        manager.forward_rule_manager.replace_rules([old], [])
+
+        result = manager.sync_rules([changed], [])
+
+        self.assertEqual(1, result['code'])
+        self.assertIn('source_port=59201', result['message'])
+        self.assertEqual([old], manager.saved_rules()[0])
         self.command.assert_not_called()
         self.forwarding.assert_not_called()
 
-    def test_old_system_reserved_rules_are_not_grandfathered(self):
+    def test_existing_reserved_rules_are_restored_by_recovery(self):
         manager = Nat.Manager()
-        for port in (7600, 59201):
+        legacy = self.legacy_reserved_rules(self.LEGACY_RESERVED_PORTS + self.SYSTEM_RESERVED_PORTS)
+        manager.forward_rule_manager.replace_rules(legacy, [])
+        self.allow_rule_commands()
+
+        self.assertTrue(manager.active_forward_rules())
+
+        self.assertEqual(legacy, manager.saved_rules()[0])
+        self.forwarding.assert_called_once()
+        additions = [call.args[0] for call in self.command.call_args_list if '-A' in call.args[0]]
+        for port in self.LEGACY_RESERVED_PORTS + self.SYSTEM_RESERVED_PORTS:
+            self.assertTrue(any('--dport' in command and str(port) in command for command in additions))
+
+    def test_deleted_existing_reserved_rule_cannot_be_recreated(self):
+        manager = Nat.Manager()
+        for port in self.LEGACY_RESERVED_PORTS:
             with self.subTest(port=port):
-                old = dict(self.rule, source_port=port, vm='108')
+                old = dict(self.rule, source_port=port, vm=str(port))
                 manager.forward_rule_manager.replace_rules([old], [])
-                result = manager.sync_rules([old, self.rule], [])
-                self.assertEqual(1, result['code'])
-                self.assertIn(f'source_port={port}', result['message'])
-                self.assertEqual([old], manager.saved_rules()[0])
-        self.command.assert_not_called()
-        self.forwarding.assert_not_called()
+                self.command.return_value = subprocess.CompletedProcess(['iptables'], 0, '', '')
+
+                deleted = Nat.NatManager(**old).delete_forward_rule()
+
+                self.assertEqual(0, deleted['code'])
+                self.assertEqual([], manager.saved_rules()[0])
+                self.command.reset_mock()
+                self.forwarding.reset_mock()
+                self.assertEqual(1, Nat.NatManager(**old).add_forward_rule()['code'])
+                self.assertEqual(1, manager.sync_rules([old], [])['code'])
+                self.assertEqual([], manager.saved_rules()[0])
+                self.command.assert_not_called()
+                self.forwarding.assert_not_called()
 
     def test_deleted_legacy_web_rule_cannot_be_recreated(self):
         manager = Nat.Manager()
@@ -286,6 +367,37 @@ class NatDiagnosticsTest(unittest.TestCase):
         error = subprocess.CalledProcessError(2, ['iptables'], stderr='MASQUERADE target unavailable')
         with mock.patch.object(manager.iptables_forward_rule_manager, 'change_rule',
                                side_effect=[False, False, True, error, True]) as change:
+            result = manager.update_rule(self.rule)
+
+        self.assertEqual(1, result['code'])
+        self.assertIn('MASQUERADE target unavailable', result['message'])
+        self.assertEqual(legacy, manager.saved_rules()[0])
+        port_rule = manager.iptables_forward_rule_manager.port_rule(self.rule)
+        self.assertEqual(mock.call(port_rule, delete=True), change.call_args_list[-1])
+
+    def test_failure_rolls_back_new_rule_and_preserves_existing_reserved_rule(self):
+        manager = Nat.Manager()
+        legacy = self.legacy_reserved_rules()
+        manager.forward_rule_manager.replace_rules(legacy, [])
+        with mock.patch.object(manager.forward_rule_manager, 'replace_rules',
+                               side_effect=RuntimeError('database write failed')):
+            with mock.patch.object(manager.iptables_forward_rule_manager, 'change_rule',
+                                   side_effect=[False] * len(legacy) + [True, False, True]) as change:
+                result = manager.update_rule(self.rule)
+
+        self.assertEqual(1, result['code'])
+        self.assertIn('database write failed', result['message'])
+        self.assertEqual(legacy, manager.saved_rules()[0])
+        port_rule = manager.iptables_forward_rule_manager.port_rule(self.rule)
+        self.assertEqual(mock.call(port_rule, delete=True), change.call_args_list[-1])
+
+    def test_command_failure_rolls_back_new_rule_and_preserves_existing_reserved_rules(self):
+        manager = Nat.Manager()
+        legacy = self.legacy_reserved_rules()
+        manager.forward_rule_manager.replace_rules(legacy, [])
+        error = subprocess.CalledProcessError(2, ['iptables'], stderr='MASQUERADE target unavailable')
+        with mock.patch.object(manager.iptables_forward_rule_manager, 'change_rule',
+                               side_effect=[False] * len(legacy) + [True, error, True]) as change:
             result = manager.update_rule(self.rule)
 
         self.assertEqual(1, result['code'])
