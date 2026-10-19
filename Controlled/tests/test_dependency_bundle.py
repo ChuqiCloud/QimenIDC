@@ -1,7 +1,7 @@
 """
 @Author: 星禾
 @Description: 验证离线依赖的架构选择、完整性与缓存边界，禁止回退到在线安装。
-@DateTime: 2026/10/19 20:00
+@DateTime: 2026/10/19 19:32
 """
 
 import hashlib

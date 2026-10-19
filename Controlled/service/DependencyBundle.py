@@ -1,7 +1,7 @@
 """
 @Author: 星禾
 @Description: 仅从自有镜像站获取固定哈希的离线 wheel 包，停服前验证全部依赖。
-@DateTime: 2026/10/19 20:00
+@DateTime: 2026/10/19 19:32
 """
 
 import argparse

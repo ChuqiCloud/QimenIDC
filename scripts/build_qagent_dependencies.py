@@ -1,7 +1,7 @@
 """
 @Author: 星禾
 @Description: 生成 Python 3.10/Linux 双架构离线依赖包及固定校验清单，节点无需连接 PyPI。
-@DateTime: 2026/10/19 20:00
+@DateTime: 2026/10/19 19:32
 """
 
 import argparse
