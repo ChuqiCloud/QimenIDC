@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "${SCRIPT_DIR}/security.sh"
@@ -51,7 +51,7 @@ if [ "${prepare_config}" = 1 ]; then
     exit 0
 fi
 [ -f "${QAGENT_HOME}/service/VncTokenPlugin.py" ] || security_fail "deploy the updated QAgent code before hardening"
-[ -f "${NOVNC_HOME}/utils/websockify/run" ] || security_fail "install noVNC/websockify before hardening"
+[ -f "${NOVNC_HOME}/utils/websockify/websockify/__main__.py" ] || security_fail "install noVNC/websockify with a Python module entry point before hardening"
 security_install_dependencies
 security_init_directory
 security_ensure_novnc_user
@@ -94,11 +94,9 @@ security_write_qagent_unit
 security_write_novnc_unit
 systemctl daemon-reload
 systemctl enable qagent.service noVNC.service nginx.service
-systemctl restart nginx.service
-systemctl start qagent.service noVNC.service
-for unit in nginx.service qagent.service noVNC.service; do
-    systemctl is-active --quiet "${unit}"
-done
+security_run_service restart nginx.service
+security_run_service start qagent.service
+security_run_service start noVNC.service
 trap - ERR
 echo "QAgent TLS whitelist enabled on port ${QAGENT_TLS_PORT}; backend is 127.0.0.1:${QAGENT_BACKEND_PORT}."
 echo "noVNC runs as ${VNC_TOKEN_USER}; tokens and metadata are mode 600."

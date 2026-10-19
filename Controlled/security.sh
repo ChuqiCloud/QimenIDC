@@ -327,7 +327,62 @@ security_prepare_novnc_certificate() {
     rm -f "${legacy}.key"
 }
 
+security_service_diagnostics() {
+    local unit="$1"
+    systemctl show "${unit}" -p ActiveState -p SubState -p Result \
+        -p ExecMainStatus -p MainPID -p NRestarts >&2 || true
+    journalctl -u "${unit}" -n 40 --no-pager -o cat >&2 || true
+}
+
+security_wait_for_service() {
+    local unit="$1" attempt snapshot name value state substate pid restarts previous="" stable=0
+    # Type=simple 的 start 返回时尚未完成导入和监听；同一进程连续运行才算启动稳定。
+    for ((attempt = 0; attempt < 15; attempt++)); do
+        state="" substate="" pid="" restarts=""
+        if ! snapshot=$(systemctl show "${unit}" -p ActiveState -p SubState -p MainPID -p NRestarts); then
+            break
+        fi
+        while IFS='=' read -r name value; do
+            case "${name}" in
+                ActiveState) state="${value}" ;;
+                SubState) substate="${value}" ;;
+                MainPID) pid="${value}" ;;
+                NRestarts) restarts="${value}" ;;
+            esac
+        done <<< "${snapshot}"
+        if [ "${state}" = active ] && [ "${substate}" = running ] &&
+            [[ "${pid}" =~ ^[1-9][0-9]*$ ]] && [[ "${restarts}" =~ ^[0-9]+$ ]]; then
+            if [ "${pid}:${restarts}" = "${previous}" ]; then
+                stable=$((stable + 1))
+            else
+                stable=1
+                previous="${pid}:${restarts}"
+            fi
+            [ "${stable}" -lt 3 ] || return 0
+        else
+            stable=0
+            previous=""
+            case "${state}" in failed|inactive) break ;; esac
+        fi
+        [ "${attempt}" -ge 14 ] || sleep 1
+    done
+    security_service_diagnostics "${unit}"
+    security_fail "${unit} did not stay running after startup"
+}
+
+security_run_service() {
+    local action="$1" unit="$2"
+    # 上次启动失败可能触发 systemd 频率限制，修复后应允许重新尝试。
+    if ! systemctl reset-failed "${unit}" || ! systemctl "${action}" "${unit}"; then
+        security_service_diagnostics "${unit}"
+        security_fail "${unit} ${action} failed"
+        return 1
+    fi
+    security_wait_for_service "${unit}"
+}
+
 security_write_novnc_unit() {
+    # run 是 Shell 包装器，固定使用 Python 3.10 从源码目录启动模块。
     cat > /etc/systemd/system/noVNC.service <<EOF
 [Unit]
 Description=QimenIDC noVNC HTTPS Service
@@ -336,9 +391,9 @@ After=network.target
 Type=simple
 User=${VNC_TOKEN_USER}
 Group=${VNC_TOKEN_USER}
-WorkingDirectory=${NOVNC_HOME}
+WorkingDirectory=${NOVNC_HOME}/utils/websockify
 Environment=PYTHONPATH=${QAGENT_HOME}
-ExecStart=/usr/bin/python3.10 ${NOVNC_HOME}/utils/websockify/run --web ${NOVNC_HOME} --token-plugin service.VncTokenPlugin.ExpiringTokenFile --token-source ${VNC_TOKEN_FILE} --cert ${SECURITY_DIR}/novnc/qimenidc-vnc.crt --key ${SECURITY_DIR}/novnc/qimenidc-vnc.key --ssl-only 6080
+ExecStart=/usr/bin/python3.10 -m websockify --web ${NOVNC_HOME} --token-plugin service.VncTokenPlugin.ExpiringTokenFile --token-source ${VNC_TOKEN_FILE} --cert ${SECURITY_DIR}/novnc/qimenidc-vnc.crt --key ${SECURITY_DIR}/novnc/qimenidc-vnc.key --ssl-only 6080
 Restart=on-failure
 UMask=0077
 NoNewPrivileges=true

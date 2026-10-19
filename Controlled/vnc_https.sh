@@ -13,5 +13,5 @@ security_prepare_novnc_certificate
 security_write_novnc_unit
 systemctl daemon-reload
 systemctl enable noVNC.service
-systemctl restart noVNC.service
+security_run_service restart noVNC.service
 echo "noVNC HTTPS service runs as ${VNC_TOKEN_USER} on port 6080."

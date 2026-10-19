@@ -119,10 +119,10 @@ function install_package(){
     mv "${QAGENT_DIR}/qa.sh" /usr/local/bin/qa
     chmod +x /usr/local/bin/qa
 
-    systemctl restart qagent.service
+    security_run_service restart qagent.service || fail "qagent.service restart failed; backup kept at ${BACKUP_DIR}"
     local unit
-    for unit in qagent.service noVNC.service nginx.service; do
-        systemctl is-active --quiet "${unit}" || fail "${unit} health check failed; backup kept at ${BACKUP_DIR}"
+    for unit in noVNC.service nginx.service; do
+        security_wait_for_service "${unit}" || fail "${unit} health check failed; backup kept at ${BACKUP_DIR}"
     done
     rm -f "${PACKAGE_PATH}"
     rm -rf "${BACKUP_DIR}"

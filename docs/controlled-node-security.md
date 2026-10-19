@@ -73,6 +73,24 @@ sudo bash update.sh
 
 > 升级顺序：被控端 1.0.4 要先于主控 1.3.4_6。旧被控端没有 `/net/trust`，主控同步会失败但只是 WARN，不影响其余功能。1.0.3 也可用，多源地址会逐个写入 `geo` 块。
 
+### 更新失败：`noVNC.service health check failed`
+
+先读取实际退出原因，整行执行：
+
+```bash
+systemctl show noVNC.service -p ActiveState -p SubState -p Result -p ExecMainStatus; journalctl -u noVNC.service -n 80 --no-pager -o cat
+```
+
+若日志在 `utils/websockify/run` 的 `cd "$(dirname "$0")"` 行报告 `SyntaxError: invalid syntax`，原因是旧服务把 Shell 启动脚本交给 Python 解释。修复后的服务在 `/home/software/noVNC/utils/websockify` 中执行 `/usr/bin/python3.10 -m websockify`，使用包内源码并保留过期 token 插件、TLS 参数和低权用户。已更新程序的节点可以重新运行 `bash /home/software/QAgent/harden.sh --configure` 生成正确的服务。
+
+尚未部署修复包时，可仅修正旧服务的这两项后重启（整行执行）：
+
+```bash
+sed -i 's|^WorkingDirectory=/home/software/noVNC$|WorkingDirectory=/home/software/noVNC/utils/websockify|; s|^ExecStart=/usr/bin/python3.10 /home/software/noVNC/utils/websockify/run |ExecStart=/usr/bin/python3.10 -m websockify |' /etc/systemd/system/noVNC.service && systemctl daemon-reload && systemctl reset-failed noVNC.service && systemctl restart noVNC.service && sleep 3 && systemctl is-active noVNC.service
+```
+
+最后输出 `active` 表示服务目前运行；若失败，重新读取上述日志。此修复不改 token、证书、NAT 数据或用户权限。保留更新失败时留下的备份，直到确认节点业务正常。安装、整改和更新脚本现在要求同一服务进程连续运行后才通过启动检查，失败时自动输出状态与最近日志；这项检查不代替浏览器 VNC 连接验证。
+
 ### 起不来：`Unknown column 'node_public_key'`
 
 `master.node_public_key` 由 `sql-update.yml` 的 `1.3.4_6` 补列。早期构建把版本号写进 `config.build` 之后才失败，于是留下「build 号已经是 `1.3.4_6`、列还没建」的库，下次启动直接跳过升级 SQL，卡在 `StartUp` 预热节点的查询上，`ApplicationContext` 起不来。
