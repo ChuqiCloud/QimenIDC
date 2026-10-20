@@ -47,18 +47,30 @@ if($path === '/api/v1/pve/updateVm'){
         || ($scenario === 'sync-failure' && ($info_request_count > 1 || $update_request_count > 0))){
         $response = ['code'=>50000, 'message'=>'读取失败'];
     } else {
-        $response = ['code'=>20000, 'message'=>'synced', 'data'=>['vmhost'=>[
-            'ipData'=>[['ip'=>'192.0.2.1']], 'password'=>'test', 'hostname'=>'vm-test',
-            'username'=>'root', 'flowLimit'=>$state['flowLimit'],
-            'extraFlowLimit'=>$state['extraFlowLimit'], 'usedFlow'=>10 * 1024 * 1024 * 1024,
-            'createTime'=>$state['createTime'], 'resetFlowTime'=>$state['resetFlowTime'],
-        ]]];
+        $response = [
+            'code'=>20000,
+            'message'=>'synced',
+            'data'=>[
+                'vmhost'=>[
+                    'ipData'=>[['ip'=>'192.0.2.1']], 'password'=>'test', 'hostname'=>'vm-test', 'status'=>0,
+                    'username'=>'root', 'flowLimit'=>$state['flowLimit'],
+                    'extraFlowLimit'=>$state['extraFlowLimit'], 'usedFlow'=>10 * 1024 * 1024 * 1024,
+                    'createTime'=>$state['createTime'], 'resetFlowTime'=>$state['resetFlowTime'],
+                ],
+                'rrddata'=>['data'=>[
+                    ['time'=>time() - 60, 'netin'=>1024, 'netout'=>2048],
+                ]],
+            ],
+        ];
         if($scenario === 'metadata-incomplete' && $info_request_count === 1){
             $response['data']['vmhost']['createTime'] = null;
             $response['data']['vmhost']['resetFlowTime'] = null;
         }
         if($scenario === 'sync-incomplete' && $info_request_count > 1){
             $response = ['code'=>20000, 'message'=>'partial response', 'data'=>['vmhost'=>[]]];
+        }
+        if($scenario === 'missing-extra'){
+            unset($response['data']['vmhost']['extraFlowLimit']);
         }
     }
 } else {

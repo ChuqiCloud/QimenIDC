@@ -163,6 +163,158 @@ fi
         else:
             self.assertEqual([], actions)
 
+    def prepare_token_hardening(self):
+        self.write_config()
+        self.token = self.agent / 'token.key'
+        self.write(self.agent / 'service/VncTokenPlugin.py', '# isolated prerequisite\n')
+        self.write(self.root / 'software/noVNC/utils/websockify/websockify/__main__.py',
+                   '# isolated prerequisite\n')
+        authentication = (AGENT_ROOT / 'service/Authentication.py').read_text(encoding='utf-8')
+        authentication = authentication.replace('/home/software/QAgent/token.key', self.token.as_posix())
+        self.write(self.agent / 'service/Authentication.py', authentication)
+        self.environment['QAGENT_TEST_TOKEN'] = shell_path(self.token)
+        self.environment['QAGENT_TEST_OWNER_READY'] = shell_path(self.root / 'owner.ready')
+        self.environment['QAGENT_TEST_MODE_READY'] = shell_path(self.root / 'mode.ready')
+
+        # 只隔离系统改动函数；参数分支、文件类型检查及调用顺序仍执行真实 harden.sh。
+        with (self.agent / 'security.sh').open('a', encoding='utf-8', newline='\n') as stream:
+            for name in ('security_install_dependencies', 'security_ensure_novnc_user',
+                         'security_prepare_vnc_files', 'security_prepare_novnc_certificate',
+                         'security_ensure_certificate', 'security_write_nginx_config',
+                         'security_write_qagent_unit', 'security_write_novnc_unit',
+                         'security_run_service'):
+                stream.write(f"\n{name}() {{ printf '{name}:%s\\n' \"$*\" >> \"$QAGENT_TEST_ACTIONS\"; }}\n")
+        for command, expected, marker in (
+                ('chown', 'root:root', 'QAGENT_TEST_OWNER_READY'),
+                ('chmod', '600', 'QAGENT_TEST_MODE_READY')):
+            self.command(command, '''printf '%s:%s\\n' "${0##*/}" "$*" >> "$QAGENT_TEST_ACTIONS"
+if [ "$#" = 2 ] && [ "$1" = "''' + expected + '''" ] && [ "$2" = "$QAGENT_TEST_TOKEN" ]; then
+    [ "${QAGENT_TEST_FAIL_PERMISSION:-}" != "${0##*/}" ] || exit 96
+    printf 'ready\\n' > "${''' + marker + '''}"
+fi
+''')
+        self.command('find', "printf 'find:%s\\n' \"$*\" >> \"$QAGENT_TEST_ACTIONS\"\n")
+        self.command('systemctl', '''printf 'systemctl:%s\\n' "$*" >> "$QAGENT_TEST_ACTIONS"
+[ "${1:-}" != cat ]
+''')
+        # Git Bash 无 Linux uid/mode，使用权限桩状态模拟严格读取门槛，再执行真实认证程序。
+        self.command('qagent-test-python', '''if [[ "${1##*/}" = Authentication.py ]]; then
+    printf 'authentication:%s\\n' "$2" >> "$QAGENT_TEST_ACTIONS"
+    if [ "$2" = initialize ]; then
+        [ -f "$QAGENT_TEST_OWNER_READY" ] && [ -f "$QAGENT_TEST_MODE_READY" ] || {
+            echo 'Token file must be root owned with mode 0600' >&2
+            exit 95
+        }
+    fi
+fi
+''' + self.python + ' "$@" | /usr/bin/tr -d "\\r"\nexit "${PIPESTATUS[0]}"\n')
+
+    def harden(self, *arguments, input_text=''):
+        return self.run_shell('bash ' + shlex.quote((self.agent / 'harden.sh').as_posix()) +
+                              ' ' + ' '.join(shlex.quote(value) for value in arguments),
+                              input_text=input_text)
+
+    def token_actions(self):
+        return self.actions.read_text(encoding='utf-8').splitlines() if self.actions.exists() else []
+
+    def assert_token_failure_stays_stopped(self):
+        actions = self.token_actions()
+        self.assertFalse(any(action.startswith('authentication:') for action in actions), actions)
+        self.assertFalse(any(action.startswith('security_run_service:') for action in actions), actions)
+        self.assertFalse(any(action.startswith('security_write_qagent_unit:') for action in actions), actions)
+        self.assertFalse(any(action.startswith('security_write_novnc_unit:') for action in actions), actions)
+
+    def test_preserved_token_permissions_are_repaired_before_strict_authentication(self):
+        self.prepare_token_hardening()
+        self.write(self.token, 'existing-manager-token\n')
+        before = self.token.read_bytes()
+
+        result = self.harden('--configure')
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(before, self.token.read_bytes())
+        actions = self.token_actions()
+        ownership = actions.index('chown:root:root ' + shell_path(self.token))
+        permissions = actions.index('chmod:600 ' + shell_path(self.token))
+        authentication = actions.index('authentication:initialize')
+        self.assertLess(ownership, permissions)
+        self.assertLess(permissions, authentication)
+        self.assertLess(authentication, actions.index('security_run_service:start qagent.service'))
+
+    def test_token_permission_repair_failure_prevents_authentication_and_startup(self):
+        self.prepare_token_hardening()
+        self.write(self.token, 'existing-manager-token\n')
+        before = self.token.read_bytes()
+        for command in ('chown', 'chmod'):
+            with self.subTest(command=command):
+                self.actions.write_text('', encoding='utf-8')
+                self.environment['QAGENT_TEST_FAIL_PERMISSION'] = command
+
+                result = self.harden('--configure')
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual(before, self.token.read_bytes())
+                self.assert_token_failure_stays_stopped()
+
+    def test_nonregular_or_missing_preserved_token_is_rejected_before_permissions(self):
+        self.prepare_token_hardening()
+        for directory in (False, True):
+            with self.subTest(directory=directory):
+                self.actions.write_text('', encoding='utf-8')
+                if directory:
+                    self.token.mkdir()
+
+                result = self.harden('--configure')
+
+                self.assertNotEqual(0, result.returncode)
+                self.assert_token_failure_stays_stopped()
+                self.assertFalse(any(action.endswith(' ' + shell_path(self.token))
+                                     for action in self.token_actions()), self.token_actions())
+                self.assertEqual(directory, self.token.is_dir())
+
+    def test_symlink_preserved_token_is_rejected_without_changing_target(self):
+        self.prepare_token_hardening()
+        target = self.root / 'untrusted-token.key'
+        self.write(target, 'untouched-target-token\n')
+        try:
+            self.token.symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest('当前 Windows 账户没有创建符号链接的权限')
+        before = target.read_bytes()
+        metadata = target.stat()
+
+        result = self.harden('--configure')
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('refusing symlink or non-regular file', result.stderr)
+        self.assertEqual(before, target.read_bytes())
+        self.assertEqual(metadata.st_mode, target.stat().st_mode)
+        self.assert_token_failure_stays_stopped()
+        self.assertFalse(any(action.endswith(' ' + shell_path(self.token))
+                             for action in self.token_actions()), self.token_actions())
+
+    def test_token_stdin_still_provisions_manager_token_without_preservation_read(self):
+        self.prepare_token_hardening()
+
+        result = self.harden('--token-stdin', input_text='replacement-manager-token\n')
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual('replacement-manager-token\n', self.token.read_text(encoding='ascii'))
+        self.assertIn('authentication:set', self.token_actions())
+        self.assertNotIn('authentication:initialize', self.token_actions())
+
+    def test_prepare_config_leaves_existing_token_unchanged(self):
+        self.prepare_token_hardening()
+        self.write(self.token, 'existing-manager-token\n')
+        before = self.token.read_bytes()
+
+        result = self.harden('--prepare-config')
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(before, self.token.read_bytes())
+        self.assertFalse(any(action.startswith(('chown:', 'chmod:', 'authentication:', 'systemctl:'))
+                             for action in self.token_actions()), self.token_actions())
+
     def test_noninteractive_missing_config_fails_before_any_side_effect(self):
         result = self.run_shell('bash ' + shlex.quote((self.agent / 'harden.sh').as_posix()) + ' --prepare-config')
         self.assertNotEqual(0, result.returncode)

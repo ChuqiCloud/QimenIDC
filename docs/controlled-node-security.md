@@ -45,6 +45,18 @@ sudo bash update.sh
 
 `--prepare-config` 只验证并保存配置，不改 token、证书或服务。服务配置阶段仍会校验现有证书的有效期和 SAN，证书异常时需先修复证书并更新主控中保存的证书。
 
+### 更新失败：`Token file must be root owned with mode 0600`
+
+这是旧 token 文件的属主或权限不符合新检查导致的。早期 `harden.sh` 在校验之后才修正权限，旧节点通过旧更新入口升级或直接整改时会提前退出。修复后脚本先确认 `token.key` 是普通文件且不是符号链接，再把属主设为 `root:root`、权限设为 `600`，最后校验原 token；运行时仍严格拒绝权限不合规的文件，token 内容不变。
+
+已遇到此错误的节点，以 root 执行以下一整行修正并重新生成、启动服务，最后应输出三个 `active`：
+
+```bash
+test -f /home/software/QAgent/token.key && test ! -L /home/software/QAgent/token.key && chown root:root /home/software/QAgent/token.key && chmod 600 /home/software/QAgent/token.key && bash /home/software/QAgent/harden.sh --configure && systemctl is-active qagent.service noVNC.service nginx.service
+```
+
+如果文件缺失或内容无效，脚本仍会拒绝继续；应通过 `--token-stdin` 安装主控当前使用的 token，不要重新生成另一份 token。保留更新备份，直到确认节点 API 和 VNC 可用。
+
 安装时写进 `security.conf` 的 `QAGENT_MANAGER_IPS` 只是初始值。主控或机房出口 IP 一变，节点会以「连接超时」的方式整体失联，所以白名单需要能自动跟随。
 
 **被控端**：`POST /net/trust`（加密，仍需 token）。请求体 `{"networks": ["198.51.100.42/32"], "cluster_id": "db-1a2b3c4d5e6f"}`。执行顺序：

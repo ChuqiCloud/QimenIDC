@@ -76,6 +76,11 @@ security_save_config
 if [ "${token_stdin}" = 1 ]; then
     /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" set
 else
+    # 存量节点先收紧原 token 的属主和权限，再执行运行时的严格校验；不改写 token 内容。
+    security_regular_file "${QAGENT_HOME}/token.key"
+    [ -f "${QAGENT_HOME}/token.key" ] || security_fail "manager token missing; provision it with --token-stdin"
+    chown root:root "${QAGENT_HOME}/token.key"
+    chmod 600 "${QAGENT_HOME}/token.key"
     /usr/bin/python3.10 "${QAGENT_HOME}/service/Authentication.py" initialize
 fi
 if [ "${clear_vnc}" = 1 ]; then

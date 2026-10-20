@@ -211,7 +211,7 @@ function qimenidc_ConfigOptions(){
 
 // 连接测试
 function qimenidc_TestLink($params){
-	$url = qimenidc_GetUrl($params, '/api/v1/status', $sign);
+	$url = qimenidc_GetUrl($params, '/api/v1/status');
 	
 	$res = qimenidc_Curl($params,$url, [], 10, 'GET');
 	if(isset($res['code']) && $res['code'] == 20000){
@@ -250,7 +250,10 @@ function qimenidc_ChartData($params){
         return ['status'=>'error', 'msg'=>'数据获取失败'];
     }
     // 先同步最新流量数据，消除滞后
-    qimenidc_Sync($params);
+    $sync = qimenidc_Sync($params);
+    if(!is_array($sync) || ($sync['status'] ?? '') !== 'success'){
+        return ['status'=>'error', 'msg'=>is_array($sync) ? ($sync['msg'] ?? '流量同步失败') : '流量同步失败'];
+    }
     // 拼接请求参数数组
     $query = [
         'hostId'=>$vserverid,
@@ -432,6 +435,8 @@ function qimenidc_ChartData($params){
 
 // 标准输出
 function qimenidc_ClientArea($params){
+	// 客户端产品页会先调用此入口再渲染产品参数；提前同步可避免首次打开仍显示旧流量。
+	qimenidc_Sync($params);
 	if($params['configoptions']['nat']==1){
 		$panel = [
 			'snapshot'=>[
@@ -1214,9 +1219,13 @@ function qimenidc_Sync($params){
 		if(!isset($vmhost['ipData']) || !is_array($vmhost['ipData'])){
 			return ['status'=>'error', 'msg'=>'接口返回的主机信息不完整'];
 		}
-		foreach(['password', 'hostname', 'username', 'usedFlow'] as $field){
+		foreach(['password', 'hostname', 'username', 'flowLimit', 'extraFlowLimit', 'usedFlow'] as $field){
 			if(!array_key_exists($field, $vmhost)){
 				return ['status'=>'error', 'msg'=>'接口返回的主机信息不完整'];
+			}
+			if(in_array($field, ['flowLimit', 'extraFlowLimit', 'usedFlow'], true)
+				&& (!is_numeric($vmhost[$field]) || $vmhost[$field] < 0)){
+				return ['status'=>'error', 'msg'=>'接口返回的流量数据无效'];
 			}
 		}
 		// 存入IP
@@ -1242,10 +1251,10 @@ function qimenidc_Sync($params){
 		$update['assignedips'] = implode(',', $ip);
 		$update['password'] = cmf_encrypt($res['data']['vmhost']['password']);
 		$update['domain'] = $res['data']['vmhost']['hostname'];
-		$flow_limit = $res['data']['vmhost']['flowLimit'] ?? 0;
-		$extra_flow_limit = $res['data']['vmhost']['extraFlowLimit'] ?? 0;
+		$flow_limit = (float)$vmhost['flowLimit'];
+		$extra_flow_limit = (float)$vmhost['extraFlowLimit'];
 		$update['bwlimit'] = $flow_limit > 0 ? round(($flow_limit + $extra_flow_limit)/1024/1024/1024,1) : 0;
-		$update['bwusage'] = round($res['data']['vmhost']['usedFlow']/1024/1024/1024,1);
+		$update['bwusage'] = round((float)$vmhost['usedFlow']/1024/1024/1024,1);
 
 		$username = $res['data']['vmhost']['username'];
         $update['username'] = $username;
@@ -1265,6 +1274,8 @@ function qimenidc_Status($params){
 	if(empty($vserverid)){
 		return 'QimenIDC VM ID错误';
 	}
+	// 状态钩子通常参与产品总览加载，先同步流量后再返回状态，避免首屏使用旧额度。
+	qimenidc_Sync($params);
 	// 设置请求参数
 	$query = [
 		'hostId'=>$vserverid,
@@ -1399,7 +1410,14 @@ function qimenidc_GetUrl($params, $path = '/api/v1/pve/cerateVM', $query = []){
 	}else{
 		$url = 'http://';
 	}
-	$url .= $params['server_ip'] ?: $params['server_host'];
+	// HTTPS 优先使用主机名，保留反向代理所需的 SNI 和 Host。
+	$serverHost = trim((string)($params['server_host'] ?? ''));
+	$serverIp = trim((string)($params['server_ip'] ?? ''));
+	if($params['secure'] && $serverHost !== ''){
+		$url .= $serverHost;
+	}else{
+		$url .= $serverIp !== '' ? $serverIp : $serverHost;
+	}
 	if(!empty($params['port'])){
 		$url .= ':'.$params['port'];
 	}
@@ -1427,6 +1445,7 @@ function qimenidc_Curl($params, $url, $data = [], $timeout = 30, $request = 'POS
 
     curl_setopt($curl, CURLOPT_URL, $url);
     curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($curl, CURLOPT_USERAGENT, 'QimenIDC-IDCSmart/1.0.1');
     curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_setopt($curl, CURLOPT_HEADER, 0);
     curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);

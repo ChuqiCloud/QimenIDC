@@ -89,7 +89,7 @@ namespace {
             'hostid'=>11, 'uid'=>22, 'customfields'=>['vserverid'=>33],
             'secure'=>false, 'server_ip'=>'127.0.0.1', 'server_host'=>'127.0.0.1', 'port'=>$port,
             'server_username'=>'test-manager', 'server_password'=>'test-password',
-            'configoptions'=>['flow_limit'=>100],
+            'configoptions'=>['flow_limit'=>100, 'nat'=>0],
         ];
         $month_start = strtotime(date('Y-m-01 00:00:00'));
         $next_month = strtotime('+1 month', $month_start);
@@ -103,10 +103,11 @@ namespace {
             array_replace($record, ['hostid'=>12, 'pay_time'=>$month_start + 1, 'capacity'=>900]),
             array_replace($record, ['uid'=>23, 'pay_time'=>$month_start + 1, 'capacity'=>900]),
         ];
-        $reset = function($scenario = '', $flow_limit = 100, $create_time = null, $reset_flow_time = 1) use ($state_path){
+        $reset = function($scenario = '', $flow_limit = 100, $create_time = null, $reset_flow_time = 1, $extra_flow_limit = 0) use ($state_path){
             $create_time = $create_time ?? (strtotime(date('Y-m-01 00:00:00')) * 1000);
             file_put_contents($state_path, json_encode(['scenario'=>$scenario, 'requests'=>[],
-                'flowLimit'=>$flow_limit * 1024 * 1024 * 1024, 'extraFlowLimit'=>0,
+                'flowLimit'=>$flow_limit * 1024 * 1024 * 1024,
+                'extraFlowLimit'=>$extra_flow_limit * 1024 * 1024 * 1024,
                 'createTime'=>$create_time, 'resetFlowTime'=>$reset_flow_time]));
             \think\Db::$updates = [];
             \think\Db::$update_result = 1;
@@ -121,6 +122,45 @@ namespace {
         check(qimenidc_FlowCycleCapacity($params, [
             'createTime'=>$month_start * 1000, 'resetFlowTime'=>1,
         ], $month_start + 86400) === 125, 'Monthly cycle must include its start and exclude records after its end');
+        $reset('', 100, null, 1, 37);
+        $chart_params = $params;
+        $chart_params['chart'] = ['type'=>'flow', 'start'=>(time() - 3600) * 1000];
+        $chart = qimenidc_ChartData($chart_params);
+        check($chart['status'] === 'success', 'Flow chart retrieval should synchronize the host first');
+        check(count($state()['requests']) === 2
+            && $state()['requests'][0]['path'] === '/api/v1/pve/getVmInfo'
+            && $state()['requests'][1]['path'] === '/api/v1/pve/getVmInfo',
+            'Flow chart retrieval should use two GET requests');
+        check(count(\think\Db::$updates) === 1 && \think\Db::$updates[0]['bwlimit'] == 137,
+            'Real-time flow retrieval must use API extraFlowLimit instead of local package records');
+        check(\think\Db::$updates[0]['bwusage'] == 10, 'Real-time flow retrieval must synchronize usedFlow');
+        check($state()['extraFlowLimit'] === 37 * 1024 * 1024 * 1024,
+            'Real-time synchronization must not PUT the API flow package value');
+        $reset('', 100, null, 1, 0);
+        $chart = qimenidc_ChartData($chart_params);
+        check($chart['status'] === 'success' && \think\Db::$updates[0]['bwlimit'] == 100,
+            'Real-time synchronization must clear local package allowance when API extraFlowLimit is zero');
+        $reset('missing-extra');
+        $chart = qimenidc_ChartData($chart_params);
+        check($chart['status'] === 'error' && count(\think\Db::$updates) === 0,
+            'Missing API extraFlowLimit must fail without overwriting local data');
+        $reset('', 100, null, 1, 37);
+        $panel = qimenidc_ClientArea($params);
+        check(is_array($panel) && count(\think\Db::$updates) === 1
+            && \think\Db::$updates[0]['bwlimit'] == 137
+            && \think\Db::$updates[0]['bwusage'] == 10
+            && count($state()['requests']) === 1
+            && $state()['requests'][0]['method'] === 'GET'
+            && $state()['requests'][0]['path'] === '/api/v1/pve/getVmInfo',
+            'Opening the client product page must synchronize the latest flow before rendering');
+        $reset('', 100, null, 1, 37);
+        $status = qimenidc_Status($params);
+        check($status['status'] === 'success' && $status['data']['status'] === 'on'
+            && count(\think\Db::$updates) === 1
+            && \think\Db::$updates[0]['bwlimit'] == 137
+            && \think\Db::$updates[0]['bwusage'] == 10,
+            'Product status loading must synchronize flow before returning the status');
+        $reset();
         check(qimenidc_FlowPacketPaid($params) === true, 'Paid flow package should update and sync');
         check(qimenidc_FlowPacketPaid($params) === true, 'Repeated payment callback should succeed');
         check($state()['extraFlowLimit'] === 125 * 1024 * 1024 * 1024, 'Repeated callback must not add twice');
