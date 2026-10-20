@@ -187,9 +187,13 @@ fi
         for command, expected, marker in (
                 ('chown', 'root:root', 'QAGENT_TEST_OWNER_READY'),
                 ('chmod', '600', 'QAGENT_TEST_MODE_READY')):
+            # Linux 在隔离 token 上执行真实权限操作，Windows 仍只模拟 uid/mode。
+            permission_action = ('    /usr/bin/' + command + ' "$@" || exit "$?"\n'
+                                 if os.name == 'posix' else '')
             self.command(command, '''printf '%s:%s\\n' "${0##*/}" "$*" >> "$QAGENT_TEST_ACTIONS"
 if [ "$#" = 2 ] && [ "$1" = "''' + expected + '''" ] && [ "$2" = "$QAGENT_TEST_TOKEN" ]; then
     [ "${QAGENT_TEST_FAIL_PERMISSION:-}" != "${0##*/}" ] || exit 96
+''' + permission_action + '''\
     printf 'ready\\n' > "${''' + marker + '''}"
 fi
 ''')
@@ -233,6 +237,9 @@ fi
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(before, self.token.read_bytes())
+        if os.name == 'posix':
+            self.assertEqual(0, self.token.stat().st_uid)
+            self.assertEqual(0o600, self.token.stat().st_mode & 0o777)
         actions = self.token_actions()
         ownership = actions.index('chown:root:root ' + shell_path(self.token))
         permissions = actions.index('chmod:600 ' + shell_path(self.token))
