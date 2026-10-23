@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Data;
 
 import java.util.HashMap;
@@ -155,6 +156,7 @@ public class VmParams {
     /**
      * 网卡
      */
+    @JsonAlias("vnet")
     private String bridge;
     /**
      * 网络类型: classic/vpc

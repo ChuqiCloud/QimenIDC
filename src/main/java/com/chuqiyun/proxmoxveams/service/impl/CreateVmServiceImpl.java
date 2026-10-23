@@ -1201,8 +1201,9 @@ public class CreateVmServiceImpl implements CreateVmService {
                         + ", vpcSubnetId=" + subnetId + ", subnetNodeid=" + subnet.getNodeid();
             }
         }
-        if (vmParams.getBridge() == null || vmParams.getBridge().trim().isEmpty()) {
-            return "VPC网络需要传vpcSubnetId，或传bridge/vnet用于反查子网: nodeid=" + vmParams.getNodeid();
+        if (!hasVpcSubnetSelector(vmParams)) {
+            return "当前节点未找到可用于VPC的SDN网络: nodeid=" + vmParams.getNodeid()
+                    + "。请先创建名称包含vpc的SDN网络；未命名vpc时，系统会自动使用该节点第一个非NAT SDN网络。";
         }
         return "未找到匹配的VPC子网: nodeid=" + vmParams.getNodeid()
                 + ", vpcSubnetId=" + vmParams.getVpcSubnetId()
@@ -1221,12 +1222,16 @@ public class CreateVmServiceImpl implements CreateVmService {
                 return subnet;
             }
         }
-        if (vmParams.getBridge() == null || vmParams.getBridge().trim().isEmpty()) {
-            return null;
+        String bridge = StringUtils.trimToNull(vmParams.getBridge());
+        if (bridge == null) {
+            if (subnetId != null && subnetId > 0) {
+                return null;
+            }
+            return resolveDefaultVpcSubnet(vmParams.getNodeid());
         }
-        List<Subnet> subnets = subnetService.lambdaQuery()
-                .eq(Subnet::getVnet, vmParams.getBridge().trim())
-                .list();
+        QueryWrapper<Subnet> subnetQueryWrapper = new QueryWrapper<>();
+        subnetQueryWrapper.eq("vnet", bridge).orderByAsc("id");
+        List<Subnet> subnets = subnetService.list(subnetQueryWrapper);
         if (subnets == null || subnets.isEmpty()) {
             return null;
         }
@@ -1240,12 +1245,63 @@ public class CreateVmServiceImpl implements CreateVmService {
             }
         }
         for (Subnet subnet : subnets) {
-            if (!isNatIpPoolSubnet(subnet, vmParams.getNodeid())
+            if (!isNatSdnSubnet(subnet, vmParams.getNodeid())
                     && isSubnetBelongToNode(subnet, vmParams.getNodeid())) {
                 return subnet;
             }
         }
         return null;
+    }
+
+    /**
+     * API 未指定 VPC 子网或网桥时，根据请求节点已有 SDN 子网选择默认 VPC。
+     * 名称含 vpc 的网络优先；没有时才使用该节点第一个非 NAT 网络。
+     */
+    private Subnet resolveDefaultVpcSubnet(Integer nodeId) {
+        QueryWrapper<Subnet> queryWrapper = new QueryWrapper<>();
+        queryWrapper.and(wrapper -> wrapper.eq("nodeid", nodeId).or().isNull("nodeid"));
+        queryWrapper.orderByAsc("id");
+        List<Subnet> subnets = subnetService.list(queryWrapper);
+        if (subnets == null || subnets.isEmpty()) {
+            return null;
+        }
+        List<Subnet> candidates = new ArrayList<>();
+        for (Subnet subnet : subnets) {
+            if (isSubnetBelongToNode(subnet, nodeId) && !isNatSdnSubnet(subnet, nodeId)) {
+                candidates.add(subnet);
+            }
+        }
+        candidates.sort((left, right) -> {
+            Integer leftId = left.getId();
+            Integer rightId = right.getId();
+            if (leftId == null) {
+                return rightId == null ? 0 : 1;
+            }
+            if (rightId == null) {
+                return -1;
+            }
+            return Integer.compare(leftId, rightId);
+        });
+        for (Subnet subnet : candidates) {
+            if (StringUtils.containsIgnoreCase(subnet.getVnet(), NETWORK_TYPE_VPC)) {
+                return subnet;
+            }
+        }
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
+    private boolean hasVpcSubnetSelector(VmParams vmParams) {
+        return vmParams != null && ((vmParams.getVpcSubnetId() != null && vmParams.getVpcSubnetId() > 0)
+                || StringUtils.isNotBlank(vmParams.getBridge()));
+    }
+
+    private boolean isNatSdnSubnet(Subnet subnet, Integer nodeId) {
+        if (isNatIpPoolSubnet(subnet, nodeId)) {
+            return true;
+        }
+        Master node = nodeId == null ? null : masterService.getById(nodeId);
+        return subnet != null && node != null && StringUtils.isNotBlank(node.getNatbridge())
+                && StringUtils.equalsIgnoreCase(node.getNatbridge().trim(), StringUtils.trimToEmpty(subnet.getVnet()));
     }
 
     private boolean isNatIpPoolSubnet(Subnet subnet, Integer nodeId) {
