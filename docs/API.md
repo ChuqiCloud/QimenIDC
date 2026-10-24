@@ -7065,6 +7065,36 @@ PUT /{adminPath}/reinstall
 
 ### 返回数据结构
 
+## POST/PUT 管理员重置虚拟机密码
+
+POST /{adminPath}/resetVmPassword
+
+也支持 PUT。`adminPath` 为当前后台路径，请求头 `Authorization` 必须携带管理员登录凭证，`Content-Type` 为 `application/json`。
+
+```json
+{
+  "hostId": 834,
+  "newPassword": "NewPassword123!"
+}
+```
+
+|名称|位置|类型|必选|说明|
+|---|---|---|---|---|
+|hostId|body|integer| 是 |平台内虚拟机记录 ID，正整数，非 PVE VMID|
+|newPassword|body|string| 是 |新密码，不能为空或纯空白|
+
+成功响应：
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": null
+}
+```
+
+此接口沿用现有异步重置密码任务流程，成功响应表示请求已受理，最终结果可通过管理员任务列表查询；新密码与原密码相同时直接返回成功。响应不包含密码。
+
 ## DELETE 删除虚拟机
 
 DELETE /{adminPath}/delete/{hostId}

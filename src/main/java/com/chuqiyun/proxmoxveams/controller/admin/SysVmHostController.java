@@ -92,6 +92,38 @@ public class SysVmHostController {
         return ResponseResult.ok(resultDto.getResultCode().getMessage());
     }
 
+    /**
+     * @Author: 星禾
+     * @Description: 管理员重置虚拟机密码
+     * @DateTime: 2026/10/24 16:37
+     */
+    @AdminApiCheck
+    @RequestMapping(value = "/resetVmPassword", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object resetVmPassword(@RequestBody(required = false) JSONObject params) throws UnauthorizedException {
+        Long hostId = null;
+        if (params != null && params.get("hostId") != null) {
+            try {
+                hostId = Long.valueOf(params.get("hostId").toString());
+            } catch (NumberFormatException ignored) {
+                // 非整数或超出范围的主机 ID 统一按参数错误处理，避免转换截断后操作其他虚拟机。
+            }
+        }
+        if (hostId == null || hostId <= 0) {
+            return ResponseResult.fail(UnifiedResultCode.ERROR_INVALID_PARAM.getCode(), "hostId必须是正整数");
+        }
+        Object password = params.get("newPassword");
+        String newPassword = password instanceof String ? (String) password : null;
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            return ResponseResult.fail(UnifiedResultCode.ERROR_NEW_PASSWORD_NOT_NULL.getCode(),
+                    UnifiedResultCode.ERROR_NEW_PASSWORD_NOT_NULL.getMessage());
+        }
+        UnifiedResultDto<Object> resultDto = vmhostService.resetVmPassword(hostId, newPassword);
+        if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
+            return ResponseResult.fail(resultDto.getResultCode().getCode(), resultDto.getMessage());
+        }
+        return ResponseResult.ok();
+    }
+
     @AdminApiCheck
     @RequestMapping(value = "/migrateVm", method = {RequestMethod.POST, RequestMethod.PUT})
     public Object migrateVm(@RequestBody VmMigrationParams params) throws UnauthorizedException {

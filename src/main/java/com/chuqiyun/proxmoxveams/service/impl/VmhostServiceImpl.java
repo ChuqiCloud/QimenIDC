@@ -4872,7 +4872,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         try {
             proxmoxApiUtil.resetVmConfig(node, cookieMap, vmhost.getVmid(), disk,
-                    targetStorage + ":" + size + "G,discard=on");
+                    targetStorage + ":" + size + ",discard=on");
             Map<Object, Object> dataDisk = new LinkedHashMap<>();
             if (vmhost.getDataDisk() != null) {
                 dataDisk.putAll(vmhost.getDataDisk());
