@@ -769,12 +769,16 @@ public class ClientApiUtil {
         if (message == null || message.trim().isEmpty()) {
             message = "节点未提供错误详情，请查看被控日志";
         }
-        // 不回显请求体或完整响应；限制节点错误的长度并移除日志控制字符。
-        message = message.replaceAll("[\\p{Cntrl}]", " ").trim();
-        if (message.length() > 1024) {
-            message = message.substring(0, 1024) + "…";
-        }
+        message = sanitizeNatErrorMessage(message);
         return NatOperationResult.failure("QAgent " + action + "NAT规则失败（code=" + code + "）：" + message);
+    }
+
+    private static String sanitizeNatErrorMessage(String message) {
+        String sanitized = message == null ? "" : message.replaceAll("[\\p{Cntrl}]", " ").trim();
+        if (sanitized.length() > 1024) {
+            sanitized = sanitized.substring(0, 1024) + "…";
+        }
+        return sanitized;
     }
 
     public static Boolean addIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
@@ -837,23 +841,34 @@ public class ClientApiUtil {
     }
 
     public static Boolean deleteIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {
+        return deleteIpForwardWithResult(ip, token, controllerPort, hostId, publicIp, privateIp).isSuccess();
+    }
+
+    /**
+     * 删除一对一 IP 转发并保留 QAgent 的业务错误，供删除任务记录可操作的失败原因。
+     */
+    public static NatOperationResult deleteIpForwardWithResult(String ip, String token, Integer controllerPort,
+                                                                Integer hostId, String publicIp, String privateIp) {
         String url = AGENT_SCHEME + ip + ":" + controllerPort + "/nat/deleteIpForward";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("vm", hostId);
         paramMap.put("source_ip", publicIp);
         paramMap.put("destination_ip", privateIp);
-        JSONObject result = null;
+        JSONObject result;
         try {
             result = postControllerApi(url, paramMap, token);
         } catch (RestClientException e) {
             System.out.println("[VPC-IP-FORWARD] delete request failed url=" + url + ", publicIp=" + publicIp
                     + ", privateIp=" + privateIp + ", error=" + e.getMessage());
-            return false;
+            return NatOperationResult.failure("QAgent 删除IP转发请求失败："
+                    + sanitizeNatErrorMessage(e.getMessage()));
         }
-        if (result == null || result.getInteger("code") != 200) {
-            System.out.println("[VPC-IP-FORWARD] delete failed url=" + url + ", publicIp=" + publicIp + ", privateIp=" + privateIp + ", result=" + result);
+        NatOperationResult operationResult = natOperationResult(result, "删除");
+        if (!operationResult.isSuccess()) {
+            System.out.println("[VPC-IP-FORWARD] delete failed url=" + url + ", publicIp=" + publicIp
+                    + ", privateIp=" + privateIp + ", result=" + result);
         }
-        return result != null && result.getInteger("code") == 200;
+        return operationResult;
     }
 
     public static Boolean applySecurityGroup(String ip, String token, Integer controllerPort, SecurityGroupApplyDto applyDto) {

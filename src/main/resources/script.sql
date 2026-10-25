@@ -43,6 +43,7 @@ create table configuretemplate
     acpi             int          default 1      null,
     memory           int          default 512    null,
     storage          varchar(255) default 'auto' null,
+    vga              varchar(20)                 null comment '显示设备类型(std/qxl/virtio等)，决定VNC控制台默认分辨率',
     system_disk_size int                         null,
     data_disk        json                        null,
     bandwidth        int                         null,

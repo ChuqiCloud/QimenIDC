@@ -113,8 +113,9 @@ class IptablesForwardRuleManager:
     def run(arguments, check=True):
         return subprocess.run(arguments, check=check, capture_output=True, text=True, timeout=30)
 
-    def rule_exists(self, rule):
-        result = self.run(['iptables', '-w', '5', '-t', 'nat', '-C', *rule], check=False)
+    def rule_exists(self, rule, table='nat'):
+        table_name = 'NAT' if table == 'nat' else table
+        result = self.run(['iptables', '-w', '5', '-t', table, '-C', *rule], check=False)
         if result.returncode == 0:
             return True
         detail = result.stderr.strip()
@@ -123,27 +124,34 @@ class IptablesForwardRuleManager:
                 return False
             if detail.endswith('No chain/target/match by that name.'):
                 # legacy 的 -C 未命中也用此提示；先确认链可读，不能吞掉表或链故障。
-                chain = self.run(['iptables', '-w', '5', '-t', 'nat', '-S', rule[0]], check=False)
+                chain = self.run(['iptables', '-w', '5', '-t', table, '-S', rule[0]], check=False)
                 if chain.returncode == 0:
                     return False
-                raise RuntimeError(f'Unable to inspect NAT chain {rule[0]} (exit {chain.returncode}): '
+                raise RuntimeError(f'Unable to inspect {table_name} chain {rule[0]} (exit {chain.returncode}): '
                                    + chain.stderr.strip())
-        raise RuntimeError('Unable to inspect NAT rule: ' + detail)
+        raise RuntimeError(f'Unable to inspect {table_name} rule: ' + detail)
 
-    def change_rule(self, rule, delete=False):
-        if self.rule_exists(rule) == (not delete):
+    def change_rule(self, rule, delete=False, table='nat'):
+        if self.rule_exists(rule, table=table) == (not delete):
             return False
         # 一对一映射优先于共享出口的 MASQUERADE，沿用原有顺序。
-        prepend = rule[0] in ('PREROUTING', 'POSTROUTING') and ('SNAT' in rule or ('DNAT' in rule and '--dport' not in rule))
+        prepend = ((table == 'raw' and 'CT' in rule) or
+                   (rule[0] in ('PREROUTING', 'POSTROUTING') and
+                    ('SNAT' in rule or ('DNAT' in rule and '--dport' not in rule))))
         action = '-D' if delete else '-I' if prepend else '-A'
-        arguments = ['iptables', '-w', '5', '-t', 'nat', action, rule[0]]
+        arguments = ['iptables', '-w', '5', '-t', table, action, rule[0]]
         if prepend and not delete:
             arguments.append('1')
         self.run([*arguments, *rule[1:]])
         return True
 
-    @staticmethod
-    def enable_forwarding():
+    def ensure_firewall_conntrack_zone(self):
+        # PVE 网卡防火墙使用 fwbr 桥；分离桥接阶段的连接跟踪，避免提前建连绕过路由阶段的 SNAT。
+        # 此规则由节点上的 NAT 网络共享，不随单个虚拟机或网桥删除，也不清理已有连接。
+        self.change_rule(('PREROUTING', '-i', 'fwbr+', '-j', 'CT', '--zone', '1'), table='raw')
+
+    def enable_forwarding(self):
+        self.ensure_firewall_conntrack_zone()
         with open('/proc/sys/net/ipv4/ip_forward', 'w') as stream:
             stream.write('1\n')
 
@@ -268,7 +276,12 @@ class Manager:
             self.validate_source_ports(ports, old_ports)
             desired_port_keys = {self.port_rule_key(rule) for rule in ports}
             desired_ip_keys = {self.ip_forward_rule_key(rule) for rule in ips}
-            if ports or ips:
+            old_port_keys = {self.port_rule_key(rule) for rule in old_ports}
+            old_ip_keys = {self.ip_forward_rule_key(rule) for rule in old_ips}
+            deleting_only = (desired_port_keys <= old_port_keys and desired_ip_keys <= old_ip_keys and
+                             (desired_port_keys != old_port_keys or desired_ip_keys != old_ip_keys))
+            # 仅删除旧映射不引入新的转发前置条件；新增和相同快照恢复仍补齐共享规则。
+            if (ports or ips) and not deleting_only:
                 executor.enable_forwarding()
             removals = [executor.port_rule(rule) for rule in old_ports if self.port_rule_key(rule) not in desired_port_keys]
             for rule in old_ips:
@@ -383,16 +396,20 @@ class NatManager:
                 raise ValueError('NAT gateway must be a usable subnet address')
             path = Path('/etc/network/interfaces').resolve()
             original = path.read_text()
+            conntrack_post_up = ('        post-up iptables -w 5 -t raw -C PREROUTING -i fwbr+ -j CT --zone 1 || '
+                                 'iptables -w 5 -t raw -I PREROUTING 1 -i fwbr+ -j CT --zone 1\n')
             block = (
                 f'auto {bridge}\niface {bridge} inet static\n'
                 f'        address {interface}\n        bridge-ports none\n'
                 '        bridge-stp off\n        bridge-fd 0\n'
                 '        post-up sysctl -w net.ipv4.ip_forward=1\n'
+                f'{conntrack_post_up}'
                 f'        post-up iptables -w 5 -t nat -C POSTROUTING -s {interface.network} -o vmbr0 -j MASQUERADE || iptables -w 5 -t nat -A POSTROUTING -s {interface.network} -o vmbr0 -j MASQUERADE\n'
                 f'        post-down iptables -w 5 -t nat -D POSTROUTING -s {interface.network} -o vmbr0 -j MASQUERADE\n'
             )
             if re.search(r'^\s*iface\s+' + re.escape(bridge) + r'\s', original, re.MULTILINE):
-                if block in original:
+                # 兼容升级前生成的同名同地址网桥，已有网络配置保持不变。
+                if block in original or block.replace(conntrack_post_up, '') in original:
                     return Manager.response(0, 'success')
                 raise ValueError('Bridge already exists; existing network configuration was preserved')
             for config in Path('/etc/network/interfaces.d').glob('*'):

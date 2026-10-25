@@ -111,6 +111,7 @@ public interface VmhostService extends IService<Vmhost> {
     NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip, int destination_port, String protocol, int vm);
     Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
     Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp);
+    NatOperationResult delVmhostVpcIpForwardWithResult(int hostId, String publicIp, String privateIp);
     Boolean clearVmhostVpcIpBinding(int hostId);
     Boolean changeVmHostBandWidth(Vmhost vmhost, String bandwidth);
 

@@ -4337,33 +4337,39 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     @Override
     public Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        return delVmhostVpcIpForwardWithResult(hostId, publicIp, privateIp).isSuccess();
+    }
+
+    @Override
+    public NatOperationResult delVmhostVpcIpForwardWithResult(int hostId, String publicIp, String privateIp) {
         synchronized (NatForwardSyncService.class) {
             return delVmhostVpcIpForwardLocked(hostId, publicIp, privateIp);
         }
     }
 
-    private Boolean delVmhostVpcIpForwardLocked(int hostId, String publicIp, String privateIp) {
+    private NatOperationResult delVmhostVpcIpForwardLocked(int hostId, String publicIp, String privateIp) {
         String token = configService.getToken();
         Master node = masterService.getById(this.getVmhostNodeId(hostId));
         if (node == null || publicIp == null || privateIp == null) {
-            return false;
+            return NatOperationResult.failure("VPC 转发删除参数无效或宿主机节点不存在");
         }
         publicIp = publicIp.trim();
         privateIp = privateIp.trim();
         if (!IpUtil.isValidIpv4(publicIp) || !IpUtil.isValidIpv4(privateIp)) {
-            return false;
+            return NatOperationResult.failure("VPC 转发删除的公网 IP 或私网 IP 无效");
         }
         NatForwardRule saved = natForwardRuleService.getOne(new QueryWrapper<NatForwardRule>()
                 .eq("node_id", node.getId()).eq("rule_type", "ip").eq("source_ip", publicIp).last("limit 1"));
         if (saved != null && (!Objects.equals(saved.getHostId(), hostId)
                 || !Objects.equals(saved.getDestinationIp(), privateIp))) {
-            return false;
+            return NatOperationResult.failure("本地 VPC 转发记录与当前虚拟机或私网 IP 不匹配，已拒绝删除");
         }
         VpcIpBinding binding = getActiveVpcIpBinding(hostId, publicIp, privateIp);
-        Boolean result = ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
-        if (Boolean.TRUE.equals(result)) {
+        NatOperationResult result = ClientApiUtil.deleteIpForwardWithResult(node.getHost(), token,
+                node.getControllerPort(), hostId, publicIp, privateIp);
+        if (result.isSuccess()) {
             if (!natForwardSyncService.deleteIpForwardRule(node.getId(), publicIp)) {
-                return false;
+                return NatOperationResult.failure("QAgent 已删除 VPC 转发，但主控本地转发记录清理失败，请重试");
             }
             if (binding != null && (!VPC_PUBLIC_IP_MODE_LEGACY.equals(normalizeVpcPublicIpMode(binding.getDeliveryMode()))
                     || Integer.valueOf(1).equals(binding.getAddressInstalled())

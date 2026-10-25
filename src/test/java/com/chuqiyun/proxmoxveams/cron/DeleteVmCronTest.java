@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.cron;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -21,6 +22,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -108,6 +110,21 @@ class DeleteVmCronTest {
 
         assertEquals(IllegalStateException.class, thrown.getCause().getClass());
         verify(vmhostService, never()).delVmhostVpcIpForward(17, "198.51.100.10", "10.0.0.17");
+    }
+
+    @Test
+    void includesVpcCleanupFailureReasonInDeleteError() throws Exception {
+        Vmhost vmhost = vpcVmhost();
+        when(vmhostService.getVmhostVpcIpForward(17)).thenReturn(ResponseResult.ok(List.of(
+                Map.of("publicIp", "198.51.100.10", "privateIp", "10.0.0.17"))));
+        when(vmhostService.delVmhostVpcIpForwardWithResult(17, "198.51.100.10", "10.0.0.17"))
+                .thenReturn(NatOperationResult.failure("QAgent 删除IP转发失败（code=500）：iptables 链不存在"));
+
+        InvocationTargetException thrown = assertThrows(InvocationTargetException.class,
+                () -> invokePrivate("deleteVpcIpForwards", new Class<?>[]{Vmhost.class}, vmhost));
+
+        assertEquals("删除虚拟机 VPC 转发失败，停止删除以保留 IP 分配: 198.51.100.10；"
+                + "QAgent 删除IP转发失败（code=500）：iptables 链不存在", thrown.getCause().getMessage());
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedResultCode;
 import com.chuqiyun.proxmoxveams.dto.UnifiedResultDto;
+import com.chuqiyun.proxmoxveams.dto.NatOperationResult;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
@@ -106,8 +107,12 @@ public class DeleteVmCron {
         }
 
         for (String[] forward : forwards) {
-            if (!Boolean.TRUE.equals(vmhostService.delVmhostVpcIpForward(vmhost.getId(), forward[0], forward[1]))) {
-                throw new IllegalStateException("删除虚拟机 VPC 转发失败，停止删除以保留 IP 分配: " + forward[0]);
+            NatOperationResult result = vmhostService.delVmhostVpcIpForwardWithResult(vmhost.getId(), forward[0], forward[1]);
+            if (result == null || !result.isSuccess()) {
+                String reason = result == null || result.getMessage() == null
+                        ? "未返回失败原因" : result.getMessage();
+                throw new IllegalStateException("删除虚拟机 VPC 转发失败，停止删除以保留 IP 分配: "
+                        + forward[0] + "；" + reason);
             }
         }
     }

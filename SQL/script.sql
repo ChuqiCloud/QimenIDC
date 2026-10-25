@@ -43,7 +43,7 @@ create table configuretemplate
     acpi             int          default 1      null,
     memory           int          default 512    null,
     storage          varchar(255) default 'auto' null,
-    vga              varchar(20)                 null comment '显示设备类型(std/qxl/virtio等)',
+    vga              varchar(20)                 null comment '显示设备类型(std/qxl/virtio等)，决定VNC控制台默认分辨率',
     system_disk_size int                         null,
     data_disk        json                        null,
     bandwidth        int                         null,
@@ -79,7 +79,8 @@ create table flowdata
     in_flow     double default 0 not null comment '入站流量（对应PVE netin）',
     out_flow    double default 0 not null comment '出站流量（对应PVE netout）',
     status      int    default 0 not null comment '0=未同步;1=已同步',
-    create_date varchar(20)      null
+    create_date varchar(20)      null,
+    index idx_flowdata_host_status_create_date (hostid, status, create_date)
 );
 
 create table ippool
@@ -149,7 +150,9 @@ create table master
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
     nataddr             varchar(50)  null comment 'nat展示地址',
-    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'
+    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期',
+    public_ip_mode      varchar(20)  default 'legacy' not null comment 'VPC公网接入模式 legacy/routed/l2_alias/proxy_arp',
+    public_ip_interface varchar(64)  null comment 'VPC公网接入物理网卡'
 );
 
 create table modelgroup
@@ -290,8 +293,31 @@ create table sysuser
     name      varchar(255) null,
     phone     varchar(20)  null,
     email     varchar(255) null,
-    logindate varchar(255) null
+    logindate varchar(255) null,
+    mfa_type varchar(16) default 'none' not null comment '二步验证方式 none/totp/passkey',
+    totp_secret text null comment '加密存储的TOTP密钥(新密钥Base32，兼容历史Base64URL)',
+    totp_confirmed_time bigint null comment 'TOTP绑定确认时间戳(毫秒)',
+    totp_last_step bigint null comment '最近一次已消费的TOTP时间片',
+    passkey_enabled int default 0 not null comment '是否已绑定Passkey 0否 1是'
 );
+
+create table if not exists sys_passkey
+(
+    id                bigint auto_increment primary key,
+    userid            int           not null comment '管理员ID',
+    credential_id     varchar(512)  not null comment 'base64url编码的凭据ID',
+    public_key        text          not null comment 'base64url编码的COSE公钥',
+    sign_count        bigint        default 0 not null comment '签名计数器',
+    backup_eligible   int           default 0 not null comment '是否支持备份 0否 1是',
+    backup_state      int           default 0 not null comment '是否已备份 0否 1是',
+    algorithm         int           not null comment '认证器算法 -7 ES256 / -257 RS256',
+    device_name       varchar(100)  null comment '设备展示名称',
+    aaguid            varchar(64)   null comment 'base64url编码的AAGUID',
+    create_time       bigint        not null comment '创建时间戳(毫秒)',
+    last_used_time    bigint        null comment '最近使用时间戳(毫秒)',
+    unique index uk_sys_passkey_credential (credential_id),
+    index idx_sys_passkey_userid (userid)
+) comment '管理员Passkey凭据';
 
 create table if not exists sys_passkey_challenge
 (
@@ -389,6 +415,8 @@ create table vmhost
     out_flow              int       default 0                     not null comment '超流操作0挂起 大于0表示限速x 单位kb',
     delete_state           int      default 0   comment '删除状态 0正常 1回收站 2已删除',
     last_disk_reconcile_time bigint default 0 not null comment '上次校正虚拟机磁盘显示容量时间戳（毫秒）',
+    index idx_vmhost_status_nodeid (status, nodeid),
+    index idx_vmhost_reset_flow_time (reset_flow_time),
     index idx_vmhost_disk_reconcile (delete_state, last_disk_reconcile_time)
 );
 
@@ -405,6 +433,12 @@ create table vpc_ip_binding
     public_ip      varchar(64) not null comment '公网IP',
     private_ip     varchar(64) not null comment '私网IP',
     forward_mode   varchar(20) default 'nat_1to1' not null comment '转发模式',
+    delivery_mode  varchar(20) default 'legacy' not null comment '公网接入模式',
+    interface_name varchar(64) null comment '公网接入物理网卡',
+    address_installed int default 0 not null comment '是否由QAgent添加了公网地址',
+    route_installed int default 0 not null comment '是否由QAgent添加了公网路由',
+    last_check_time bigint null,
+    last_error varchar(1024) null,
     status         int         default 1          not null comment '状态 0已删除 1有效',
     create_time    bigint      null,
     update_time    bigint      null,
@@ -615,6 +649,20 @@ create table zones
     state      varchar(255) default 'new' not null
 );
 
+create table agent_trust
+(
+    id            bigint auto_increment primary key,
+    cluster_id    varchar(64)   not null comment '集群标识，同一套主控库共用',
+    member_id     varchar(64)   default 'legacy' not null comment '主控实例标识',
+    address       varchar(128)  not null comment '可信管理源地址(CIDR)',
+    source        varchar(16)   not null comment '来源 local主控自报 probe节点实测',
+    node_id       int           null comment '上报该地址的被控节点ID',
+    create_time   bigint        not null comment '创建时间戳(毫秒)',
+    last_seen     bigint        not null comment '最近一次上报时间戳(毫秒)',
+    unique index uk_agent_trust_member (cluster_id, member_id, source, node_id, address),
+    index idx_agent_trust_seen (last_seen)
+);
+
 create table system_log
 (
     id               int auto_increment
@@ -645,20 +693,6 @@ create table system_log
     index idx_system_log_request_id (request_id),
     index idx_system_log_level (level),
     index idx_system_log_host_id_create_time (host_id, create_time)
-);
-
-create table agent_trust
-(
-    id            bigint auto_increment primary key,
-    cluster_id    varchar(64)   not null comment '集群标识，同一套主控库共用',
-    member_id     varchar(64)   default 'legacy' not null comment '主控实例标识',
-    address       varchar(128)  not null comment '可信管理源地址(CIDR)',
-    source        varchar(16)   not null comment '来源 local主控自报 probe节点实测',
-    node_id       int           null comment '上报该地址的被控节点ID',
-    create_time   bigint        not null comment '创建时间戳(毫秒)',
-    last_seen     bigint        not null comment '最近一次上报时间戳(毫秒)',
-    unique index uk_agent_trust_member (cluster_id, member_id, source, node_id, address),
-    index idx_agent_trust_seen (last_seen)
 );
 
 

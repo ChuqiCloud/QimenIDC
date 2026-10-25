@@ -170,6 +170,16 @@ Changing the QAgent TLS port updates nginx when the `qa` menu applies the change
 
 NAT/VPC creation uses the existing authenticated and encrypted QAgent NAT APIs. Upgrade the managed nodes before the manager: creation checks `/nat/export` before allocating resources. NAT commands use validated arguments without a shell; forwarding changes roll back on failure and the two rule tables commit together. Saved rules are validated before startup recovery and periodic synchronization. VM deletion and creation-failure cleanup retain IP allocations when forwarding cleanup fails. The retired `/migration` routes remain unavailable; migration uses the existing `/migrationAction` routes.
 
+When a Proxmox VM NIC firewall is enabled, Proxmox places the NIC behind an `fwbr*` bridge. QAgent installs the [PVE-recommended shared conntrack-zone rule](https://pve.proxmox.com/wiki/Network_Configuration#sysadmin_network_masquerading) (`iptables -t raw -I PREROUTING 1 -i fwbr+ -j CT --zone 1`) before adding or restoring NAT rules. This separates connection tracking at the firewall bridge from the routing stage, preventing early bridge tracking from bypassing SNAT. Startup recovery and periodic synchronization repair a missing rule. The rule is idempotent and is retained as a node-level rule; it is not removed when an individual NAT mapping is deleted. Deletion-only updates do not require this new rule to be available. This compatibility path targets the traditional iptables-backed `pve-firewall`; verify the node firewall backend before applying it to a nftables-only setup.
+
+To check an existing node, keep the VM NIC firewall enabled and run this single line as root on the PVE node:
+
+```bash
+iptables -w 5 -t raw -C PREROUTING -i fwbr+ -j CT --zone 1 || iptables -w 5 -t raw -I PREROUTING 1 -i fwbr+ -j CT --zone 1
+```
+
+Then start a new `ping -c 4 223.5.5.5` from inside the affected VM. This is a temporary runtime check; the updated QAgent restores the shared rule after service startup or when its periodic NAT synchronization runs. No host reboot or global conntrack flush is required.
+
 ### NAT 升级后的端口校验与版本提示
 
 主控与 QAgent 分别发布，程序版本号不要求相同。主控按 `/version` 返回的 `api_version` 检查接口协议；QAgent 的程序版本统一从包内 `version` 文件读取。主控 `1.3.4` 与 QAgent `1.0.4` 的协议均为 `1.0.1` 时，不再报告程序版本不一致。
