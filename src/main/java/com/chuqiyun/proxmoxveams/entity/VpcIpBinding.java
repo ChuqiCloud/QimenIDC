@@ -39,6 +39,19 @@ public class VpcIpBinding extends Model<VpcIpBinding> {
 
     private String forwardMode;
 
+    /** 节点公网接入模式，记录本次绑定实际采用的模式。 */
+    private String deliveryMode;
+
+    private String interfaceName;
+
+    private Integer addressInstalled;
+
+    private Integer routeInstalled;
+
+    private Long lastCheckTime;
+
+    private String lastError;
+
     private Integer status;
 
     private Long createTime;

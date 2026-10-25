@@ -70,6 +70,15 @@ public class Master extends Model<Master> {
     private String nataddr;
 
     /**
+     * VPC 公网 IP 接入模式：legacy/routed/l2_alias/proxy_arp。
+     * null 或 legacy 保持历史一对一 NAT 行为，兼容已有节点。
+     */
+    private String publicIpMode;
+
+    /** VPC 公网 IP 需要绑定或配置路由时使用的物理网卡名称。 */
+    private String publicIpInterface;
+
+    /**
      * 节点公钥（PEM 证书）。用于核对节点自签证书是否被替换、看有效期，
      * 属于公开信息，随节点信息一起返回即可。
      * 列名加 node_ 前缀：MySQL 里 public 是保留字。

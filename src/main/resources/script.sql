@@ -149,7 +149,9 @@ create table master
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',
     nataddr             varchar(50)  null comment 'nat展示地址',
-    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'
+    node_public_key     text         null comment '节点公钥(PEM证书)，用于核对节点证书与有效期',
+    public_ip_mode      varchar(20)  default 'legacy' not null comment 'VPC公网接入模式 legacy/routed/l2_alias/proxy_arp',
+    public_ip_interface varchar(64)  null comment 'VPC公网接入物理网卡'
 );
 
 create table modelgroup
@@ -430,6 +432,12 @@ create table vpc_ip_binding
     public_ip      varchar(64) not null comment '公网IP',
     private_ip     varchar(64) not null comment '私网IP',
     forward_mode   varchar(20) default 'nat_1to1' not null comment '转发模式',
+    delivery_mode  varchar(20) default 'legacy' not null comment '公网接入模式',
+    interface_name varchar(64) null comment '公网接入物理网卡',
+    address_installed int default 0 not null comment '是否由QAgent添加了公网地址',
+    route_installed int default 0 not null comment '是否由QAgent添加了公网路由',
+    last_check_time bigint null,
+    last_error varchar(1024) null,
     status         int         default 1          not null comment '状态 0已删除 1有效',
     create_time    bigint      null,
     update_time    bigint      null,

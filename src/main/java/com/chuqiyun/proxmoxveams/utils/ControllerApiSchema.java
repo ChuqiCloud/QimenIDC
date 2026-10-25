@@ -46,6 +46,12 @@ public class ControllerApiSchema {
         put("/nat/addBridge", "nataddr", "bridge");
         put("/nat/sync", "port_rules", "ip_forward_rules");
         put("/nat/export");
+        put("/network/public-ip/ensure", "public_ip", "mode", "interface",
+                "address_installed", "route_installed");
+        put("/network/public-ip/release", "public_ip", "mode", "interface",
+                "address_installed", "route_installed");
+        put("/network/public-ip/check", "public_ip", "mode", "interface",
+                "address_installed", "route_installed");
         // 安全组
         put("/security-group/apply", "hostId", "vmId", "networkType", "targetIps",
                 "defaultIngressAction", "defaultEgressAction", "rules");

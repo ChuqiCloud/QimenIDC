@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.apache.commons.lang3.StringUtils;
 import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -794,6 +795,45 @@ public class ClientApiUtil {
             System.out.println("[VPC-IP-FORWARD] add failed url=" + url + ", publicIp=" + publicIp + ", privateIp=" + privateIp + ", result=" + result);
         }
         return result != null && result.getInteger("code") == 200;
+    }
+
+    public static JSONObject ensureVpcPublicIp(String ip, String token, Integer controllerPort,
+                                               String publicIp, String mode, String interfaceName) {
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/network/public-ip/ensure";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("public_ip", publicIp);
+        paramMap.put("mode", StringUtils.defaultIfBlank(mode, "legacy"));
+        if (StringUtils.isNotBlank(interfaceName)) {
+            paramMap.put("interface", interfaceName);
+        }
+        try {
+            return postControllerApi(url, paramMap, token);
+        } catch (RestClientException e) {
+            System.out.println("[VPC-PUBLIC-IP] ensure request failed url=" + url + ", publicIp=" + publicIp
+                    + ", error=" + e.getMessage());
+            return null;
+        }
+    }
+
+    public static JSONObject releaseVpcPublicIp(String ip, String token, Integer controllerPort,
+                                                String publicIp, String mode, String interfaceName,
+                                                Integer addressInstalled, Integer routeInstalled) {
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/network/public-ip/release";
+        Map<String, Object> paramMap = new HashMap<>();
+        paramMap.put("public_ip", publicIp);
+        paramMap.put("mode", StringUtils.defaultIfBlank(mode, "legacy"));
+        if (StringUtils.isNotBlank(interfaceName)) {
+            paramMap.put("interface", interfaceName);
+        }
+        paramMap.put("address_installed", Integer.valueOf(1).equals(addressInstalled));
+        paramMap.put("route_installed", Integer.valueOf(1).equals(routeInstalled));
+        try {
+            return postControllerApi(url, paramMap, token);
+        } catch (RestClientException e) {
+            System.out.println("[VPC-PUBLIC-IP] release request failed url=" + url + ", publicIp=" + publicIp
+                    + ", error=" + e.getMessage());
+            return null;
+        }
     }
 
     public static Boolean deleteIpForward(String ip, String token, Integer controllerPort, Integer hostId, String publicIp, String privateIp) {

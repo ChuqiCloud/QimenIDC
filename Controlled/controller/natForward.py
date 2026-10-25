@@ -7,7 +7,7 @@ from common.ResponseResult import secured_response
 from controller._payload import bind_entity, get_payload
 
 import service.Nat as Nat
-from entity.NatForward import ForwardRule, IpForwardRule, NatSyncRequest
+from entity.NatForward import ForwardRule, IpForwardRule, NatSyncRequest, PublicIpBinding
 
 nat_router = APIRouter()
 
@@ -117,3 +117,30 @@ async def nat_sync(request: Request, item: NatSyncRequest = None):
     if result['code'] == 0:
         return secured_response(request, CodeEnum.SUCCESS, result['message'], result['data'])
     return secured_response(request, CodeEnum.FAIL, result['message'], result['data'])
+
+
+@nat_router.post('/network/public-ip/ensure')
+async def public_ip_ensure(request: Request, item: PublicIpBinding = None):
+    item = bind_entity(PublicIpBinding, await get_payload(request))
+    result = await asyncio.to_thread(Nat.ensure_public_ip, item)
+    code = result['code']
+    return secured_response(request, CodeEnum.SUCCESS if code == 0 else CodeEnum.FAIL,
+                            result['message'], result['data'])
+
+
+@nat_router.post('/network/public-ip/release')
+async def public_ip_release(request: Request, item: PublicIpBinding = None):
+    item = bind_entity(PublicIpBinding, await get_payload(request))
+    result = await asyncio.to_thread(Nat.release_public_ip, item)
+    code = result['code']
+    return secured_response(request, CodeEnum.SUCCESS if code == 0 else CodeEnum.FAIL,
+                            result['message'], result['data'])
+
+
+@nat_router.post('/network/public-ip/check')
+async def public_ip_check(request: Request, item: PublicIpBinding = None):
+    item = bind_entity(PublicIpBinding, await get_payload(request))
+    result = await asyncio.to_thread(Nat.check_public_ip, item)
+    code = result['code']
+    return secured_response(request, CodeEnum.SUCCESS if code == 0 else CodeEnum.FAIL,
+                            result['message'], result['data'])

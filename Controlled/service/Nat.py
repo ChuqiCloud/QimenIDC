@@ -13,7 +13,8 @@ from sqlalchemy import create_engine, Column, Integer, String, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-from entity.NatForward import ForwardRule as PortRuleParams, IpForwardRule as IpRuleParams, ipv4_address, vm_identifier
+from entity.NatForward import (ForwardRule as PortRuleParams, IpForwardRule as IpRuleParams,
+                                PublicIpBinding, ipv4_address, vm_identifier)
 
 Base = declarative_base()
 NAT_RULE_LOCK = threading.RLock()
@@ -423,3 +424,124 @@ class IpForwardManager:
 
     def delete_ip_forward_rule(self):
         return Manager().update_rule(self.rule, ip_forward=True, delete=True)
+
+
+PUBLIC_IP_MODES = {'legacy', 'routed', 'l2_alias', 'proxy_arp'}
+
+
+def _public_ip_mode(mode):
+    mode = str(mode or 'legacy').strip().lower()
+    if mode == 'auto':
+        mode = os.environ.get('QIMEN_PUBLIC_IP_MODE', 'legacy').strip().lower()
+    return mode if mode in PUBLIC_IP_MODES else 'legacy'
+
+
+def _network_command(arguments, check=False):
+    result = subprocess.run(arguments, check=False, capture_output=True, text=True, timeout=30)
+    if check and result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f'exit code {result.returncode}'
+        raise RuntimeError(f"{' '.join(arguments)} failed: {detail}")
+    return result
+
+
+def _network_interface_exists(interface):
+    return _network_command(['ip', 'link', 'show', 'dev', interface]).returncode == 0
+
+
+def _address_exists(public_ip, interface):
+    result = _network_command(['ip', '-4', '-o', 'addr', 'show', 'dev', interface])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f'Unable to inspect interface {interface}')
+    return any(token.split('/', 1)[0] == public_ip for line in result.stdout.splitlines() for token in line.split())
+
+
+def _route_exists(public_ip):
+    result = _network_command(['ip', '-4', 'route', 'show', f'{public_ip}/32'])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f'Unable to inspect route for {public_ip}')
+    return bool(result.stdout.strip())
+
+
+def _public_ip_data(mode, interface=None, address_installed=False, route_installed=False):
+    return {
+        'mode': mode,
+        'interface': interface,
+        'address_installed': bool(address_installed),
+        'route_installed': bool(route_installed),
+    }
+
+
+def ensure_public_ip(payload):
+    """Prepare the node-side public-IP delivery without changing legacy VPC NAT semantics."""
+    try:
+        binding = payload if isinstance(payload, PublicIpBinding) else PublicIpBinding(**payload)
+        mode = _public_ip_mode(binding.mode)
+        interface = binding.interface
+        if mode in ('l2_alias', 'proxy_arp'):
+            if not interface:
+                raise ValueError(f'{mode} mode requires interface')
+            if not _network_interface_exists(interface):
+                raise ValueError(f'Network interface does not exist: {interface}')
+
+        address_installed = False
+        route_installed = False
+        with NAT_RULE_LOCK:
+            if mode == 'l2_alias' and not _address_exists(binding.public_ip, interface):
+                _network_command(['ip', '-4', 'addr', 'add', f'{binding.public_ip}/32', 'dev', interface], check=True)
+                address_installed = True
+            elif mode == 'l2_alias':
+                address_installed = False
+            elif mode == 'proxy_arp':
+                proxy_arp = f'net.ipv4.conf.{interface}.proxy_arp'
+                current = _network_command(['sysctl', '-n', proxy_arp], check=False)
+                if current.returncode != 0 or current.stdout.strip() != '1':
+                    _network_command(['sysctl', '-w', f'{proxy_arp}=1'], check=True)
+                if not _route_exists(binding.public_ip):
+                    _network_command(['ip', 'route', 'replace', f'{binding.public_ip}/32', 'dev', interface], check=True)
+                    route_installed = True
+
+        return Manager.response(0, 'success', _public_ip_data(mode, interface, address_installed, route_installed))
+    except (OSError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        return Manager.response(1, f'Failed to configure public IP: {error}', {})
+
+
+def release_public_ip(payload):
+    """Remove only address/route markers explicitly installed by a prior ensure call."""
+    try:
+        binding = payload if isinstance(payload, PublicIpBinding) else PublicIpBinding(**payload)
+        mode = _public_ip_mode(binding.mode)
+        interface = binding.interface
+        address_installed = bool(binding.address_installed)
+        route_installed = bool(binding.route_installed)
+        if address_installed and (mode != 'l2_alias' or not interface):
+            raise ValueError('l2_alias release requires interface')
+        if route_installed and (mode != 'proxy_arp' or not interface):
+            raise ValueError('proxy_arp release requires interface')
+        with NAT_RULE_LOCK:
+            if address_installed and _address_exists(binding.public_ip, interface):
+                _network_command(['ip', '-4', 'addr', 'del', f'{binding.public_ip}/32', 'dev', interface], check=True)
+            if route_installed and _route_exists(binding.public_ip):
+                _network_command(['ip', 'route', 'del', f'{binding.public_ip}/32', 'dev', interface], check=True)
+        return Manager.response(0, 'success', _public_ip_data(mode, interface, False, False))
+    except (OSError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        return Manager.response(1, f'Failed to release public IP: {error}', {})
+
+
+def check_public_ip(payload):
+    try:
+        binding = payload if isinstance(payload, PublicIpBinding) else PublicIpBinding(**payload)
+        mode = _public_ip_mode(binding.mode)
+        interface = binding.interface
+        address_present = False
+        route_present = False
+        if mode == 'l2_alias':
+            if not interface:
+                raise ValueError('l2_alias mode requires interface')
+            address_present = _address_exists(binding.public_ip, interface)
+        elif mode == 'proxy_arp':
+            if not interface:
+                raise ValueError('proxy_arp mode requires interface')
+            route_present = _route_exists(binding.public_ip)
+        return Manager.response(0, 'success', _public_ip_data(mode, interface, address_present, route_present))
+    except (OSError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        return Manager.response(1, f'Failed to check public IP: {error}', {})

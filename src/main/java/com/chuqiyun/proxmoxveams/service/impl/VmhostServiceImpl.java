@@ -86,6 +86,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private static final String PENDING_STATUS = "creating";
     private static final String NETWORK_TYPE_VPC = "vpc";
     private static final String VPC_FORWARD_MODE_NAT_1TO1 = "nat_1to1";
+    private static final String VPC_PUBLIC_IP_MODE_LEGACY = "legacy";
     private static final int VPC_BINDING_STATUS_ACTIVE = 1;
     private static final int VPC_BINDING_STATUS_DELETED = 0;
     private static final Pattern SMP_ARGS_PATTERN = Pattern.compile("(^|\\s)-smp\\s+\\d+(?:,[^\\s]*)?");
@@ -4286,15 +4287,51 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             log.error("[VPC-IP-Binding] 存在有效绑定冲突，拒绝创建转发: HostId={}, PublicIp={}, PrivateIp={}", hostId, publicIp, privateIp);
             return false;
         }
+        String deliveryMode = normalizeVpcPublicIpMode(node.getPublicIpMode());
+        JSONObject publicIpResult = ClientApiUtil.ensureVpcPublicIp(node.getHost(), token, node.getControllerPort(),
+                publicIp, deliveryMode, node.getPublicIpInterface());
+        // 老节点尚未升级 QAgent 时没有新接口；legacy 模式继续沿用原 NAT 流程，不能阻断已有 VPC。
+        if (publicIpResult == null && VPC_PUBLIC_IP_MODE_LEGACY.equals(deliveryMode)) {
+            publicIpResult = new JSONObject();
+            publicIpResult.put("code", 200);
+            publicIpResult.put("mode", VPC_PUBLIC_IP_MODE_LEGACY);
+            publicIpResult.put("address_installed", false);
+            publicIpResult.put("route_installed", false);
+        }
+        if (publicIpResult == null || !Objects.equals(publicIpResult.getInteger("code"), 200)) {
+            log.error("[VPC-IP-Binding] 公网IP接入配置失败: HostId={}, PublicIp={}, Mode={}, Result={}",
+                    hostId, publicIp, deliveryMode, publicIpResult);
+            return false;
+        }
         Boolean result = ClientApiUtil.addIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
         if (Boolean.TRUE.equals(result)) {
             if (!natForwardSyncService.saveIpForwardRule(node.getId(), hostId, publicIp, privateIp)) {
                 ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
                 return false;
             }
-            saveOrActiveVpcIpBinding(hostId, publicIp, privateIp);
+            saveOrActiveVpcIpBinding(hostId, publicIp, privateIp, publicIpResult);
+        } else {
+            releaseVpcPublicIp(node, publicIp, publicIpResult);
         }
         return result;
+    }
+
+    private String normalizeVpcPublicIpMode(String mode) {
+        if (StringUtils.isBlank(mode)) {
+            return VPC_PUBLIC_IP_MODE_LEGACY;
+        }
+        String normalized = mode.trim().toLowerCase(Locale.ROOT);
+        return Set.of("legacy", "routed", "l2_alias", "proxy_arp").contains(normalized)
+                ? normalized : VPC_PUBLIC_IP_MODE_LEGACY;
+    }
+
+    private void releaseVpcPublicIp(Master node, String publicIp, JSONObject result) {
+        if (node == null || result == null) {
+            return;
+        }
+        ClientApiUtil.releaseVpcPublicIp(node.getHost(), configService.getToken(), node.getControllerPort(), publicIp,
+                result.getString("mode"), result.getString("interface"), result.getInteger("address_installed"),
+                result.getInteger("route_installed"));
     }
 
     @Override
@@ -4321,10 +4358,22 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 || !Objects.equals(saved.getDestinationIp(), privateIp))) {
             return false;
         }
+        VpcIpBinding binding = getActiveVpcIpBinding(hostId, publicIp, privateIp);
         Boolean result = ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
         if (Boolean.TRUE.equals(result)) {
             if (!natForwardSyncService.deleteIpForwardRule(node.getId(), publicIp)) {
                 return false;
+            }
+            if (binding != null && (!VPC_PUBLIC_IP_MODE_LEGACY.equals(normalizeVpcPublicIpMode(binding.getDeliveryMode()))
+                    || Integer.valueOf(1).equals(binding.getAddressInstalled())
+                    || Integer.valueOf(1).equals(binding.getRouteInstalled()))) {
+                JSONObject releaseResult = ClientApiUtil.releaseVpcPublicIp(node.getHost(), token,
+                        node.getControllerPort(), publicIp, binding.getDeliveryMode(), binding.getInterfaceName(),
+                        binding.getAddressInstalled(), binding.getRouteInstalled());
+                if (releaseResult == null || !Objects.equals(releaseResult.getInteger("code"), 200)) {
+                    log.warn("[VPC-IP-Binding] 公网IP接入配置释放失败，保留绑定记录供后续检查: HostId={}, PublicIp={}, Result={}",
+                            hostId, publicIp, releaseResult);
+                }
             }
             deleteVpcIpBinding(hostId, publicIp, privateIp);
         }
@@ -4519,7 +4568,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return ippool == null ? null : ippool.getPoolId();
     }
 
-    private void saveOrActiveVpcIpBinding(int hostId, String publicIp, String privateIp) {
+    private void saveOrActiveVpcIpBinding(int hostId, String publicIp, String privateIp, JSONObject publicIpResult) {
         if (StringUtils.isBlank(publicIp) || StringUtils.isBlank(privateIp)) {
             return;
         }
@@ -4532,6 +4581,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (oldBinding != null) {
             oldBinding.setUpdateTime(now);
             oldBinding.setForwardMode(VPC_FORWARD_MODE_NAT_1TO1);
+            applyVpcPublicIpBindingState(oldBinding, publicIpResult, now);
             vpcIpBindingService.updateById(oldBinding);
             return;
         }
@@ -4548,10 +4598,24 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         binding.setPublicIp(publicIp.trim());
         binding.setPrivateIp(privateIp.trim());
         binding.setForwardMode(VPC_FORWARD_MODE_NAT_1TO1);
+        applyVpcPublicIpBindingState(binding, publicIpResult, now);
         binding.setStatus(VPC_BINDING_STATUS_ACTIVE);
         binding.setCreateTime(now);
         binding.setUpdateTime(now);
         vpcIpBindingService.save(binding);
+    }
+
+    private void applyVpcPublicIpBindingState(VpcIpBinding binding, JSONObject result, long now) {
+        if (binding == null) {
+            return;
+        }
+        binding.setDeliveryMode(result == null ? VPC_PUBLIC_IP_MODE_LEGACY :
+                StringUtils.defaultIfBlank(result.getString("mode"), VPC_PUBLIC_IP_MODE_LEGACY));
+        binding.setInterfaceName(result == null ? null : result.getString("interface"));
+        binding.setAddressInstalled(result != null && Boolean.TRUE.equals(result.getBoolean("address_installed")) ? 1 : 0);
+        binding.setRouteInstalled(result != null && Boolean.TRUE.equals(result.getBoolean("route_installed")) ? 1 : 0);
+        binding.setLastCheckTime(now);
+        binding.setLastError(null);
     }
 
     private void deleteVpcIpBinding(int hostId, String publicIp, String privateIp) {

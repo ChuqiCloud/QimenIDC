@@ -1,4 +1,5 @@
-from typing import List
+import re
+from typing import List, Optional
 from ipaddress import IPv4Address
 
 from pydantic import BaseModel, Field, validator
@@ -49,3 +50,30 @@ class IpForwardRule(BaseModel):
 class NatSyncRequest(BaseModel):
     port_rules: List[ForwardRule] = Field(default_factory=list)
     ip_forward_rules: List[IpForwardRule] = Field(default_factory=list)
+
+
+def interface_name(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value or len(value) > 64 or not re.fullmatch(r'[A-Za-z0-9_.:-]+', value):
+        raise ValueError('interface must be a valid network interface name')
+    return value
+
+
+class PublicIpBinding(BaseModel):
+    public_ip: str
+    mode: str = 'legacy'
+    interface: Optional[str] = None
+    address_installed: bool = False
+    route_installed: bool = False
+
+    _public_ip = validator('public_ip', allow_reuse=True)(ipv4_address)
+    _interface = validator('interface', pre=True, allow_reuse=True)(interface_name)
+
+    @validator('mode', pre=True)
+    def validate_mode(cls, value):
+        value = str(value or 'legacy').strip().lower()
+        if value not in ('auto', 'legacy', 'routed', 'l2_alias', 'proxy_arp'):
+            raise ValueError('mode must be auto, legacy, routed, l2_alias or proxy_arp')
+        return value
