@@ -4307,6 +4307,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (Boolean.TRUE.equals(result)) {
             if (!natForwardSyncService.saveIpForwardRule(node.getId(), hostId, publicIp, privateIp)) {
                 ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
+                releaseVpcPublicIp(node, publicIp, publicIpResult);
                 return false;
             }
             saveOrActiveVpcIpBinding(hostId, publicIp, privateIp, publicIpResult);
