@@ -20,9 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * @Author: 星禾
@@ -33,16 +33,39 @@ class SqlServiceImplSchemaRepairTest {
     private final SqlServiceImpl service = new SqlServiceImpl();
 
     @Test
-    void unknownBuildRepairsColumnsWithoutReplayingHistoricalMigrations() {
+    void unknownBuildAppliesSchemaRepairMigrationWithoutReplayingHistory() {
         SqlServiceImpl checked = spy(service);
-        ReflectionTestUtils.setField(checked, "configService", mock(ConfigServiceImpl.class));
+        ConfigServiceImpl configService = mock(ConfigServiceImpl.class);
+        when(configService.getBuild()).thenReturn(null);
+        ReflectionTestUtils.setField(checked, "configService", configService);
         ReflectionTestUtils.setField(checked, "securitySchemaMigration", mock(SecuritySchemaMigration.class));
-        ReflectionTestUtils.setField(checked, "nowBuildVersion", "1.3.4_6");
+        ReflectionTestUtils.setField(checked, "nowBuildVersion", "1.3.4_9");
         doReturn(true).when(checked).ensureColumn(anyString(), anyString(), anyString());
+
         assertTrue(checked.checkAndUpdateDatabase());
-        verify(checked).ensureColumn("master", "node_public_key",
-                "text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'");
-        verify(checked, never()).executeSql(anyString());
+
+        verify(checked).ensureColumn("master", "public_ip_mode",
+                "varchar(20) default 'legacy' not null comment 'VPC公网接入模式 legacy/routed/l2_alias/proxy_arp'");
+        verify(checked).ensureColumn("vpc_ip_binding", "last_error", "varchar(1024) null");
+    }
+
+    @Test
+    void currentBuildReappliesSchemaRepairFromSqlUpdate() {
+        SqlServiceImpl checked = spy(service);
+        ConfigServiceImpl configService = mock(ConfigServiceImpl.class);
+        when(configService.getBuild()).thenReturn("1.3.4_9");
+        ReflectionTestUtils.setField(checked, "configService", configService);
+        ReflectionTestUtils.setField(checked, "securitySchemaMigration", mock(SecuritySchemaMigration.class));
+        ReflectionTestUtils.setField(checked, "nowBuildVersion", "1.3.4_9");
+        doReturn(true).when(checked).ensureColumn(anyString(), anyString(), anyString());
+
+        assertTrue(checked.checkAndUpdateDatabase());
+
+        verify(checked).ensureColumn("configuretemplate", "vga",
+                "varchar(20) null comment '显示设备类型(std/qxl/virtio等)，决定VNC控制台默认分辨率'");
+        verify(checked).ensureColumn("master", "public_ip_mode",
+                "varchar(20) default 'legacy' not null comment 'VPC公网接入模式 legacy/routed/l2_alias/proxy_arp'");
+        verify(checked).ensureColumn("vpc_ip_binding", "last_error", "varchar(1024) null");
     }
 
     @Test
@@ -92,9 +115,17 @@ class SqlServiceImplSchemaRepairTest {
 
     @Test
     void repairDefinitionMatchesUpgradeScript() throws IOException {
-        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_6", 1);
-        String upgradeSql = sqlList.get(0);
-        assertTrue(upgradeSql.contains("add node_public_key text null"));
-        assertTrue(upgradeSql.contains("comment '节点公钥(PEM证书)，用于核对节点证书与有效期'"));
+        List<String> repairUpdates = new SqlUpdateLoader().getSqlUpdates("build", "1.3.4_9", 1);
+        String repairSql = String.join("\n", repairUpdates);
+        assertTrue(repairSql.contains("add node_public_key text null"));
+        assertTrue(repairSql.contains("add public_ip_mode varchar(20) default 'legacy' not null"));
+        assertTrue(repairSql.contains("add public_ip_interface varchar(64) null"));
+        assertTrue(repairSql.contains("add delivery_mode varchar(20) default 'legacy' not null"));
+        assertTrue(repairSql.contains("add interface_name varchar(64) null"));
+        assertTrue(repairSql.contains("add address_installed int default 0 not null"));
+        assertTrue(repairSql.contains("add route_installed int default 0 not null"));
+        assertTrue(repairSql.contains("add last_check_time bigint null"));
+        assertTrue(repairSql.contains("add last_error varchar(1024) null"));
+        assertTrue(repairSql.contains("add vga varchar(20) null"));
     }
 }

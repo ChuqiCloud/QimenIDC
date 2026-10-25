@@ -14,6 +14,8 @@ import javax.annotation.Resource;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author mryunqi
@@ -22,6 +24,9 @@ import java.util.Map;
 @Slf4j
 @Service("sqlService")
 public class SqlServiceImpl implements SqlService {
+    private static final String SCHEMA_REPAIR_BUILD = "1.3.4_9";
+    private static final Pattern SINGLE_COLUMN_ADD = Pattern.compile(
+            "(?is)^alter\\s+table\\s+([a-z0-9_]+)\\s+add\\s+([a-z0-9_]+)\\s+(.+)$");
     @Value("${info.application.version}")
     private String nowVersion;
     /**
@@ -103,9 +108,12 @@ public class SqlServiceImpl implements SqlService {
     public boolean checkAndUpdateDatabase() {
         // 获取数据库中的版本号
         String dbBuildVersion = configService.getBuild();
-        // 未知版本不重放历史 SQL；版本已记账也按实际结构补齐安全字段。
-        if (dbBuildVersion == null || dbBuildVersion.equals(nowBuildVersion)) {
-            return migrateSecuritySchema();
+        // 未知版本不重放历史 SQL。当前版本重复启动时仍按最新结构修复迁移校验列。
+        if (dbBuildVersion == null) {
+            return migrateSecuritySchema() && applySchemaRepairMigration();
+        }
+        if (dbBuildVersion.equals(nowBuildVersion)) {
+            return migrateSecuritySchema() && applySchemaRepairMigration();
         }
 
         if (SqlUpdateLoader.compareBuildVersion(nowBuildVersion, dbBuildVersion) < 0) {
@@ -127,7 +135,10 @@ public class SqlServiceImpl implements SqlService {
                     continue;
                 }
                 UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "执行数据库升级SQL: {}", stepBuildVersion);
-                if (!executeSqlList(buildSqlStep.getSqlList())) {
+                boolean migrationSucceeded = SCHEMA_REPAIR_BUILD.equals(stepBuildVersion)
+                        ? executeSchemaRepairSqlList(buildSqlStep.getSqlList())
+                        : executeSqlList(buildSqlStep.getSqlList());
+                if (!migrationSucceeded) {
                     UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "数据库升级SQL执行失败: {}", stepBuildVersion);
                     return false;
                 }
@@ -142,7 +153,7 @@ public class SqlServiceImpl implements SqlService {
     private boolean migrateSecuritySchema() {
         try {
             securitySchemaMigration.migrate();
-            return ensureRequiredColumns();
+            return true;
         } catch (RuntimeException e) {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "安全数据库结构升级失败，停止启动");
             return false;
@@ -153,21 +164,40 @@ public class SqlServiceImpl implements SqlService {
         return version.equals("1.3.4_4") || version.equals("1.3.4_5") || version.equals("1.3.4_6");
     }
 
-    // 保留启动流程使用的列级校验与初始化辅助接口。
-    private static final List<RequiredColumn> REQUIRED_COLUMNS = List.of(
-            new RequiredColumn("master", "node_public_key",
-                    "text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期'")
-    );
-
-    private boolean ensureRequiredColumns() {
-        for (RequiredColumn column : REQUIRED_COLUMNS) {
-            if (!ensureColumn(column.tableName, column.columnName, column.definition)) {
+    private boolean applySchemaRepairMigration() {
+        try {
+            List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", SCHEMA_REPAIR_BUILD, 1);
+            if (sqlList == null || sqlList.isEmpty()) {
                 UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM,
-                        "数据库结构修复失败: {}.{}", column.tableName, column.columnName);
+                        "找不到数据库结构修复迁移: {}", SCHEMA_REPAIR_BUILD);
+                return false;
+            }
+            return executeSchemaRepairSqlList(sqlList);
+        } catch (IOException e) {
+            UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM,
+                    "读取数据库结构修复迁移失败: {}", e);
+            return false;
+        }
+    }
+
+    private boolean executeSchemaRepairSqlList(List<String> sqlList) {
+        for (String sql : sqlList) {
+            if (!executeIdempotentColumnAdd(sql)) {
+                UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM,
+                        "数据库结构修复迁移执行失败: {}", sql);
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean executeIdempotentColumnAdd(String sql) {
+        String normalizedSql = sql == null ? "" : sql.trim().replaceFirst(";\\s*$", "");
+        Matcher matcher = SINGLE_COLUMN_ADD.matcher(normalizedSql);
+        if (!matcher.matches()) {
+            return false;
+        }
+        return ensureColumn(matcher.group(1), matcher.group(2), matcher.group(3));
     }
 
     @Override
@@ -191,19 +221,19 @@ public class SqlServiceImpl implements SqlService {
         if (StringUtils.isAnyBlank(tableName, columnName, definition)) {
             return false;
         }
-        if (Boolean.TRUE.equals(columnExists(tableName, columnName))) {
+        Boolean columnPresent = columnExists(tableName, columnName);
+        if (Boolean.TRUE.equals(columnPresent)) {
             return true;
         }
-        if (Boolean.FALSE.equals(tableExists(tableName))) {
+        Boolean tablePresent = tableExists(tableName);
+        if (Boolean.FALSE.equals(tablePresent)) {
             UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "补列失败，表不存在: {}", tableName);
             return false;
         }
-        if (columnExists(tableName, columnName) == null && tableExists(tableName) == null) {
-            // 两次元数据查询都失败：执行器不是 MySQL/MariaDB，或账号读不到 information_schema。
-            // 此时补列语句的「列是否已存在」无从判断，宁可放过也不要在启动路径上盲写。
-            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
-                    "无法确认列是否存在，跳过补列: {}.{}", tableName, columnName);
-            return true;
+        if (columnPresent == null || tablePresent == null) {
+            UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM,
+                    "无法确认表或列是否存在，补列迁移失败: {}.{}", tableName, columnName);
+            return false;
         }
         UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
                 "检测到缺失的列，正在补列: {}.{}", tableName, columnName);
@@ -258,15 +288,4 @@ public class SqlServiceImpl implements SqlService {
         return true;
     }
 
-    private static final class RequiredColumn {
-        private final String tableName;
-        private final String columnName;
-        private final String definition;
-
-        private RequiredColumn(String tableName, String columnName, String definition) {
-            this.tableName = tableName;
-            this.columnName = columnName;
-            this.definition = definition;
-        }
-    }
 }

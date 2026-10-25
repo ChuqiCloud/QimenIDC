@@ -588,3 +588,15 @@ build: # 内部构建版本信息
                    set delivery_mode = 'legacy'
                    where delivery_mode is null
                       or trim(delivery_mode) = '';"
+  1.3.4_9:
+    1:
+      - "alter table configuretemplate add vga varchar(20) null comment '显示设备类型(std/qxl/virtio等)，决定VNC控制台默认分辨率';"
+      - "alter table master add node_public_key text null comment '节点公钥(PEM证书)，用于核对节点证书与有效期';"
+      - "alter table master add public_ip_mode varchar(20) default 'legacy' not null comment 'VPC公网接入模式 legacy/routed/l2_alias/proxy_arp';"
+      - "alter table master add public_ip_interface varchar(64) null comment 'VPC公网接入物理网卡';"
+      - "alter table vpc_ip_binding add delivery_mode varchar(20) default 'legacy' not null comment '公网接入模式';"
+      - "alter table vpc_ip_binding add interface_name varchar(64) null comment '公网接入物理网卡';"
+      - "alter table vpc_ip_binding add address_installed int default 0 not null comment '是否由QAgent添加了公网地址';"
+      - "alter table vpc_ip_binding add route_installed int default 0 not null comment '是否由QAgent添加了公网路由';"
+      - "alter table vpc_ip_binding add last_check_time bigint null;"
+      - "alter table vpc_ip_binding add last_error varchar(1024) null;"
