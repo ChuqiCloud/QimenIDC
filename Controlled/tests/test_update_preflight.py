@@ -50,7 +50,7 @@ class UpdatePreflightTest(unittest.TestCase):
         self.python = shlex.quote(Path(sys.executable).as_posix())
 
         # 仅重定向部署路径和 Python 位置，保留被测 Shell 的控制流及实际配置解析器。
-        for name in ('security.sh', 'harden.sh', 'update.sh', 'lib.sh'):
+        for name in ('security.sh', 'harden.sh', 'update.sh', 'lib.sh', 'python-runtime.sh'):
             content = AGENT_ROOT.joinpath(name).read_text(encoding='utf-8')
             content = content.replace('/home/software', shell_path(self.root / 'software'))
             content = content.replace('/etc/qimenidc', shell_path(self.security_dir))
@@ -58,6 +58,9 @@ class UpdatePreflightTest(unittest.TestCase):
             content = content.replace('/etc/nginx', shell_path(self.root / 'etc/nginx'))
             content = content.replace('/usr/bin/python3.10', 'qagent-test-python')
             self.write(self.agent / name, content)
+        # 本组只验证安全预检与停服顺序；解释器版本和模块检查由运行时测试覆盖。
+        with (self.agent / 'python-runtime.sh').open('a', encoding='utf-8', newline='\n') as stream:
+            stream.write('\nqagent_require_python() { QAGENT_PYTHON=qagent-test-python; }\n')
         shutil.copyfile(AGENT_ROOT / 'service/SecurityConfig.py', self.agent / 'service/SecurityConfig.py')
 
         # Windows Python 的标准输出默认 CRLF，Linux 解析器实际输出 LF。
@@ -348,7 +351,7 @@ fi
 
     def test_staged_dependency_failure_preserves_running_node(self):
         payload = self.root / 'payload'
-        for name in ('main.py', 'lib.sh', 'qa.sh', 'security.sh',
+        for name in ('main.py', 'lib.sh', 'qa.sh', 'security.sh', 'python-runtime.sh',
                      'service/SecurityConfig.py', 'dependencies.json'):
             self.write(payload / name, '# isolated package fixture\n')
         self.write(payload / 'harden.sh', '#!/bin/bash\nexit 0\n')
@@ -363,8 +366,9 @@ fi
             self.command(command, f'exec /usr/bin/{command} "$@"\n')
         source = (self.agent / 'update.sh').read_text(encoding='utf-8')
         self.write(self.agent / 'update.sh', source.rsplit('\nmain\n', 1)[0] + '\n')
-        result = self.run_shell('source ' + shlex.quote((self.agent / 'update.sh').as_posix()) +
-                                '\nstage_package\n')
+        result = self.run_shell('source ' + shlex.quote((self.agent / 'python-runtime.sh').as_posix()) +
+                                '\nqagent_require_python\nsource ' +
+                                shlex.quote((self.agent / 'update.sh').as_posix()) + '\nstage_package\n')
         self.assertNotEqual(0, result.returncode)
         self.assertIn('offline dependencies are not ready', result.stderr)
         self.assertIn('simulated missing dependency wheel', result.stderr)

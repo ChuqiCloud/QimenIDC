@@ -2,6 +2,48 @@
 
 QAgent now listens only on `127.0.0.1:17600`; nginx terminates TLS on the existing QAgent port (7600 by default) and allows only configured manager source IPs/CIDRs. noVNC runs as the locked `qimenvnc` system account. Its token file and expiry metadata are mode `0600`.
 
+## PVE 9 / Debian 13 的 Python 运行环境
+
+从 QAgent 1.0.8 开始，新安装在 `/home/software/qagent-python` 独立编译 Python 3.10.22，QAgent、noVNC、依赖安装和维护命令共用这个解释器。不会修改 `/usr/bin/python`、`/usr/bin/python3`、`/usr/bin/python3.10` 或 pip 的软链，也不会降低 PVE 的系统 Python 版本。Debian 12 默认 Python 3.11、Debian 13 默认 Python 3.13，均不决定被控服务使用的版本。
+
+离线包仍是 CPython 3.10 的 wheel，不能直接跳过 `DependencyBundle.py` 的版本检查来使用 Python 3.13。适配采用独立的较新 Python 3.10 补丁版，无需重新制作已有离线依赖。源码从 Python 官方 HTTPS 地址下载，并使用代码中固定的 SHA-256 校验。
+
+针对 GCC 14 在 `Objects/complexobject.c` / `complex_pow` 的 `dom` 优化阶段出现 `double free`、`internal compiler error`，构建显式采用 GCC、`-O2 -fno-tree-dominator-opts`，不启用 PGO/LTO。每次都使用全新临时源码目录，编译或安装失败立即中止。通过解释器版本、SSL、SQLite、ctypes、压缩模块等检查后才发布运行环境；noVNC 用户可以读取该运行环境和依赖。此处是针对已知失败阶段的规避，仍需在目标 PVE 9 节点验证实际构建与业务。
+
+已有节点更新时，若没有专用环境，会兼容经过版本和模块检查的旧 `/home/software/python3.10.5/bin/python3.10` 或 `/usr/bin/python3.10`。专用环境存在但损坏时会明确失败，不会静默切换到其他解释器。单独下载的 `install.sh` 会先获取包含 `python-runtime.sh` 的新版被控包，再安装 Python，因此发布时必须同时更新安装脚本和被控包。
+
+新节点可以把本次构建的 `install.sh` 和 `QAgent.tar.gz` 一起上传到 `/root`，显式使用该本地包安装，避免镜像站尚未更新时下载旧包：
+
+```bash
+QAGENT_PACKAGE_PATH=/root/QAgent.tar.gz bash /root/install.sh
+```
+
+本地包路径必须是绝对路径，安装结束后保留原包；未指定该变量时仍从原镜像站下载。依赖 wheel、noVNC、websocketd 和 Python 源码仍需要网络。不要在已有业务的节点上把全新安装流程当作更新命令。
+
+在已经部署 **1.0.8 完整代码**、但旧 Python 编译失败的节点上，可先只修复运行环境：
+
+```bash
+cd /home/software/QAgent
+bash python-runtime.sh install
+bash python-runtime.sh check
+```
+
+这一步不会停止服务或修改 token、证书、NAT 数据。已有的 `/usr/bin/python3.10` 断链不妨碍专用环境安装，也不需要先覆盖它。编译需要可用的 Debian 软件源和 Python 官方下载地址。
+
+随后在该解释器安装原有离线依赖，再生成服务配置：
+
+```bash
+cd /home/software/QAgent
+(umask 022; bash python-runtime.sh exec service/DependencyBundle.py install)
+bash harden.sh --configure
+systemctl show qagent.service noVNC.service -p ExecStart
+systemctl is-active qagent.service noVNC.service
+```
+
+若节点尚未安装 noVNC 或尚未配置白名单、token，应继续使用完整的新版 `bash install.sh` 安装流程，不能只运行 `harden.sh`。已有运行中的旧节点应在切换服务前先安装新环境的离线依赖。只修复 Python 不代表整个被控已经安装完成。
+
+旧运行环境中已有的依赖可能保留历史 root-only 权限，`umask 022` 不会修复 pip 判定为已安装的文件。切换服务后应以 `qimenvnc` 验证 `systemctl show` 中实际解释器能够导入 `websockify, redis, jwcrypto, requests`，并检查 noVNC 日志；新建的专用环境和新安装依赖已使用低权用户可读的权限。
+
 `harden.sh` 新增两个参数，用于白名单自动同步：`--manager-endpoint host:port`（主控的 QAgent 端口，探测它的出口地址）、`--cluster-id`（同一集群共用的标识，缺省用 JDBC 连接串摘要）。两者都会写进 `security.conf` 与 `qagent.service` 环境变量。
 
 Install nginx, openssl, Python 3.10, and the updated QAgent/noVNC package first. On a managed node, run the remediation once with the source addresses seen by that node's firewall and the exact DNS names/IPs configured as the node host in QimenIDC:
@@ -93,7 +135,7 @@ test -f /home/software/QAgent/token.key && test ! -L /home/software/QAgent/token
 systemctl show noVNC.service -p ActiveState -p SubState -p Result -p ExecMainStatus; journalctl -u noVNC.service -n 80 --no-pager -o cat
 ```
 
-若日志在 `utils/websockify/run` 的 `cd "$(dirname "$0")"` 行报告 `SyntaxError: invalid syntax`，原因是旧服务把 Shell 启动脚本交给 Python 解释。修复后的服务在 `/home/software/noVNC/utils/websockify` 中执行 `/usr/bin/python3.10 -m websockify`，使用包内源码并保留过期 token 插件、TLS 参数和低权用户。已更新程序的节点可以重新运行 `bash /home/software/QAgent/harden.sh --configure` 生成正确的服务。
+若日志在 `utils/websockify/run` 的 `cd "$(dirname "$0")"` 行报告 `SyntaxError: invalid syntax`，原因是旧服务把 Shell 启动脚本交给 Python 解释。修复后的服务在 `/home/software/noVNC/utils/websockify` 中通过选定的 Python 3.10 执行 `-m websockify`（1.0.8 新环境为 `/home/software/qagent-python/bin/python3.10`），使用包内源码并保留过期 token 插件、TLS 参数和低权用户。已更新程序的节点可以重新运行 `bash /home/software/QAgent/harden.sh --configure` 生成正确的服务。
 
 尚未部署修复包时，可仅修正旧服务的这两项后重启（整行执行）：
 
@@ -154,7 +196,7 @@ QAgent `1.0.5` 的安装、更新统一使用 `https://mirror.chuqiyun.com/softw
 cd /home/software/QAgent
 curl -fL --proto '=https' --proto-redir '=https' -o dependencies.json https://mirror.chuqiyun.com/software/QAgent/dependencies.json
 curl -fL --proto '=https' --proto-redir '=https' -o service/DependencyBundle.py https://mirror.chuqiyun.com/software/QAgent/service/DependencyBundle.py
-/usr/bin/python3.10 service/DependencyBundle.py install
+(umask 022; bash python-runtime.sh exec service/DependencyBundle.py install)
 ```
 
 发布维护：在具备网络的构建机安装 `setuptools==80.9.0 wheel==0.45.1`，执行 `python scripts/build_qagent_dependencies.py --output <新的输出目录>`，同时上传两个架构的 `.tar.gz` 并更新 QAgent 中的 `dependencies.json`。此脚本只用于发布机；节点始终通过 `--no-index --require-hashes --only-binary=:all:` 安装，不读取外部索引。

@@ -3,12 +3,14 @@ set -euo pipefail
 umask 077
 
 find /home/software/QAgent -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+source /home/software/QAgent/python-runtime.sh
+qagent_require_python
 
 # 存量节点先补录并验证安全配置，缺失时不安装依赖、不停止 noVNC。
 bash /home/software/QAgent/harden.sh --prepare-config
 
 # 校验、解析并安装自有镜像站依赖，完成前不能停止 noVNC 或替换其目录。
-/usr/bin/python3.10 /home/software/QAgent/service/DependencyBundle.py install
+(umask 022; qagent_python /home/software/QAgent/service/DependencyBundle.py install)
 
 apt-get install -y wget curl expect openvswitch-switch ifupdown2 sudo conntrack libsqlite3-dev openssl
 
@@ -103,7 +105,7 @@ function download_noVNC(){
 # 安装websockify
 function install_websockify(){
     cd /home/software/noVNC/utils/websockify
-    /usr/bin/python3.10 -c 'import websockify, redis, jwcrypto, requests'
+    qagent_python -c 'import websockify, redis, jwcrypto, requests'
     chmod +x /home/software/noVNC/utils/websockify/run
 }
 

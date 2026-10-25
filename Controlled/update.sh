@@ -76,6 +76,7 @@ function prepare_security_config(){
     # 在下载依赖、停服和替换代码前确认旧节点具备新的安全参数。
     source "${SCRIPT_DIR}/security.sh"
     security_require_root
+    qagent_require_python || fail "Python runtime is invalid; existing services were not changed"
     security_resolve_config "${QAGENT_MANAGER_IPS:-}" "${QAGENT_CERT_HOSTS:-}" \
         "${QAGENT_VNC_PROXY_IPS:-}" "${QAGENT_BACKEND_PORT:-}" \
         "${QIMENIDC_MANAGER_ENDPOINT:-}" "${QIMENIDC_CLUSTER_ID:-}"
@@ -90,13 +91,13 @@ function stage_package(){
     trap '[ -z "${STAGING_DIR}" ] || rm -rf -- "${STAGING_DIR}"' EXIT
     tar -zxf "${PACKAGE_PATH}" -C "${STAGING_DIR}" || fail "extract package error"
     local required
-    for required in main.py lib.sh qa.sh harden.sh security.sh service/SecurityConfig.py service/DependencyBundle.py dependencies.json; do
+    for required in main.py lib.sh qa.sh harden.sh security.sh python-runtime.sh service/SecurityConfig.py service/DependencyBundle.py dependencies.json; do
         [ -f "${STAGING_DIR}/${required}" ] && [ ! -L "${STAGING_DIR}/${required}" ] || fail "invalid package: missing ${required}"
     done
     normalize_shell_scripts "${STAGING_DIR}"
     # 新包也先读已有配置，失败时原目录、运行服务与证书仍然保留。
     bash "${STAGING_DIR}/harden.sh" --prepare-config || fail "security settings are incomplete; existing QAgent was not replaced"
-    /usr/bin/python3.10 "${STAGING_DIR}/service/DependencyBundle.py" prepare || fail "offline dependencies are not ready; existing QAgent was not replaced"
+    qagent_python "${STAGING_DIR}/service/DependencyBundle.py" prepare || fail "offline dependencies are not ready; existing QAgent was not replaced"
 }
 
 function install_package(){

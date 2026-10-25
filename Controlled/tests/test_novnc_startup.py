@@ -84,7 +84,11 @@ print(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
         source = AGENT_ROOT.joinpath('security.sh').read_text(encoding='utf-8')
         source = source.replace('/etc/systemd/system', shell_path(self.unit_dir))
         self.write(security_script, source)
+        self.write(self.root / 'python-runtime.sh',
+                   AGENT_ROOT.joinpath('python-runtime.sh').read_text(encoding='utf-8'))
         script = 'set -euo pipefail\nsource ' + shlex.quote(shell_path(security_script)) + '\n'
+        # 测试机没有节点专用 Python，只隔离运行时选择，保留真实单位文件生成。
+        script += 'qagent_require_python() { QAGENT_PYTHON=/home/software/qagent-python/bin/python3.10; }\n'
         for name, value in (
             ('QAGENT_HOME', AGENT_ROOT.as_posix()),
             ('NOVNC_HOME', self.novnc.as_posix()),
@@ -111,7 +115,7 @@ print(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
 
     def run_generated_command(self, *extra_args):
         command = shlex.split(self.service['ExecStart'])
-        self.assertEqual('/usr/bin/python3.10', command[0])
+        self.assertEqual('/home/software/qagent-python/bin/python3.10', command[0])
         # 测试机可没有 Linux 的 Python 3.10，仅替换解释器，保留其余生成参数。
         command[0] = sys.executable
         environment = os.environ.copy()

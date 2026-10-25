@@ -6,6 +6,7 @@ NOVNC_HOME="/home/software/noVNC"
 SECURITY_DIR="/etc/qimenidc"
 SECURITY_CONFIG="${SECURITY_DIR}/security.conf"
 SECURITY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "${SECURITY_SCRIPT_DIR}/python-runtime.sh"
 VNC_TOKEN_FILE="/home/software/vnc"
 VNC_TOKEN_USER="qimenvnc"
 # 主控出口地址探测目标与集群标识，随 security.conf 一起落盘
@@ -44,7 +45,7 @@ security_load_config() {
         [ "$(stat -c '%u:%a' "${SECURITY_CONFIG}")" = '0:600' ] ||
             { security_fail "${SECURITY_CONFIG} must be root-owned mode 600"; return 1; }
         local parsed name value
-        parsed=$(/usr/bin/python3.10 "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
+        parsed=$(qagent_python "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
         while IFS='=' read -r name value; do
             case "${name}" in
                 QAGENT_MANAGER_IPS|QAGENT_MANAGER_PROBES|QAGENT_STATIC_MANAGER_IPS|QAGENT_CERT_HOSTS|QAGENT_VNC_PROXY_IPS|QAGENT_BACKEND_PORT|QIMENIDC_MANAGER_ENDPOINT|QIMENIDC_CLUSTER_ID)
@@ -104,7 +105,7 @@ security_resolve_config() {
 }
 
 security_validate_manager_ips() {
-    /usr/bin/python3.10 - "$1" <<'PY'
+    qagent_python - "$1" <<'PY'
 import ipaddress
 import sys
 try:
@@ -126,7 +127,7 @@ PY
 }
 
 security_validate_cert_hosts() {
-    /usr/bin/python3.10 - "$1" <<'PY'
+    qagent_python - "$1" <<'PY'
 import ipaddress
 import re
 import sys
@@ -159,7 +160,7 @@ security_validate_cluster_id() {
 
 security_validate_manager_endpoint() {
     [ -z "$1" ] && return 0
-    /usr/bin/python3.10 - "$1" <<'PY'
+    qagent_python - "$1" <<'PY'
 import sys
 value = sys.argv[1].strip()
 host, _, port = value.rpartition(':')
@@ -177,7 +178,7 @@ security_validate_port() {
 security_save_config() {
     security_init_directory
     # 和 Python 同步接口使用相同的引用格式，不执行历史配置。
-    /usr/bin/python3.10 "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" --write "${SECURITY_CONFIG}" \
+    qagent_python "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" --write "${SECURITY_CONFIG}" \
         "QAGENT_MANAGER_IPS=${QAGENT_MANAGER_IPS}" \
         "QAGENT_MANAGER_PROBES=${QAGENT_MANAGER_PROBES:-}" \
         "QAGENT_STATIC_MANAGER_IPS=${QAGENT_STATIC_MANAGER_IPS:-}" \
@@ -382,6 +383,7 @@ security_run_service() {
 }
 
 security_write_novnc_unit() {
+    qagent_require_python || return 1
     # run 是 Shell 包装器，固定使用 Python 3.10 从源码目录启动模块。
     cat > /etc/systemd/system/noVNC.service <<EOF
 [Unit]
@@ -393,7 +395,7 @@ User=${VNC_TOKEN_USER}
 Group=${VNC_TOKEN_USER}
 WorkingDirectory=${NOVNC_HOME}/utils/websockify
 Environment=PYTHONPATH=${QAGENT_HOME}
-ExecStart=/usr/bin/python3.10 -m websockify --web ${NOVNC_HOME} --token-plugin service.VncTokenPlugin.ExpiringTokenFile --token-source ${VNC_TOKEN_FILE} --cert ${SECURITY_DIR}/novnc/qimenidc-vnc.crt --key ${SECURITY_DIR}/novnc/qimenidc-vnc.key --ssl-only 6080
+ExecStart=${QAGENT_PYTHON} -m websockify --web ${NOVNC_HOME} --token-plugin service.VncTokenPlugin.ExpiringTokenFile --token-source ${VNC_TOKEN_FILE} --cert ${SECURITY_DIR}/novnc/qimenidc-vnc.crt --key ${SECURITY_DIR}/novnc/qimenidc-vnc.key --ssl-only 6080
 Restart=on-failure
 UMask=0077
 NoNewPrivileges=true
@@ -414,6 +416,7 @@ EOF
 }
 
 security_write_qagent_unit() {
+    qagent_require_python || return 1
     cat > /etc/systemd/system/qagent.service <<EOF
 [Unit]
 Description=QimenIDC Controller (local backend behind TLS IP whitelist)
@@ -427,7 +430,7 @@ Environment=QIMEN_VNC_TOKEN_USER=${VNC_TOKEN_USER}
 Environment="QIMEN_VNC_PROXY_CIDRS=${QAGENT_VNC_PROXY_IPS}"
 Environment="QIMENIDC_MANAGER_ENDPOINT=${MANAGER_ENDPOINT}"
 Environment="QIMENIDC_CLUSTER_ID=${CLUSTER_ID}"
-ExecStart=/usr/bin/python3.10 ${QAGENT_HOME}/main.py
+ExecStart=${QAGENT_PYTHON} ${QAGENT_HOME}/main.py
 Restart=on-failure
 UMask=0077
 NoNewPrivileges=true

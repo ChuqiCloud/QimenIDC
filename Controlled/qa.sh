@@ -14,7 +14,7 @@ reset_token() {
     local token
     IFS= read -r -s -p "请输入主控 token: " token || return 1
     echo
-    if printf '%s\n' "$token" | sudo /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py set; then
+    if printf '%s\n' "$token" | sudo bash /home/software/QAgent/python-runtime.sh exec /home/software/QAgent/service/Authentication.py set; then
         echo "主控 token 已保存。"
     else
         echo "保存失败，请检查输入；原 token 未改变。"

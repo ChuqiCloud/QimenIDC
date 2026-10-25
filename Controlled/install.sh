@@ -53,43 +53,39 @@ function init_system_dir(){
     mkdir -p /home/software/websocketd
     mkdir -p /home/software/noVNC
     mkdir -p /home/software/QAgent
-    mkdir -p /home/software/python3.10.5
     # 创建空文件vnc
     touch /home/software/vnc
 }
-# 安装必须环境依赖
-function install_python_source(){
-    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev expect git
-}
-# 安装Python3.10.5
+# 安装独立 Python；先获取 QAgent 包，兼容单文件下载的一键安装入口。
 function install_python(){
-    #判断是否安装python3.10.5
-    if [ -f "/usr/bin/python3.10" ];then
-        echo "python3.10.5 has been installed!"
-    else
-        cd /home/software
-        # wget https://www.python.org/ftp/python/3.10.5/Python-3.10.5.tgz
-        wget https://mirror.chuqiyun.com/software/Python/Python-3.10.5.tgz
-        tar -zxvf Python-3.10.5.tgz
-        cd Python-3.10.5
-        ./configure --prefix=/home/software/python3.10.5
-        make && make install
-        ln -s /home/software/python3.10.5/bin/python3.10 /usr/bin/python3.10
-        ln -s /home/software/python3.10.5/bin/pip3.10 /usr/bin/pip3.10
-    fi
+    source /home/software/QAgent/python-runtime.sh
+    qagent_install_python || exit 1
+    qagent_require_python || exit 1
 }
 
 
 # 下载QimenIDC Controller
 function download_qimenidc_controller(){
-    cd /home/software
-    wget https://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz
-    tar -zxvf /home/software/QAgent.tar.gz -C /home/software/QAgent/
+    local package="${QAGENT_PACKAGE_PATH:-/home/software/QAgent.tar.gz}"
+    if [ -n "${QAGENT_PACKAGE_PATH:-}" ]; then
+        # 本地包使用绝对路径，避免后续切换工作目录时读取错误文件。
+        [[ "${package}" = /* ]] && [ -f "${package}" ] && [ ! -L "${package}" ] || {
+            echo "Error: QAGENT_PACKAGE_PATH must be an absolute path to a regular package file" >&2
+            exit 1
+        }
+    else
+        wget -O "${package}" https://mirror.chuqiyun.com/software/QAgent/QAgent.tar.gz
+    fi
+    tar -zxvf "${package}" -C /home/software/QAgent/
+    [ -f /home/software/QAgent/python-runtime.sh ] || {
+        echo "Error: this installer requires the complete QAgent 1.0.8 or newer package" >&2
+        exit 1
+    }
 }
 
 # 安装QimenIDC Controller依赖
 function install_qimenidc_controller_source(){
-    /usr/bin/python3.10 /home/software/QAgent/service/DependencyBundle.py install
+    (umask 022; qagent_python /home/software/QAgent/service/DependencyBundle.py install)
 }
 
 # 配置QimenIDC Controller token文件
@@ -97,7 +93,7 @@ function config_qimenidc_controller_token(){
     local token
     IFS= read -r -s -p "请输入主控 token: " token
     echo
-    printf '%s\n' "$token" | /usr/bin/python3.10 /home/software/QAgent/service/Authentication.py set
+    printf '%s\n' "$token" | qagent_python /home/software/QAgent/service/Authentication.py set
     echo "Manager token saved in /home/software/QAgent/token.key (root:root, 600)."
 }
 
@@ -147,7 +143,9 @@ function config_qimenidc_controller_service(){
 function delete_install_file(){
     rm -rf /home/software/Python-3.10.5
     rm -rf /home/software/Python-3.10.5.tgz
-    rm -rf /home/software/QAgent.tar.gz
+    if [ -z "${QAGENT_PACKAGE_PATH:-}" ]; then
+        rm -f /home/software/QAgent.tar.gz
+    fi
 }
 
 # 安装命令菜单脚本
@@ -205,7 +203,7 @@ function download_noVNC(){
 function install_websockify(){
     cd /home/software/noVNC/utils/websockify
     # websockify 及其全部依赖已从自有离线包安装，不再调用 easy_install。
-    /usr/bin/python3.10 -c 'import websockify, redis, jwcrypto, requests'
+    qagent_python -c 'import websockify, redis, jwcrypto, requests'
     chmod +x /home/software/noVNC/utils/websockify/run
 }
 
@@ -227,9 +225,8 @@ function execute_cloudbase(){
 function start_install(){
     update_source
     init_system_dir
-    install_python_source
-    install_python
     download_qimenidc_controller
+    install_python
     install_qimenidc_controller_source
     config_qimenidc_controller_port
     config_qimenidc_controller_token
