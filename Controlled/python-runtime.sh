@@ -71,7 +71,7 @@ qagent_install_python() (
     image="${build_dir}/image${QAGENT_RUNTIME_ROOT}"
     curl --fail --location --proto '=https' --proto-redir '=https' \
         --connect-timeout 30 --max-time 600 --retry 2 \
-        -o "${archive}" "https://www.python.org/ftp/python/${QAGENT_PYTHON_VERSION}/Python-${QAGENT_PYTHON_VERSION}.tar.xz" || return 1
+        -o "${archive}" "https://mirror.chuqiyun.com/software/QAgent/Python-${QAGENT_PYTHON_VERSION}.tar.xz" || return 1
     printf '%s  %s\n' "${QAGENT_PYTHON_SHA256}" "${archive}" | sha256sum --check --status || {
         qagent_runtime_fail "Python source SHA-256 mismatch; nothing was built"; return 1;
     }

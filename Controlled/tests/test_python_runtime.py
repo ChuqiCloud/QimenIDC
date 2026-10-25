@@ -315,6 +315,8 @@ printf 'package-helper-ready\n' >> "$QAGENT_TEST_ACTIONS"
         configure = next(line for line in actions if line.startswith('configure:'))
         self.assertIn('-O2', configure)
         self.assertIn('-fno-tree-dominator-opts', configure)
+        download = next(line for line in actions if line.startswith('curl:'))
+        self.assertIn('https://mirror.chuqiyun.com/software/QAgent/Python-3.10.22.tar.xz', download)
         self.assertTrue(any('altinstall' in line and 'DESTDIR=' in line for line in actions), actions)
         self.assertFalse(any(line.startswith(('ln:', 'systemctl:')) for line in actions), actions)
         self.assertFalse(self.system_python.exists())

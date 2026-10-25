@@ -6,7 +6,7 @@ QAgent now listens only on `127.0.0.1:17600`; nginx terminates TLS on the existi
 
 从 QAgent 1.0.8 开始，新安装在 `/home/software/qagent-python` 独立编译 Python 3.10.22，QAgent、noVNC、依赖安装和维护命令共用这个解释器。不会修改 `/usr/bin/python`、`/usr/bin/python3`、`/usr/bin/python3.10` 或 pip 的软链，也不会降低 PVE 的系统 Python 版本。Debian 12 默认 Python 3.11、Debian 13 默认 Python 3.13，均不决定被控服务使用的版本。
 
-离线包仍是 CPython 3.10 的 wheel，不能直接跳过 `DependencyBundle.py` 的版本检查来使用 Python 3.13。适配采用独立的较新 Python 3.10 补丁版，无需重新制作已有离线依赖。源码从 Python 官方 HTTPS 地址下载，并使用代码中固定的 SHA-256 校验。
+离线包仍是 CPython 3.10 的 wheel，不能直接跳过 `DependencyBundle.py` 的版本检查来使用 Python 3.13。适配采用独立的较新 Python 3.10 补丁版，无需重新制作已有离线依赖。源码从自有镜像站 HTTPS 下载，并使用代码中固定的 SHA-256 校验。
 
 针对 GCC 14 在 `Objects/complexobject.c` / `complex_pow` 的 `dom` 优化阶段出现 `double free`、`internal compiler error`，构建显式采用 GCC、`-O2 -fno-tree-dominator-opts`，不启用 PGO/LTO。每次都使用全新临时源码目录，编译或安装失败立即中止。通过解释器版本、SSL、SQLite、ctypes、压缩模块等检查后才发布运行环境；noVNC 用户可以读取该运行环境和依赖。此处是针对已知失败阶段的规避，仍需在目标 PVE 9 节点验证实际构建与业务。
 
@@ -28,7 +28,7 @@ bash python-runtime.sh install
 bash python-runtime.sh check
 ```
 
-这一步不会停止服务或修改 token、证书、NAT 数据。已有的 `/usr/bin/python3.10` 断链不妨碍专用环境安装，也不需要先覆盖它。编译需要可用的 Debian 软件源和 Python 官方下载地址。
+这一步不会停止服务或修改 token、证书、NAT 数据。已有的 `/usr/bin/python3.10` 断链不妨碍专用环境安装，也不需要先覆盖它。编译需要可用的 Debian 软件源以及镜像站的 Python 源码包。
 
 随后在该解释器安装原有离线依赖，再生成服务配置：
 
