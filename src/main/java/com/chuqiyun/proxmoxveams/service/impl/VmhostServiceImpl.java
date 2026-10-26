@@ -4287,7 +4287,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             log.error("[VPC-IP-Binding] 存在有效绑定冲突，拒绝创建转发: HostId={}, PublicIp={}, PrivateIp={}", hostId, publicIp, privateIp);
             return false;
         }
-        String deliveryMode = normalizeVpcPublicIpMode(node.getPublicIpMode());
+        String deliveryMode = normalizeVpcPublicIpMode(node.getPublicIpMode(), node.getPublicIpInterface());
         JSONObject publicIpResult = ClientApiUtil.ensureVpcPublicIp(node.getHost(), token, node.getControllerPort(),
                 publicIp, deliveryMode, node.getPublicIpInterface());
         // 老节点尚未升级 QAgent 时没有新接口；legacy 模式继续沿用原 NAT 流程，不能阻断已有 VPC。
@@ -4318,11 +4318,27 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private String normalizeVpcPublicIpMode(String mode) {
-        if (StringUtils.isBlank(mode)) {
-            return VPC_PUBLIC_IP_MODE_LEGACY;
+        return normalizeVpcPublicIpMode(mode, null);
+    }
+
+    /**
+     * Resolve how a VPC public address is delivered to the node.
+     *
+     * A node with a configured public-IP interface (for example vmbr0) must
+     * receive an address alias even when it was created before the delivery
+     * mode column existed and therefore still contains the default legacy
+     * value.  Keep legacy NAT behavior for nodes without an interface.
+     */
+    private String normalizeVpcPublicIpMode(String mode, String interfaceName) {
+        String normalized = StringUtils.isBlank(mode) ? VPC_PUBLIC_IP_MODE_LEGACY
+                : mode.trim().toLowerCase(Locale.ROOT);
+        if ("auto".equals(normalized)) {
+            normalized = StringUtils.isBlank(interfaceName) ? VPC_PUBLIC_IP_MODE_LEGACY : "l2_alias";
         }
-        String normalized = mode.trim().toLowerCase(Locale.ROOT);
-        return Set.of("legacy", "routed", "l2_alias", "proxy_arp").contains(normalized)
+        if (VPC_PUBLIC_IP_MODE_LEGACY.equals(normalized) && StringUtils.isNotBlank(interfaceName)) {
+            return "l2_alias";
+        }
+        return Set.of(VPC_PUBLIC_IP_MODE_LEGACY, "routed", "l2_alias", "proxy_arp").contains(normalized)
                 ? normalized : VPC_PUBLIC_IP_MODE_LEGACY;
     }
 
@@ -4349,7 +4365,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
 
     private NatOperationResult delVmhostVpcIpForwardLocked(int hostId, String publicIp, String privateIp) {
         String token = configService.getToken();
-        Master node = masterService.getById(this.getVmhostNodeId(hostId));
+        // 清理转发时 VM 已在回收站，不能使用只查询 delete_state=0 的 getVmhostNodeId。
+        Vmhost vmhost = this.getById(hostId);
+        Master node = vmhost == null ? null : masterService.getById(vmhost.getNodeid());
         if (node == null || publicIp == null || privateIp == null) {
             return NatOperationResult.failure("VPC 转发删除参数无效或宿主机节点不存在");
         }

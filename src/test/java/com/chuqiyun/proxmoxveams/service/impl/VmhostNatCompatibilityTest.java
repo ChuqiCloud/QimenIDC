@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.NatForwardRuleService;
 import com.chuqiyun.proxmoxveams.service.NatForwardSyncService;
+import com.chuqiyun.proxmoxveams.service.VpcIpBindingService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.ClientPayloadUtil;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -74,6 +75,7 @@ class VmhostNatCompatibilityTest {
     private NatForwardRuleService natForwardRuleService;
     private NatForwardSyncService natForwardSyncService;
     private ConfigService configService;
+    private VpcIpBindingService vpcIpBindingService;
     private Object previousClientMasterService;
 
     @BeforeEach
@@ -87,6 +89,7 @@ class VmhostNatCompatibilityTest {
         natForwardRuleService = mock(NatForwardRuleService.class);
         natForwardSyncService = mock(NatForwardSyncService.class);
         configService = mock(ConfigService.class);
+        vpcIpBindingService = mock(VpcIpBindingService.class);
         node = node();
 
         when(masterService.getById(NODE_ID)).thenReturn(node);
@@ -105,11 +108,54 @@ class VmhostNatCompatibilityTest {
         ReflectionTestUtils.setField(service, "natForwardRuleService", natForwardRuleService);
         ReflectionTestUtils.setField(service, "natForwardSyncService", natForwardSyncService);
         ReflectionTestUtils.setField(service, "configService", configService);
+        ReflectionTestUtils.setField(service, "vpcIpBindingService", vpcIpBindingService);
     }
 
     @AfterEach
     void clearClientApiMasterService() {
         ReflectionTestUtils.setField(ClientApiUtil.class, "masterService", previousClientMasterService);
+    }
+
+    @Test
+    void deletesVpcForwardForRecycledVmWithoutUsingActiveOnlyNodeLookup() throws Exception {
+        Vmhost recycledVm = vm();
+        recycledVm.setDeleteState(1);
+        recycledVm.setNetworkType("vpc");
+        doReturn(recycledVm).when(service).getById(VM_ID);
+        doReturn(null).when(service).getVmhostNodeId(VM_ID);
+        when(natForwardSyncService.deleteIpForwardRule(NODE_ID, SOURCE_IP)).thenReturn(true);
+
+        try (TestQAgent agent = startQAgent()) {
+            node.setControllerPort(agent.port());
+
+            NatOperationResult result = service.delVmhostVpcIpForwardWithResult(
+                    VM_ID, SOURCE_IP, DESTINATION_IP);
+
+            assertTrue(result.isSuccess(), result.getMessage());
+            assertEquals(List.of("/nat/deleteIpForward"), agent.paths());
+            JSONObject request = agent.requests().get(0);
+            assertEquals(VM_ID, request.getIntValue("vm"));
+            assertEquals(SOURCE_IP, request.getString("source_ip"));
+            assertEquals(DESTINATION_IP, request.getString("destination_ip"));
+            verify(service, never()).getVmhostNodeId(VM_ID);
+            verify(natForwardSyncService).deleteIpForwardRule(NODE_ID, SOURCE_IP);
+        }
+    }
+
+    @Test
+    void recycledVmCannotDeleteVpcForwardOwnedByAnotherVm() {
+        Vmhost recycledVm = vm();
+        recycledVm.setDeleteState(1);
+        doReturn(recycledVm).when(service).getById(VM_ID);
+        NatForwardRule otherVmForward = rule(0, VM_ID + 1, DESTINATION_IP, 0, null);
+        when(natForwardRuleService.getOne(any(QueryWrapper.class))).thenReturn(otherVmForward);
+
+        NatOperationResult result = service.delVmhostVpcIpForwardWithResult(
+                VM_ID, SOURCE_IP, DESTINATION_IP);
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("不匹配"));
+        verify(natForwardSyncService, never()).deleteIpForwardRule(NODE_ID, SOURCE_IP);
     }
 
     @Test
