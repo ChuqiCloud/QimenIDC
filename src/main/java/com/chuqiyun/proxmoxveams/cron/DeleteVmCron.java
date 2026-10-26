@@ -390,7 +390,11 @@ public class DeleteVmCron {
         if (!Boolean.TRUE.equals(vmhostService.clearVmhostVpcIpBinding(vmhost.getId()))) {
             throw new IllegalStateException("清理虚拟机 VPC IP 绑定失败，停止释放公网 IP");
         }
-        ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), vmhost.getIpList());
+        // VPC 的 vmhost.ipList 保存的是私网地址，公网地址绑定在 ippool 且只可
+        // 通过 vm_id 关联。传入 null 让释放逻辑释放该 VM 在节点上的全部公网池 IP，
+        // 避免拿私网地址去匹配公网 IP 池导致“未找到可释放IP”。
+        List<String> releaseIpList = isVpcNetwork(vmhost) ? null : vmhost.getIpList();
+        ippoolService.releaseIppoolByNodeIdAndVmId(vmhost.getNodeid(), vmhost.getVmid(), releaseIpList);
         vmhost.setDeleteState(2);
         vmhost.setExpirationTime(System.currentTimeMillis());
         vmhostService.updateById(vmhost);

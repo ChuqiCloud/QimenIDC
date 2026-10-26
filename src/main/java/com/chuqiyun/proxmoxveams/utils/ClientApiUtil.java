@@ -811,12 +811,31 @@ public class ClientApiUtil {
             paramMap.put("interface", interfaceName);
         }
         try {
-            return postControllerApi(url, paramMap, token);
+            return flattenPublicIpResponse(postControllerApi(url, paramMap, token));
         } catch (RestClientException e) {
             System.out.println("[VPC-PUBLIC-IP] ensure request failed url=" + url + ", publicIp=" + publicIp
                     + ", error=" + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * QAgent 返回的公网接入状态位于 data 对象中，而主控内部需要同时读取
+     * code 和状态字段。保留原始 data，同时把状态字段提升到顶层，兼容旧调用方。
+     */
+    private static JSONObject flattenPublicIpResponse(JSONObject response) {
+        if (response == null) {
+            return null;
+        }
+        JSONObject data = response.getJSONObject("data");
+        if (data != null) {
+            for (String key : data.keySet()) {
+                if (!response.containsKey(key)) {
+                    response.put(key, data.get(key));
+                }
+            }
+        }
+        return response;
     }
 
     public static JSONObject releaseVpcPublicIp(String ip, String token, Integer controllerPort,

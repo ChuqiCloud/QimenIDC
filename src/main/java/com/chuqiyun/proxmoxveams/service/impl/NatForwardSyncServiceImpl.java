@@ -7,11 +7,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.NatForwardRule;
 import com.chuqiyun.proxmoxveams.entity.NatSyncState;
+import com.chuqiyun.proxmoxveams.entity.VpcIpBinding;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.NatForwardRuleService;
 import com.chuqiyun.proxmoxveams.service.NatForwardSyncService;
 import com.chuqiyun.proxmoxveams.service.NatSyncStateService;
+import com.chuqiyun.proxmoxveams.service.VpcIpBindingService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -44,6 +46,8 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
     private MasterService masterService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private VpcIpBindingService vpcIpBindingService;
 
     @Override
     public synchronized boolean savePortRule(Integer nodeId, Integer hostId, String sourceIp, Integer sourcePort,
@@ -141,8 +145,107 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
             }
             synchronized (NatForwardSyncService.class) {
                 syncNode(node);
+                // NAT 同步不会补齐历史 VPC 公网地址。节点升级或公网接入
+                // 模式切换后，独立执行一次幂等 ensure，修复“规则存在但
+                // vmbr0 没有 /32 地址”的旧绑定。
+                try {
+                    reconcileVpcPublicIpAddresses(node);
+                } catch (Exception e) {
+                    // 补偿失败不能阻断其他节点的 NAT 同步；下一个周期继续重试。
+                    log.warn("[VPC-IP-RECONCILE] 节点补偿任务异常: NodeId={}, Error={}",
+                            node.getId(), e.getMessage());
+                }
             }
         }
+    }
+
+    private void reconcileVpcPublicIpAddresses(Master node) {
+        if (node == null || node.getId() == null || StringUtils.isBlank(node.getHost())
+                || node.getControllerPort() == null || StringUtils.isBlank(node.getPublicIpInterface())) {
+            return;
+        }
+        String mode = normalizeVpcPublicIpMode(node.getPublicIpMode(), node.getPublicIpInterface());
+        if ("legacy".equals(mode)) {
+            return;
+        }
+        List<NatForwardRule> rules = natForwardRuleService.list(new QueryWrapper<NatForwardRule>()
+                .eq("node_id", node.getId())
+                .eq("rule_type", RULE_TYPE_IP)
+                .orderByAsc("id"));
+        if (rules == null || rules.isEmpty()) {
+            return;
+        }
+        for (NatForwardRule rule : rules) {
+            if (rule == null || StringUtils.isBlank(rule.getSourceIp())) {
+                continue;
+            }
+            try {
+                JSONObject result = ClientApiUtil.ensureVpcPublicIp(node.getHost(), configService.getToken(),
+                        node.getControllerPort(), rule.getSourceIp(), mode, node.getPublicIpInterface());
+                if (result == null || !Objects.equals(result.getInteger("code"), 200)) {
+                    updateVpcBindingState(rule, null, abbreviate(result == null ? "QAgent无响应" : result.getString("message")));
+                    log.warn("[VPC-IP-RECONCILE] 公网地址补偿失败: NodeId={}, PublicIp={}, Mode={}, Result={}",
+                            node.getId(), rule.getSourceIp(), mode, result);
+                } else {
+                    updateVpcBindingState(rule, result, null);
+                    log.debug("[VPC-IP-RECONCILE] 公网地址已确认: NodeId={}, PublicIp={}, Interface={}, Mode={}",
+                            node.getId(), rule.getSourceIp(), node.getPublicIpInterface(), mode);
+                }
+            } catch (Exception e) {
+                updateVpcBindingState(rule, null, abbreviate(e.getMessage()));
+                log.warn("[VPC-IP-RECONCILE] 公网地址补偿异常: NodeId={}, PublicIp={}, Error={}",
+                        node.getId(), rule.getSourceIp(), e.getMessage());
+            }
+        }
+    }
+
+    private void updateVpcBindingState(NatForwardRule rule, JSONObject result, String error) {
+        if (rule == null || rule.getHostId() == null || StringUtils.isBlank(rule.getSourceIp())
+                || vpcIpBindingService == null) {
+            return;
+        }
+        try {
+            VpcIpBinding binding = vpcIpBindingService.getOne(new QueryWrapper<VpcIpBinding>()
+                    .eq("host_id", rule.getHostId())
+                    .eq("public_ip", rule.getSourceIp())
+                    .eq("status", 1)
+                    .last("limit 1"));
+            if (binding == null) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            binding.setLastCheckTime(now);
+            binding.setUpdateTime(now);
+            if (result != null) {
+                binding.setDeliveryMode(StringUtils.defaultIfBlank(result.getString("mode"), binding.getDeliveryMode()));
+                binding.setInterfaceName(StringUtils.defaultIfBlank(result.getString("interface"), binding.getInterfaceName()));
+                if (Boolean.TRUE.equals(result.getBoolean("address_installed"))) {
+                    binding.setAddressInstalled(1);
+                }
+                if (Boolean.TRUE.equals(result.getBoolean("route_installed"))) {
+                    binding.setRouteInstalled(1);
+                }
+                binding.setLastError(null);
+            } else {
+                binding.setLastError(StringUtils.defaultIfBlank(error, "公网地址补偿失败"));
+            }
+            vpcIpBindingService.updateById(binding);
+        } catch (Exception e) {
+            log.warn("[VPC-IP-RECONCILE] 更新绑定状态失败: HostId={}, PublicIp={}, Error={}",
+                    rule.getHostId(), rule.getSourceIp(), e.getMessage());
+        }
+    }
+
+    private String normalizeVpcPublicIpMode(String mode, String interfaceName) {
+        String normalized = StringUtils.isBlank(mode) ? "legacy" : mode.trim().toLowerCase(Locale.ROOT);
+        if ("auto".equals(normalized)) {
+            return StringUtils.isBlank(interfaceName) ? "legacy" : "l2_alias";
+        }
+        if ("legacy".equals(normalized) && StringUtils.isNotBlank(interfaceName)) {
+            return "l2_alias";
+        }
+        return Objects.equals(normalized, "routed") || Objects.equals(normalized, "l2_alias")
+                || Objects.equals(normalized, "proxy_arp") ? normalized : "legacy";
     }
 
     private void syncNode(Master node) {

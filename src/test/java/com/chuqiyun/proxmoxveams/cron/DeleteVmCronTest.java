@@ -140,7 +140,7 @@ class DeleteVmCronTest {
             operations.add("vpc-binding-clear");
             return true;
         });
-        when(ippoolService.releaseIppoolByNodeIdAndVmId(3, 101, vmhost.getIpList())).thenAnswer(invocation -> {
+        when(ippoolService.releaseIppoolByNodeIdAndVmId(3, 101, null)).thenAnswer(invocation -> {
             operations.add("public-ip-release");
             return 1;
         });
@@ -162,7 +162,7 @@ class DeleteVmCronTest {
                 () -> invokePrivate("finishDeletedVm", new Class<?>[]{Task.class, Vmhost.class}, task, vmhost));
 
         assertEquals(IllegalStateException.class, thrown.getCause().getClass());
-        verify(ippoolService, never()).releaseIppoolByNodeIdAndVmId(3, 101, vmhost.getIpList());
+        verify(ippoolService, never()).releaseIppoolByNodeIdAndVmId(3, 101, null);
     }
 
     @Test
@@ -176,7 +176,7 @@ class DeleteVmCronTest {
                 () -> invokePrivate("finishDeletedVm", new Class<?>[]{Task.class, Vmhost.class}, task, vmhost));
 
         assertEquals(IllegalStateException.class, thrown.getCause().getClass());
-        verify(ippoolService, never()).releaseIppoolByNodeIdAndVmId(3, 101, vmhost.getIpList());
+        verify(ippoolService, never()).releaseIppoolByNodeIdAndVmId(3, 101, null);
     }
 
     private Vmhost vpcVmhost() {
@@ -185,7 +185,8 @@ class DeleteVmCronTest {
         vmhost.setNodeid(3);
         vmhost.setVmid(101);
         vmhost.setNetworkType("vpc");
-        vmhost.setIpList(List.of("198.51.100.10"));
+        // VPC 的 ipList 保存私网地址；公网地址来自节点 ippool，不能拿这个值过滤公网池。
+        vmhost.setIpList(List.of("172.16.0.5"));
         return vmhost;
     }
 
