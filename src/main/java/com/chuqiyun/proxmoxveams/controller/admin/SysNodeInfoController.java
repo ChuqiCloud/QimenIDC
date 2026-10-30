@@ -38,7 +38,12 @@ public class SysNodeInfoController {
         HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         JSONObject nodeStatus = proxmoxApiUtil.getNodeStatusByOne(node, authentications);
-        return ResponseResult.ok(nodeStatus.getJSONObject("data"));
+        JSONObject data = nodeStatus.getJSONObject("data");
+        if (data != null) {
+            data.put("qagentVersion", node.getQagentVersion());
+            data.put("qagentLatestVersion", node.getQagentLatestVersion());
+        }
+        return ResponseResult.ok(data);
     }
 
     @AdminApiCheck

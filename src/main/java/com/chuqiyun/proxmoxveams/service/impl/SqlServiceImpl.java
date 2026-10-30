@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 @Service("sqlService")
 public class SqlServiceImpl implements SqlService {
     private static final String SCHEMA_REPAIR_BUILD = "1.3.4_9";
+    private static final String NODE_AGENT_VERSION_BUILD = "1.3.5_3";
     private static final Pattern SINGLE_COLUMN_ADD = Pattern.compile(
             "(?is)^alter\\s+table\\s+([a-z0-9_]+)\\s+add\\s+([a-z0-9_]+)\\s+(.+)$");
     @Value("${info.application.version}")
@@ -135,7 +136,9 @@ public class SqlServiceImpl implements SqlService {
                     continue;
                 }
                 UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "执行数据库升级SQL: {}", stepBuildVersion);
-                boolean migrationSucceeded = SCHEMA_REPAIR_BUILD.equals(stepBuildVersion)
+                // 加列成功后仍可能在凭据迁移或版本写回时中断，重启必须允许安全重试。
+                boolean migrationSucceeded = (SCHEMA_REPAIR_BUILD.equals(stepBuildVersion)
+                        || NODE_AGENT_VERSION_BUILD.equals(stepBuildVersion))
                         ? executeSchemaRepairSqlList(buildSqlStep.getSqlList())
                         : executeSqlList(buildSqlStep.getSqlList());
                 if (!migrationSucceeded) {

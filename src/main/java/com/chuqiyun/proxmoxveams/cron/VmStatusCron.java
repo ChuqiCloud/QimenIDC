@@ -16,6 +16,7 @@ import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
@@ -56,6 +57,8 @@ public class VmStatusCron {
     private VmhostService vmhostService;
     @Resource
     private TaskService taskService;
+    @Resource
+    private VmIdReservationService vmIdReservationService;
 
     /**
     * @Author: mryunqi
@@ -73,6 +76,12 @@ public class VmStatusCron {
         queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
+            if (vmIdReservationService.isHostReserved(task.getHostid())) {
+                task.setStatus(3);
+                task.setError("迁移任务占用虚拟机，已拒绝启动源虚拟机");
+                taskService.updateById(task);
+                return;
+            }
             // 设置任务状态为1 1为正在执行
             task.setStatus(1);
             taskService.updateById(task);
@@ -804,6 +813,8 @@ public class VmStatusCron {
             QueryWrapper<Vmhost> queryWrap = new QueryWrapper<>();
             // 筛选状态不为6
             queryWrap.ne("status", 5);
+            // 到期扫描持续读取第一页；迁移中的VM必须从查询排除，避免跳过后无限重复同一页。
+            queryWrap.notInSql("id", "select host_id from vm_id_reservation where host_id is not null");
             // 筛选expirationTime小于等于当前时间
             queryWrap.le("expiration_time", System.currentTimeMillis());
             // 分页获取10行节点实例
@@ -814,6 +825,9 @@ public class VmStatusCron {
                 break;
             }
             for (Vmhost vmhost : vmList){
+                if (vmIdReservationService.isHostReserved(vmhost.getId())) {
+                    continue;
+                }
                 // 判断是否正在运行
                 if (vmhost.getStatus() == 0){
                     // 如果正在运行则创建关机任务

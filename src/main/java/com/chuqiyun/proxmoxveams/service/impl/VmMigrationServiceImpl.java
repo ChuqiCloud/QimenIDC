@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.constant.TaskType;
@@ -18,6 +19,7 @@ import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmMigrationService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -67,7 +69,8 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     /**
      * 失败后可以直接续跑的阶段：打包/导入/网络重建都可在原资源配置上继续
      */
-    private static final List<String> RESUMABLE_STAGES = Arrays.asList("BACKUP", "RESTORE", "NETWORK_REBIND", "START_TARGET_VM");
+    private static final List<String> RESUMABLE_STAGES = Arrays.asList("BACKUP", "RESTORE", "NETWORK_REBIND", "START_TARGET_VM",
+            "CLEANUP_SOURCE", "RELEASE_SOURCE_NETWORK");
 
     @Resource
     private TaskService taskService;
@@ -77,6 +80,8 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     private MasterService masterService;
     @Resource
     private ConfigService configService;
+    @Resource
+    private VmIdReservationService vmIdReservationService;
 
     @Override
     public synchronized VmMigrationBatchDto submit(VmMigrationParams params) {
@@ -98,6 +103,14 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (targetNode == null) {
             for (Integer hostId : hostIds) {
                 result.getItems().add(VmMigrationBatchDto.Item.rejected(hostId, "目标宿主机不存在"));
+            }
+            result.setRejectedCount(hostIds.size());
+            return result;
+        }
+        String targetCapabilityError = checkAgentCapabilities(targetNode);
+        if (targetCapabilityError != null) {
+            for (Integer hostId : hostIds) {
+                result.getItems().add(VmMigrationBatchDto.Item.rejected(hostId, targetCapabilityError));
             }
             result.setRejectedCount(hostIds.size());
             return result;
@@ -130,16 +143,21 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (reason != null) {
             return VmMigrationBatchDto.Item.rejected(hostId, reason);
         }
+        Master sourceNode = masterService.getById(vmhost.getNodeid());
+        String sourceCapabilityError = sourceNode == null ? "源宿主机不存在" : checkAgentCapabilities(sourceNode);
+        if (sourceCapabilityError != null) {
+            return VmMigrationBatchDto.Item.rejected(hostId, sourceCapabilityError);
+        }
         Integer targetVmid = params.getHostIds() == null || params.getHostIds().isEmpty() ? params.getTargetVmid() : null;
-        if (targetVmid == null) {
-            targetVmid = vmhostService.getNewVmid(targetNode.getId());
-        }
-        if (targetVmid == null || targetVmid <= 0) {
-            return VmMigrationBatchDto.Item.rejected(hostId, "targetVmid自动分配失败");
-        }
-        // 分配器只看 PVE 与虚拟机表，尚未导入的迁移任务也必须预留 VMID，避免覆盖同批镜像。
+        // 兼容历史任务里的显式预留；新任务统一通过数据库锁与唯一约束分配。
         if (reservedTargetVmids.contains(targetVmid)) {
             return VmMigrationBatchDto.Item.rejected(hostId, "目标VMID已被其他迁移任务预留，请稍后重试或指定其他VMID");
+        }
+        String reservationOwner = "migration:" + UUID.randomUUID();
+        try {
+            targetVmid = vmIdReservationService.reserve(targetNode.getId(), targetVmid, reservationOwner, hostId);
+        } catch (IllegalStateException e) {
+            return VmMigrationBatchDto.Item.rejected(hostId, e.getMessage());
         }
 
         Map<Object, Object> taskParams = new HashMap<>();
@@ -149,9 +167,10 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         taskParams.put("targetNodeId", targetNode.getId());
         taskParams.put("sourceVmid", vmhost.getVmid());
         taskParams.put("targetVmid", targetVmid);
+        taskParams.put("vmIdReservationOwner", reservationOwner);
         taskParams.put("targetStorage", resolveTargetStorage(params.getTargetStorage(), targetNode));
         taskParams.put("backupDir", params.getBackupDir());
-        taskParams.put("startAfterMigration", Boolean.TRUE.equals(params.getStartAfterMigration()));
+        taskParams.put("startAfterMigration", !Boolean.FALSE.equals(params.getStartAfterMigration()));
         taskParams.put("stage", "PENDING");
         taskParams.put("progress", 0);
         taskParams.put("retryCount", 0);
@@ -166,6 +185,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         task.setCreateDate(System.currentTimeMillis());
         task.setParams(taskParams);
         if (!taskService.insertTask(task)) {
+            vmIdReservationService.release(reservationOwner);
             return VmMigrationBatchDto.Item.rejected(hostId, "创建迁移任务失败");
         }
         reservedTargetVmids.add(targetVmid);
@@ -174,6 +194,25 @@ public class VmMigrationServiceImpl implements VmMigrationService {
                 "迁移任务入队, taskId={}, hostId={}, sourceNodeId={}, targetNodeId={}, batchId={}",
                 task.getId(), hostId, vmhost.getNodeid(), targetNode.getId(), batchId);
         return VmMigrationBatchDto.Item.accepted(hostId, task.getId());
+    }
+
+    private String checkAgentCapabilities(Master node) {
+        try {
+            JSONObject response = requestMigrationCapabilities(node);
+            JSONObject data = response == null ? null : response.getJSONObject("data");
+            if (response != null && Integer.valueOf(200).equals(response.getInteger("code")) && data != null
+                    && data.getIntValue("protocol") >= 2 && data.getBooleanValue("temporary_channel")
+                    && data.getBooleanValue("safe_restore") && data.getBooleanValue("source_identity")) {
+                return null;
+            }
+        } catch (RuntimeException ignored) {
+            // 能力未知时停止入队，不在旧版被控上尝试带破坏性的恢复操作。
+        }
+        return "节点" + node.getId() + "的QAgent尚不支持安全迁移协议，请先升级该节点被控并确认连接正常";
+    }
+
+    protected JSONObject requestMigrationCapabilities(Master node) {
+        return ClientApiUtil.getMigrationCapabilities(node, configService.getToken());
     }
 
     private Set<Integer> reservedTargetVmids(Integer targetNodeId) {
@@ -459,11 +498,20 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (!Integer.valueOf(3).equals(task.getStatus())) {
             throw new IllegalStateException("只有失败的迁移任务可以从断点继续");
         }
-        Map<Object, Object> params = safeParams(task);
+        Map<Object, Object> params = new HashMap<>(safeParams(task));
+        if ("CANCELLED".equals(stringValue(params.get("stage")))) {
+            throw new IllegalStateException("已取消的迁移任务不能继续");
+        }
         String failedStage = stringValue(params.get("lastFailedStep"));
         if (failedStage == null || !RESUMABLE_STAGES.contains(failedStage)) {
             throw new IllegalStateException("当前失败步骤不支持续跑，请重新发起迁移");
         }
+        if (("CLEANUP_SOURCE".equals(failedStage) || "RELEASE_SOURCE_NETWORK".equals(failedStage))
+                && !Boolean.TRUE.equals(params.get("targetCommitted"))) {
+            throw new IllegalStateException("目标虚拟机尚未提交，不能从源端清理步骤继续");
+        }
+        vmIdReservationService.assertOwned(toInteger(params.get("targetNodeId")),
+                toInteger(params.get("targetVmid")), stringValue(params.get("vmIdReservationOwner")));
         QueryWrapper<Task> runningWrapper = new QueryWrapper<>();
         runningWrapper.eq("type", TaskType.MIGRATE_VM);
         runningWrapper.eq("hostid", task.getHostid());
@@ -479,12 +527,15 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         params.put("resumeFromStage", resumeStage);
         params.put("stage", "PENDING");
         params.put("progress", 0);
+        params.put("retryCount", (toInteger(params.get("retryCount")) == null ? 0 : toInteger(params.get("retryCount"))) + 1);
         params.put("updateTime", System.currentTimeMillis());
         appendTaskLog(task, params, "从 " + STAGE_TEXT.getOrDefault(resumeStage, resumeStage) + " 步骤继续");
         task.setParams(params);
         task.setStatus(0);
         task.setError(null);
-        taskService.updateTask(task);
+        if (!taskService.update(task, new UpdateWrapper<Task>().eq("id", taskId).eq("status", 3).set("error", null))) {
+            throw new IllegalStateException("迁移任务状态已改变，请刷新后重试");
+        }
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM,
                 "迁移任务从断点继续, taskId={}, resumeFromStage={}", task.getId(), resumeStage);
         return task;
@@ -499,12 +550,20 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         if (!Integer.valueOf(0).equals(task.getStatus())) {
             return false;
         }
-        Map<Object, Object> params = safeParams(task);
+        Map<Object, Object> params = new HashMap<>(safeParams(task));
+        // 已执行任务的目标资源必须从原任务继续处理，不能取消后遗失唯一的清理入口。
+        if (params.get("checkpointStage") != null || params.get("sourceSnapshot") != null
+                || (toInteger(params.get("retryCount")) != null && toInteger(params.get("retryCount")) > 0)) {
+            return false;
+        }
         params.put("stage", "CANCELLED");
         task.setParams(params);
         task.setStatus(3);
         task.setError("用户取消了排队中的迁移任务");
-        taskService.updateTask(task);
+        if (!taskService.update(task, new UpdateWrapper<Task>().eq("id", taskId).eq("status", 0))) {
+            return false;
+        }
+        vmIdReservationService.release(stringValue(params.get("vmIdReservationOwner")));
         return true;
     }
 
@@ -518,7 +577,9 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     }
 
     public boolean isResumable(Task task, String stage) {
-        return Integer.valueOf(3).equals(task.getStatus()) && stage != null && RESUMABLE_STAGES.contains(stage);
+        return Integer.valueOf(3).equals(task.getStatus()) && stage != null && RESUMABLE_STAGES.contains(stage)
+                && (!List.of("CLEANUP_SOURCE", "RELEASE_SOURCE_NETWORK").contains(stage)
+                || Boolean.TRUE.equals(safeParams(task).get("targetCommitted")));
     }
 
     private String resolveStage(Task task, Map<Object, Object> params) {

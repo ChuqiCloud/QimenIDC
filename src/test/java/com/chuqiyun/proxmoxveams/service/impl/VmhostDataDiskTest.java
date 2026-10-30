@@ -140,6 +140,7 @@ class VmhostDataDiskTest {
         when(masterService.getMasterCookieMap(NODE_ID)).thenReturn(new HashMap<>(Map.of(
                 "cookie", "PVEAuthCookie=test-ticket", "CSRFPreventionToken", "test-csrf")));
         service = spy(new VmhostServiceImpl());
+        ReflectionTestUtils.setField(service, "vmIdReservationService", mock(com.chuqiyun.proxmoxveams.service.VmIdReservationService.class));
         ReflectionTestUtils.setField(service, "masterService", masterService);
         doReturn(vm).when(service).getById(HOST_ID);
         doAnswer(invocation -> {

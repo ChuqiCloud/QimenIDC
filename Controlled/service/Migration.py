@@ -1,20 +1,116 @@
 import codecs
+from contextlib import contextmanager
 import glob
 import hashlib
+import hmac
+import http.client
 import json
 import os
 import re
 import shlex
+import ssl
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+
+try:
+    import fcntl
+except ImportError:  # Windows 开发环境仅使用进程内锁；生产被控运行于 Linux。
+    fcntl = None
 
 
 MIGRATION_HOME = "/home/software/QAgent/migration"
 STATUS_DIR = os.path.join(MIGRATION_HOME, "status")
 DEFAULT_BACKUP_DIR = os.path.join(MIGRATION_HOME, "backups")
+_task_locks = {}
+_task_locks_guard = threading.Lock()
+_state_lock = threading.RLock()
+
+
+def validate_task_id(task_id):
+    if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,95}", task_id):
+        raise ValueError("invalid migration task id")
+    return task_id
+
+
+@contextmanager
+def task_lock(task_id):
+    """同一任务一次只执行一个阶段，重试不能与未结束的 qmrestore 并发。"""
+    validate_task_id(task_id)
+    ensure_dirs()
+    with _task_locks_guard:
+        lock = _task_locks.setdefault(task_id, threading.Lock())
+    if not lock.acquire(blocking=False):
+        raise RuntimeError("migration task is already running")
+    try:
+        with open(os.path.join(STATUS_DIR, task_id + ".lock"), "a") as file:
+            if fcntl:
+                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                yield
+            finally:
+                if fcntl:
+                    fcntl.flock(file, fcntl.LOCK_UN)
+    finally:
+        lock.release()
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for block in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def read_vm_config(vmid):
+    result = subprocess.run(["qm", "config", str(int(vmid))], capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(f"cannot read VM {int(vmid)} configuration")
+    return dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+
+
+def vm_identity(vmid):
+    config = read_vm_config(vmid)
+    # 网卡和启动参数会由主控重建；UUID 与磁盘卷身份在迁移生命周期内保持不变。
+    identity = {key: value for key, value in config.items()
+                if key in ("smbios1", "vmgenid") or (re.fullmatch(r"(?:scsi|sata|virtio|ide)\d+", key)
+                   and "cloudinit" not in value.lower() and "media=cdrom" not in value.lower())}
+    if not identity:
+        raise RuntimeError(f"VM {int(vmid)} has no verifiable identity")
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def cluster_vm_exists(vmid):
+    result = subprocess.run(["pvesh", "get", "/cluster/resources", "--type", "vm",
+                             "--output-format", "json"], capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError("cannot check cluster VMID allocation")
+    try:
+        return any(int(item["vmid"]) == int(vmid) for item in json.loads(result.stdout))
+    except (ValueError, TypeError, KeyError) as error:
+        raise RuntimeError("invalid cluster VMID allocation response") from error
+
+
+def bind_task(task_id, field, value):
+    current = read_status(task_id).get(field)
+    if current is not None and current != value:
+        raise RuntimeError("migration task identity differs from the original request")
+    write_status(task_id, **{field: value})
+
+
+def task_backup_dir(item):
+    root = os.path.realpath(item.backup_dir or DEFAULT_BACKUP_DIR)
+    # 不允许通过接口把归档写到程序目录或任意系统路径。
+    allowed = os.path.realpath(DEFAULT_BACKUP_DIR)
+    if os.path.commonpath((root, allowed)) != allowed:
+        raise ValueError("migration backup directory must be inside the migration backup root")
+    path = os.path.join(root, validate_task_id(item.task_id))
+    ensure_dirs(path)
+    return path
 
 
 class InvalidRestoreArchive(RuntimeError):
@@ -22,16 +118,24 @@ class InvalidRestoreArchive(RuntimeError):
 
 
 def ensure_dirs(path=None):
-    os.makedirs(MIGRATION_HOME, exist_ok=True)
-    os.makedirs(STATUS_DIR, exist_ok=True)
-    os.makedirs(DEFAULT_BACKUP_DIR, exist_ok=True)
+    os.makedirs(MIGRATION_HOME, mode=0o700, exist_ok=True)
+    os.makedirs(STATUS_DIR, mode=0o700, exist_ok=True)
+    os.makedirs(DEFAULT_BACKUP_DIR, mode=0o700, exist_ok=True)
     if path:
-        os.makedirs(path, exist_ok=True)
+        os.makedirs(path, mode=0o700, exist_ok=True)
+    for directory in (MIGRATION_HOME, STATUS_DIR, DEFAULT_BACKUP_DIR):
+        os.chmod(directory, 0o700)
+
+
+def validate_archive_filename(filename):
+    if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,180}\.vma(?:\.zst)?", filename):
+        raise ValueError("invalid migration archive filename")
+    return filename
 
 
 def status_path(task_id):
     ensure_dirs()
-    return os.path.join(STATUS_DIR, f"{task_id}.json")
+    return os.path.join(STATUS_DIR, f"{validate_task_id(task_id)}.json")
 
 
 def read_status(task_id):
@@ -44,28 +148,40 @@ def read_status(task_id):
             "progress": 0,
             "message": "task not found",
         }
-    with open(path, "r", encoding="utf-8") as file:
-        return json.load(file)
+    with _state_lock:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
 
 
 def write_status(task_id, **kwargs):
+    with _state_lock:
+        return _write_status(task_id, **kwargs)
+
+
+def _write_status(task_id, **kwargs):
     data = {}
     path = status_path(task_id)
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as file:
                 data = json.load(file)
-        except Exception:
-            data = {}
+        except (OSError, ValueError) as error:
+            raise RuntimeError("migration state cannot be read safely") from error
     data.update(kwargs)
     data["task_id"] = task_id
     data["update_time"] = int(time.time())
-    with open(path, "w", encoding="utf-8") as file:
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as file:
+        os.chmod(temporary, 0o600)
         json.dump(data, file, ensure_ascii=False, indent=2)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)
     return data
 
 
 def append_log(task_id, message):
+    validate_task_id(task_id)
     ensure_dirs()
     log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
     with open(log_path, "a", encoding="utf-8", newline="\n") as file:
@@ -73,6 +189,7 @@ def append_log(task_id, message):
 
 
 def log_size(task_id):
+    validate_task_id(task_id)
     log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
     try:
         return os.path.getsize(log_path)
@@ -82,6 +199,7 @@ def log_size(task_id):
 
 def read_log(task_id, offset=0, limit=64 * 1024):
     """按字节偏移增量读取日志，主控据此做日志轮询。"""
+    validate_task_id(task_id)
     ensure_dirs()
     log_path = os.path.join(STATUS_DIR, f"{task_id}.log")
     if not os.path.exists(log_path):
@@ -204,12 +322,52 @@ def command_output(command):
     return subprocess.getoutput(command)
 
 
-def download_file_with_progress(task_id, source_url, source_token, backup_file, start, end):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("backup download redirects are not allowed")
+
+
+def backup_download_opener(source_url, source_certificate=None):
+    parsed = urllib.parse.urlsplit(source_url)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.fragment or parsed.query):
+        raise ValueError("backup source must be an HTTPS URL without user info or fragment")
+    if not re.fullmatch(r"/migration-transfer/[0-9a-f]{32}/[A-Za-z0-9][A-Za-z0-9_.-]{0,180}\.vma\.zst", parsed.path):
+        raise ValueError("backup source must use a task-scoped migration transfer channel")
+    # 自签节点证书由主控已登记的证书提供信任，仍校验目标地址/SAN，禁止 verify=False。
+    if not source_certificate:
+        raise ValueError("source node certificate is required for migration transfer")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(cadata=source_certificate)
+    pinned = hashlib.sha256(ssl.PEM_cert_to_DER_cert(source_certificate)).digest()
+
+    class PinnedHTTPSConnection(http.client.HTTPSConnection):
+        def connect(self):
+            super().connect()
+            # TLS 握手及主机名校验后、HTTP Authorization 发出前核对节点叶子证书。
+            actual = hashlib.sha256(self.sock.getpeercert(binary_form=True)).digest()
+            if not hmac.compare_digest(actual, pinned):
+                self.close()
+                raise ssl.SSLError("source node certificate differs from the registered certificate")
+
+    class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(PinnedHTTPSConnection, req, context=self._context)
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(),
+                                       PinnedHTTPSHandler(context=context))
+
+
+def download_file_with_progress(task_id, source_url, source_token, backup_file, start, end,
+                                source_certificate=None, archive_sha256=None, archive_size=None):
+    opener = backup_download_opener(source_url, source_certificate)
+    if not source_token:
+        raise ValueError("backup source authorization is required")
     ensure_dirs(os.path.dirname(backup_file))
     update = progress_writer(task_id, "TRANSFER", start, end, "downloading backup file")
     headers = {"Authorization": source_token}
     resume_size = os.path.getsize(backup_file) if os.path.exists(backup_file) else 0
-    source_fingerprint = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+    source_fingerprint = hashlib.sha256((str(archive_size) + ":" + (archive_sha256 or source_url)).encode("utf-8")).hexdigest()
     previous = read_status(task_id)
     if (previous.get("backup_file") != backup_file
             or previous.get("download_source") != source_fingerprint):
@@ -222,10 +380,11 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
                  download_source=source_fingerprint)
     if resume_size > 0:
         headers["Range"] = f"bytes={resume_size}-"
-    append_log(task_id, f"$ download {source_url} -> {backup_file}")
+    # 查询串可能含主控一次性授权，不写入日志。
+    append_log(task_id, f"download backup archive -> {backup_file}")
     request = urllib.request.Request(source_url, headers=headers)
     try:
-        response = urllib.request.urlopen(request, timeout=30)
+        response = opener.open(request, timeout=30)
     except urllib.error.HTTPError as error:
         if error.code != 416 or resume_size <= 0:
             raise
@@ -235,7 +394,7 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
             pass
         resume_size = 0
         headers.pop("Range", None)
-        response = urllib.request.urlopen(urllib.request.Request(source_url, headers=headers), timeout=30)
+        response = opener.open(urllib.request.Request(source_url, headers=headers), timeout=30)
 
     with response:
         code = getattr(response, "status", response.getcode())
@@ -249,14 +408,20 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
             total_size = 0 if match.group(3) == "*" else int(match.group(3))
             if not total_size or range_end >= total_size or range_end < resume_size:
                 raise RuntimeError("server returned an invalid content range for the backup download")
+            if not content_length or int(content_length) != range_end - resume_size + 1:
+                raise RuntimeError("server returned an invalid range length for the backup download")
             downloaded = resume_size
             mode = "ab"
         else:
             if code != 200:
                 raise RuntimeError(f"unexpected backup download response: HTTP {code}")
             total_size = int(content_length) if content_length else 0
+            if total_size <= 0:
+                raise RuntimeError("backup download requires a positive Content-Length")
             downloaded = 0
             mode = "wb"
+        if archive_size and total_size != archive_size:
+            raise RuntimeError("backup download size differs from the source archive")
         update(0, force=True, backup_file=backup_file, size=downloaded)
         with open(backup_file, mode) as file:
             while True:
@@ -265,13 +430,21 @@ def download_file_with_progress(task_id, source_url, source_token, backup_file, 
                     break
                 file.write(chunk)
                 downloaded += len(chunk)
+                if downloaded > total_size:
+                    raise RuntimeError("backup download exceeds its declared size")
                 if total_size > 0:
                     update(downloaded * 100.0 / total_size, backup_file=backup_file, size=downloaded)
         final_size = os.path.getsize(backup_file)
         if total_size > 0 and final_size != total_size:
             write_status(task_id, download_complete=False, backup_file=backup_file, size=final_size)
             raise RuntimeError(f"backup download incomplete: expected {total_size} bytes, got {final_size}")
-        write_status(task_id, download_complete=True, backup_file=backup_file, size=final_size)
+        digest = sha256_file(backup_file)
+        if archive_sha256 and digest != archive_sha256:
+            with open(backup_file, "wb"):
+                pass
+            raise InvalidRestoreArchive("backup download SHA-256 does not match the source archive")
+        write_status(task_id, download_complete=True, backup_file=backup_file, size=final_size,
+                     archive_sha256=digest)
         update(100, force=True, backup_file=backup_file, size=final_size)
         append_log(task_id, f"downloaded {final_size} bytes")
 
@@ -371,18 +544,25 @@ def patch_invalid_vm_bridges(task_id, vmid):
             continue
         patched_config = set_config_option(config, "bridge", fallback_bridge)
         original_networks[key] = config
+        # 先持久化原配置，单条 qm set 失败或进程重启后仍可恢复已经改动的网卡。
+        saved = read_status(task_id).get("original_networks", {})
+        saved[key] = config
+        write_status(task_id, original_networks=saved)
         append_log(task_id, f"VM {vmid} {key} bridge {bridge} does not exist, temporarily using {fallback_bridge} for backup")
         run_command(task_id, f"qm set {int(vmid)} --{key} {shlex.quote(patched_config)}")
     return original_networks
 
 
 def restore_vm_networks(task_id, vmid, original_networks):
+    failures = []
     for key, config in original_networks.items():
         try:
             append_log(task_id, f"restore VM {vmid} {key} after backup")
             run_command(task_id, f"qm set {int(vmid)} --{key} {shlex.quote(config)}")
         except Exception as error:
             append_log(task_id, f"failed to restore VM {vmid} {key}: {error}")
+            failures.append(key)
+    return failures
 
 
 def validate_restore_archive(task_id, backup_file):
@@ -447,153 +627,180 @@ def find_backup_file(vmid, backup_dir):
 
 def backup_ready(status):
     backup_file = status.get("backup_file")
-    return bool(backup_file) and os.path.exists(backup_file)
-
-
-def restore_ready(status):
-    return status.get("status") == "SUCCESS" and status.get("stage") == "RESTORE_DONE"
-
-
-def backup_file_candidates(item):
-    """下载文件名单调推进：被控重启、backup_dir 变更后仍能定位到已完成下载的镜像。"""
-    candidates = []
-    status_backup = read_status(item.task_id).get("backup_file")
-    if status_backup:
-        # 源端与被控端 backup_dir 可能不同，同名字段在两边含义不同，按 basename 对齐
-        candidates.append(os.path.join(item.backup_dir, os.path.basename(status_backup)))
-        candidates.append(status_backup)
-    source_name = os.path.basename((item.source_url or "").split("?")[0])
-    if source_name:
-        candidates.append(os.path.join(item.backup_dir, source_name))
-    candidates.append(os.path.join(item.backup_dir, f"{item.task_id}.vma.zst"))
-    result = []
-    for candidate in candidates:
-        if candidate and candidate not in result:
-            result.append(candidate)
-    return result
-
-
-def resolve_restore_file(item):
-    for candidate in backup_file_candidates(item):
-        if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
-            return candidate
-    return backup_file_candidates(item)[0]
-
-
-def restore_file_ready(item):
-    backup_file = resolve_restore_file(item)
-    status = read_status(item.task_id)
-    if not os.path.exists(backup_file) or not status.get("download_complete"):
-        return None
-    size = os.path.getsize(backup_file)
-    source = hashlib.sha256(item.source_url.encode("utf-8")).hexdigest()
-    if (size <= 0 or status.get("backup_file") != backup_file or status.get("size") != size
-            or status.get("download_source") != source):
-        return None
-    return backup_file
+    return (bool(backup_file) and status.get("backup_complete")
+            and os.path.isfile(backup_file) and os.path.getsize(backup_file) == status.get("size")
+            and status.get("backup_sha256")
+            and [os.stat(backup_file).st_dev, os.stat(backup_file).st_ino,
+                 os.stat(backup_file).st_mtime_ns] == status.get("backup_file_identity"))
 
 
 def run_backup(item):
-    ensure_dirs(item.backup_dir)
+    with task_lock(item.task_id):
+        _run_backup(item)
+
+
+def _run_backup(item):
     task_id = item.task_id
     original_networks = {}
+    source_verified = False
+    completed = None
     try:
+        backup_dir = task_backup_dir(item)
+        if not cluster_vm_exists(item.vmid):
+            raise RuntimeError(f"source VM {int(item.vmid)} does not exist")
+        identity = {"vmid": item.vmid, "fingerprint": vm_identity(item.vmid)}
+        bind_task(task_id, "source_identity", identity)
+        source_verified = True
+        original_networks = read_status(task_id).get("original_networks", {})
+        if original_networks:
+            if restore_vm_networks(task_id, item.vmid, original_networks):
+                raise RuntimeError("source VM network recovery failed before backup retry")
+            write_status(task_id, original_networks={})
+            original_networks = {}
         # 阶段幂等：已经产出可用镜像时直接拿现成文件，避免从头重新打包
         existing = read_status(task_id)
         if backup_ready(existing):
+            if vm_status(item.vmid) != "stopped":
+                raise RuntimeError("source VM was restarted after backup; refusing to reuse a stale archive")
             append_log(task_id, f"reuse existing backup file: {existing.get('backup_file')}")
             write_status(task_id, status="SUCCESS", stage="BACKUP_DONE", progress=100,
                          backup_file=existing.get("backup_file"), resumed=True)
             return
 
         write_status(task_id, status="RUNNING", stage="CHECKING", progress=5, vmid=item.vmid,
-                     backup_dir=item.backup_dir, resumed=False)
+                     backup_dir=backup_dir, resumed=False, backup_complete=False)
         shutdown_vm(task_id, item.vmid, item.shutdown_timeout)
+        if vm_status(item.vmid) != "stopped":
+            raise RuntimeError("source VM did not stop; backup refused")
         original_networks = patch_invalid_vm_bridges(task_id, item.vmid)
         update_backup_progress = progress_writer(task_id, "BACKUP", 20, 99, "running vzdump")
         run_command(
             task_id,
-            f"vzdump {int(item.vmid)} --mode stop --compress zstd --dumpdir {shlex.quote(item.backup_dir)}",
+            f"vzdump {int(item.vmid)} --mode stop --compress zstd --dumpdir {shlex.quote(backup_dir)}",
             update_backup_progress
         )
-        backup_file = find_backup_file(item.vmid, item.backup_dir)
+        backup_file = find_backup_file(item.vmid, backup_dir)
         if not backup_file:
             raise RuntimeError("backup file not found after vzdump")
-        write_status(task_id, status="SUCCESS", stage="BACKUP_DONE", progress=100, backup_file=backup_file, size=os.path.getsize(backup_file))
+        validate_restore_archive(task_id, backup_file)
+        stat = os.stat(backup_file)
+        completed = {"backup_file": backup_file, "size": stat.st_size,
+                     "backup_size": stat.st_size, "backup_sha256": sha256_file(backup_file),
+                     "backup_file_identity": [stat.st_dev, stat.st_ino, stat.st_mtime_ns]}
     except Exception as error:
         write_status(task_id, status="FAILED", stage="BACKUP_FAILED", progress=0, error=str(error))
         append_log(task_id, str(error))
     finally:
-        restore_vm_networks(task_id, item.vmid, original_networks)
+        if source_verified:
+            saved_networks = read_status(task_id).get("original_networks", {}) or original_networks
+            if restore_vm_networks(task_id, item.vmid, saved_networks):
+                completed = None
+                write_status(task_id, status="FAILED", stage="BACKUP_FAILED", backup_complete=False,
+                             error="source VM network recovery failed; original configuration retained for retry")
+            else:
+                write_status(task_id, original_networks={})
+    if completed:
+        write_status(task_id, status="SUCCESS", stage="BACKUP_DONE", progress=100,
+                     backup_complete=True, error=None, **completed)
 
 
 def start_backup(item):
-    write_status(item.task_id, status="RUNNING", stage="QUEUED", progress=1)
     thread = threading.Thread(target=run_backup, args=(item,))
     thread.daemon = True
     thread.start()
 
 
 def run_restore(item):
-    ensure_dirs(item.backup_dir)
+    with task_lock(item.task_id):
+        _run_restore(item)
+
+
+def _run_restore(item):
     task_id = item.task_id
     try:
+        expected_size = getattr(item, "archive_size", None)
+        expected_digest = getattr(item, "archive_sha256", None)
+        if not expected_size or not re.fullmatch(r"[0-9a-f]{64}", expected_digest or ""):
+            raise ValueError("archive_size and archive_sha256 are required")
+        identity = {"vmid": item.target_vmid, "storage": item.target_storage,
+                    "size": expected_size, "sha256": expected_digest}
+        bind_task(task_id, "restore_identity", identity)
         existing = read_status(task_id)
-        if restore_ready(existing):
+        if existing.get("restore_complete"):
+            if not cluster_vm_exists(item.target_vmid) or vm_identity(item.target_vmid) != existing.get("target_identity"):
+                raise RuntimeError("completed restore target VM is missing or its identity changed")
             append_log(task_id, "restore already finished, skip")
+            write_status(task_id, status="SUCCESS", stage="RESTORE_DONE", progress=100, error=None)
             return
-        backup_file = resolve_restore_file(item)
+        if cluster_vm_exists(item.target_vmid):
+            raise RuntimeError(f"target VMID {int(item.target_vmid)} already exists; automatic overwrite is forbidden")
+        directory = task_backup_dir(item)
+        backup_file = os.path.join(directory, "backup.vma.zst")
         resumed = False
-        downloaded = restore_file_ready(item)
-        if downloaded:
-            # 断点续跑：上一轮已经把镜像拉完整，直接进入校验与导入
-            backup_file = downloaded
+        if (existing.get("download_complete") and os.path.isfile(backup_file)
+                and os.path.getsize(backup_file) == expected_size and sha256_file(backup_file) == expected_digest):
             resumed = True
-            append_log(task_id, f"reuse downloaded backup file: {backup_file}, size={os.path.getsize(backup_file)}")
-            write_status(task_id, status="RUNNING", stage="TRANSFER", progress=56, backup_file=backup_file,
-                         message="backup file already downloaded", resumed=True)
+            append_log(task_id, "reuse complete archive for the same source SHA-256")
         else:
-            append_log(task_id, "no complete backup file on target, download from source")
-            download_file_with_progress(task_id, item.source_url, item.source_token, backup_file, 1, 55)
-
-        if not os.path.exists(backup_file) or os.path.getsize(backup_file) <= 0:
-            raise RuntimeError("downloaded backup file is empty")
+            download_file_with_progress(task_id, item.source_url, item.source_token, backup_file, 1, 55,
+                                        getattr(item, "source_certificate", None), expected_digest, expected_size)
+        if os.path.getsize(backup_file) != expected_size or sha256_file(backup_file) != expected_digest:
+            raise InvalidRestoreArchive("downloaded archive size or SHA-256 does not match the source")
         try:
             validate_restore_archive(task_id, backup_file)
         except InvalidRestoreArchive:
-            # 完整传输也可能留下损坏的文件，下一次续跑必须从干净文件重新下载。
             write_status(task_id, download_complete=False)
             with open(backup_file, "wb"):
                 pass
             raise
         update_restore_progress = progress_writer(task_id, "RESTORE", 56, 99, "running qmrestore")
-        run_command(
-            task_id,
-            f"qmrestore {shlex.quote(backup_file)} {int(item.target_vmid)} --storage {shlex.quote(item.target_storage)} --force",
-            update_restore_progress
-        )
+        if cluster_vm_exists(item.target_vmid):
+            raise RuntimeError(f"target VMID {int(item.target_vmid)} was allocated during transfer")
+        run_command(task_id,
+                    f"qmrestore {shlex.quote(backup_file)} {int(item.target_vmid)} --storage {shlex.quote(item.target_storage)}",
+                    update_restore_progress)
         write_status(task_id, status="SUCCESS", stage="RESTORE_DONE", progress=100, backup_file=backup_file,
-                     target_vmid=item.target_vmid, target_storage=item.target_storage, resumed=resumed)
+                     target_vmid=item.target_vmid, target_storage=item.target_storage, resumed=resumed,
+                     restore_complete=True, target_identity=vm_identity(item.target_vmid), error=None)
     except Exception as error:
         write_status(task_id, status="FAILED", stage="RESTORE_FAILED", progress=0, error=str(error))
         append_log(task_id, str(error))
 
 
 def start_restore(item):
-    write_status(item.task_id, status="RUNNING", stage="QUEUED", progress=1)
     thread = threading.Thread(target=run_restore, args=(item,))
     thread.daemon = True
     thread.start()
 
 
 def cleanup_source_vm(item):
+    with task_lock(item.task_id):
+        _cleanup_source_vm(item)
+
+
+def _cleanup_source_vm(item):
     try:
+        original = read_status(item.task_id)
+        identity = original.get("source_identity")
+        if not identity or identity.get("vmid") != item.vmid or not original.get("backup_complete"):
+            raise RuntimeError("source cleanup requires a completed backup bound to this task and VM")
+        exists = cluster_vm_exists(item.vmid)
+        if not exists:
+            if original.get("cleanup_started"):
+                write_status(item.task_id, status="SUCCESS", stage="CLEANUP_DONE", progress=100, cleanup_complete=True, error=None)
+                return
+            raise RuntimeError("source VM is missing before cleanup was authorized")
+        if vm_identity(item.vmid) != identity.get("fingerprint"):
+            raise RuntimeError("source VM identity changed; cleanup refused")
+        if vm_status(item.vmid) != "stopped":
+            raise RuntimeError("source VM must remain stopped before cleanup")
         write_status(item.task_id, status="RUNNING", stage="CLEANUP_SOURCE", progress=95)
         if vm_status(item.vmid) == "stopped":
             append_log(item.task_id, f"VM {item.vmid} already stopped, purge config and disks")
         purge = "--purge" if item.purge else ""
+        write_status(item.task_id, cleanup_started=True)
         run_command(item.task_id, f"qm destroy {int(item.vmid)} {purge}")
-        write_status(item.task_id, status="SUCCESS", stage="CLEANUP_DONE", progress=100)
+        write_status(item.task_id, status="SUCCESS", stage="CLEANUP_DONE", progress=100, cleanup_complete=True, error=None)
     except Exception as error:
         write_status(item.task_id, status="FAILED", stage="CLEANUP_FAILED", progress=95, error=str(error))
         append_log(item.task_id, str(error))
@@ -601,30 +808,65 @@ def cleanup_source_vm(item):
 
 def run_action(item):
     """主控显式指定阶段时只做一件事，主控因此可以把迁移切成可重试的小步。"""
+    with task_lock(item.task_id):
+        _run_action(item)
+
+
+def _run_action(item):
     action = (item.action or "").strip().lower()
     append_log(item.task_id, f"run migration action: {action}")
     if action == "cleanup-source":
-        cleanup_source_vm(item)
+        _cleanup_source_vm(item)
         return
     if action == "backup":
         if item.vmid is None:
             write_status(item.task_id, status="FAILED", stage="BACKUP_FAILED", progress=0, error="vmid is required")
             return
-        run_backup(item)
+        _run_backup(item)
         return
     if action == "restore":
         if not item.source_url or item.target_vmid is None or not item.target_storage:
             write_status(item.task_id, status="FAILED", stage="RESTORE_FAILED", progress=0,
                          error="source_url, target_vmid and target_storage are required")
             return
-        run_restore(item)
+        _run_restore(item)
         return
     write_status(item.task_id, status="FAILED", stage="UNKNOWN_ACTION", progress=0, error=f"unknown action: {item.action}")
+
+
+def start_action(item):
+    """立即回应接收状态，长任务不占用 HTTP 连接，主控继续轮询阶段结果。"""
+    validate_task_id(item.task_id)
+    accepted = threading.Event()
+    result = {}
+
+    def execute():
+        executing = False
+        try:
+            with task_lock(item.task_id):
+                executing = True
+                write_status(item.task_id, status="RUNNING", stage="QUEUED", progress=1)
+                result.update(read_status(item.task_id))
+                accepted.set()
+                _run_action(item)
+        except Exception as error:
+            # 重复请求不可覆盖正在执行的任务状态。
+            if executing:
+                write_status(item.task_id, status="FAILED", stage="ACTION_FAILED", progress=0, error=str(error))
+            result.update(read_status(item.task_id))
+            result["message"] = str(error)
+            accepted.set()
+
+    thread = threading.Thread(target=execute, daemon=True)
+    thread.start()
+    if not accepted.wait(5):
+        raise RuntimeError("migration worker could not acknowledge the request")
+    return result
 
 
 def get_backup_file(task_id):
     status = read_status(task_id)
     backup_file = status.get("backup_file")
-    if not backup_file or not os.path.exists(backup_file):
+    if not backup_file or not backup_ready(status):
         return None
     return backup_file

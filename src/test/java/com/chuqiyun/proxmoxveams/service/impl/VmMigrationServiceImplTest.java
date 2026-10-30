@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
+import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
@@ -41,6 +43,7 @@ class VmMigrationServiceImplTest {
     private TaskService taskService;
     private VmhostService vmhostService;
     private MasterService masterService;
+    private VmIdReservationService reservationService;
     private VmMigrationServiceImpl service;
     private final List<Task> inserted = new ArrayList<>();
 
@@ -49,11 +52,22 @@ class VmMigrationServiceImplTest {
         taskService = mock(TaskService.class);
         vmhostService = mock(VmhostService.class);
         masterService = mock(MasterService.class);
+        reservationService = mock(VmIdReservationService.class);
         inserted.clear();
-        service = new VmMigrationServiceImpl();
+        service = spy(new VmMigrationServiceImpl());
         ReflectionTestUtils.setField(service, "taskService", taskService);
         ReflectionTestUtils.setField(service, "vmhostService", vmhostService);
         ReflectionTestUtils.setField(service, "masterService", masterService);
+        ReflectionTestUtils.setField(service, "vmIdReservationService", reservationService);
+        JSONObject capability = JSONObject.parseObject("{\"code\":200,\"data\":{\"protocol\":2,\"temporary_channel\":true,\"safe_restore\":true,\"source_identity\":true}}");
+        doReturn(capability).when(service).requestMigrationCapabilities(any(Master.class));
+        Master source = new Master();
+        source.setId(1);
+        source.setNodeName("source");
+        when(masterService.getById(1)).thenReturn(source);
+        when(reservationService.reserve(anyInt(), nullable(Integer.class), anyString(), anyInt()))
+                .thenAnswer(invocation -> invocation.getArgument(1) == null ? 201 + inserted.size() : invocation.getArgument(1));
+        when(taskService.update(any(Task.class), any())).thenReturn(true);
         when(taskService.insertTask(any(Task.class))).thenAnswer(invocation -> {
             Task task = invocation.getArgument(0);
             task.setId(100 + inserted.size() + 1);
@@ -89,7 +103,6 @@ class VmMigrationServiceImplTest {
         when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
         when(vmhostService.getById(2)).thenReturn(vmhost(2, 102, 1));
         when(vmhostService.getById(3)).thenReturn(vmhost(3, 103, 1));
-        when(vmhostService.getNewVmid(2)).thenReturn(201, 202, 203);
         when(taskService.getOne(any())).thenReturn(null);
 
         VmMigrationParams params = new VmMigrationParams();
@@ -107,6 +120,7 @@ class VmMigrationServiceImplTest {
             assertEquals(0, task.getStatus());
             batchIds.add(String.valueOf(task.getParams().get("batchId")));
             assertEquals("PENDING", task.getParams().get("stage"));
+            assertEquals(true, task.getParams().get("startAfterMigration"));
         }
         assertEquals(1, batchIds.stream().distinct().count());
         assertEquals(result.getBatchId(), batchIds.get(0));
@@ -117,7 +131,6 @@ class VmMigrationServiceImplTest {
         when(masterService.getById(2)).thenReturn(targetNode());
         when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 2));
         when(vmhostService.getById(2)).thenReturn(vmhost(2, 102, 1));
-        when(vmhostService.getNewVmid(2)).thenReturn(202);
         when(taskService.getOne(any())).thenReturn(new Task());
 
         VmMigrationParams params = new VmMigrationParams();
@@ -138,7 +151,8 @@ class VmMigrationServiceImplTest {
         when(masterService.getById(2)).thenReturn(targetNode());
         when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
         when(vmhostService.getById(2)).thenReturn(vmhost(2, 102, 1));
-        when(vmhostService.getNewVmid(2)).thenReturn(201);
+        when(reservationService.reserve(anyInt(), nullable(Integer.class), anyString(), anyInt()))
+                .thenReturn(201).thenThrow(new IllegalStateException("目标VMID已被其他迁移任务预留"));
         VmMigrationParams params = new VmMigrationParams();
         params.setHostIds(Arrays.asList(1, 2));
         params.setTargetNodeId(2);
@@ -194,7 +208,7 @@ class VmMigrationServiceImplTest {
         assertEquals("PENDING", resumed.getParams().get("stage"));
         assertEquals("RESTORE", resumed.getParams().get("resumeFromStage"));
         assertNull(resumed.getError());
-        verify(taskService).updateTask(task);
+        verify(taskService).update(org.mockito.ArgumentMatchers.eq(task), any());
     }
 
     @Test
@@ -205,7 +219,7 @@ class VmMigrationServiceImplTest {
         task.setStatus(3);
         task.setHostid(1);
         Map<Object, Object> params = new HashMap<>();
-        params.put("lastFailedStep", "CLEANUP_SOURCE");
+        params.put("lastFailedStep", "UNKNOWN");
         task.setParams(params);
         when(taskService.getById(9)).thenReturn(task);
 
@@ -379,5 +393,82 @@ class VmMigrationServiceImplTest {
         verify(taskService, never()).insertTask(any());
         verify(vmhostService, never()).getNewVmid(anyInt());
         verify(taskService, never()).getOne(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
+    }
+
+    @Test
+    void missingSafeMigrationCapabilitiesRejectsBeforeAnyResourceReservation() {
+        when(masterService.getById(2)).thenReturn(targetNode());
+        when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
+        doReturn(JSONObject.parseObject("{\"code\":200,\"data\":{\"protocol\":1}}"))
+                .when(service).requestMigrationCapabilities(any(Master.class));
+        VmMigrationParams params = new VmMigrationParams();
+        params.setHostId(1);
+        params.setTargetNodeId(2);
+
+        VmMigrationBatchDto result = service.submit(params);
+
+        assertEquals(0, result.getAcceptedCount());
+        assertTrue(result.getItems().get(0).getMessage().contains("先升级"));
+        verify(reservationService, never()).reserve(anyInt(), nullable(Integer.class), anyString(), anyInt());
+        verify(taskService, never()).insertTask(any());
+    }
+
+    @Test
+    void sourceCapabilityFailureAlsoRejectsBeforeResourceReservation() {
+        when(masterService.getById(2)).thenReturn(targetNode());
+        when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
+        Master source = masterService.getById(1);
+        doReturn(null).when(service).requestMigrationCapabilities(source);
+        VmMigrationParams params = new VmMigrationParams();
+        params.setHostId(1);
+        params.setTargetNodeId(2);
+
+        assertEquals(0, service.submit(params).getAcceptedCount());
+        verify(reservationService, never()).reserve(anyInt(), nullable(Integer.class), anyString(), anyInt());
+        verify(taskService, never()).insertTask(any());
+    }
+
+    @Test
+    void cancelCannotReleaseReservationAfterWorkerHasClaimedTask() {
+        Task task = new Task();
+        task.setId(13);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(0);
+        task.setParams(new HashMap<>(Map.of("vmIdReservationOwner", "migration:13")));
+        when(taskService.getById(13)).thenReturn(task);
+        when(taskService.update(any(Task.class), any())).thenReturn(false);
+
+        assertFalse(service.cancel(13));
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void cancellingQueuedRetryRetainsPotentiallyRestoredTargetReservation() {
+        Task task = new Task();
+        task.setId(13);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(0);
+        task.setParams(new HashMap<>(Map.of("vmIdReservationOwner", "migration:13", "retryCount", 1)));
+        when(taskService.getById(13)).thenReturn(task);
+
+        assertFalse(service.cancel(13));
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void committedCleanupFailureCanResumeWithoutRebuildingOrReleasingTarget() {
+        Task task = new Task();
+        task.setId(13);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(3);
+        task.setParams(new HashMap<>(Map.of("vmIdReservationOwner", "migration:13", "lastFailedStep", "CLEANUP_SOURCE",
+                "targetCommitted", true, "targetNodeId", 2, "targetVmid", 201)));
+        when(taskService.getById(13)).thenReturn(task);
+
+        Task result = service.resume(13);
+
+        assertEquals("CLEANUP_SOURCE", result.getParams().get("resumeFromStage"));
+        verify(reservationService).assertOwned(2, 201, "migration:13");
+        verify(reservationService, never()).release(anyString());
     }
 }

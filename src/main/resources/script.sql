@@ -1,3 +1,23 @@
+create table vm_id_allocation_lock
+(
+    id int primary key
+) engine=InnoDB;
+
+insert into vm_id_allocation_lock (id) values (1);
+
+create table vm_id_reservation
+(
+    node_id int not null,
+    vmid int not null,
+    owner varchar(100) not null,
+    host_id int null,
+    source_node_id int null,
+    create_time bigint not null,
+    primary key (node_id, vmid),
+    unique index uk_vm_id_reservation_owner (owner),
+    unique index uk_vm_id_reservation_host (host_id)
+) engine=InnoDB;
+
 create table area
 (
     id     int auto_increment
@@ -146,6 +166,7 @@ create table master
     backup_storage    varchar(255)               null,
     controller_status int                        null,
     controller_port   int          default 7600  null comment '被控端口',
+    qagent_version    varchar(64)                null comment '最近一次成功获取的QAgent程序版本',
     naton             int          default 0     not null comment '0关闭 1开启',
     natbridge             varchar(50)  null,
     natippool            int          default 0     not null comment 'nat ip池id',

@@ -1,7 +1,10 @@
 package com.chuqiyun.proxmoxveams.cron;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONReader;
+import com.alibaba.fastjson2.JSONWriter;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -29,6 +32,8 @@ import com.chuqiyun.proxmoxveams.service.SubnetService;
 import com.chuqiyun.proxmoxveams.service.SubnetpoolService;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmMigrationService;
+import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
+import com.chuqiyun.proxmoxveams.service.MigrationExecutionLock;
 import com.chuqiyun.proxmoxveams.service.VncdataService;
 import com.chuqiyun.proxmoxveams.service.VncinfoService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -42,10 +47,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Resource;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -96,28 +101,46 @@ public class VmMigrationCron {
     private VncdataService vncdataService;
     @Resource
     private VmMigrationService vmMigrationService;
+    @Resource
+    private VmIdReservationService vmIdReservationService;
+    @Resource
+    private MigrationExecutionLock migrationExecutionLock;
+    @Resource
+    private PlatformTransactionManager transactionManager;
 
     @Async("workflowExecutor")
     @Scheduled(fixedDelay = 5000)
     public void vmMigrationCron() {
-        // 迁移会长时间占用节点IO与网络，全局只允许一个任务在跑，其余按提交顺序排队
-        if (vmMigrationService.hasRunningTask()) {
-            return;
-        }
+        migrationExecutionLock.runLocked(this::runNextTask);
+    }
+
+    private void runNextTask() {
+        // 会话锁覆盖整个流程。获得锁后仍为 running 的任务来自进程中断，优先恢复。
         QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("type", TaskType.MIGRATE_VM);
-        queryWrapper.eq("status", 0);
+        queryWrapper.in("status", 0, 1);
+        queryWrapper.orderByDesc("status");
         queryWrapper.orderByAsc("id");
         Page<Task> taskPage = taskService.getTaskList(1, 1, queryWrapper);
         if (taskPage == null || taskPage.getRecords().isEmpty()) {
             return;
         }
         Task task = taskPage.getRecords().get(0);
+        Integer previousStatus = task.getStatus();
+        if (!taskService.update(new UpdateWrapper<Task>().eq("id", task.getId())
+                .eq("status", previousStatus).set("status", 1))) {
+            return;
+        }
         task.setStatus(1);
-        taskService.updateTask(task);
         try {
             execute(task);
         } catch (Exception e) {
+            Map<Object, Object> params = ensureParams(task);
+            if (params.get("vmIdReservationOwner") != null && !params.containsKey("lastFailedStep")) {
+                String stage = stringValue(params.get("stage"));
+                params.put("lastFailedStep", VmMigrationServiceImpl.STAGES.contains(stage) && !"PENDING".equals(stage)
+                        ? stage : "BACKUP");
+            }
             failTask(task, e.getMessage());
         }
     }
@@ -127,9 +150,6 @@ public class VmMigrationCron {
      * 失败重试时从 lastFailedStep 继续，已完成的重活（打包、导入）不会重来一遍。
      */
     private void execute(Task task) throws Exception {
-        if (!isLegacyQAgentMigrationAvailable()) {
-            throw new IllegalStateException("VM migration is disabled because the QAgent restore endpoint was retired");
-        }
         Map<Object, Object> params = ensureParams(task);
         Vmhost vmhost = vmhostService.getById(task.getHostid());
         if (vmhost == null) {
@@ -151,15 +171,13 @@ public class VmMigrationCron {
         }
         targetStorage = resolveTargetStorage(targetStorage, targetNode);
         params.put("targetStorage", targetStorage);
-        if (targetVmid == null) {
-            targetVmid = vmhostService.getNewVmid(targetNodeId);
-            if (targetVmid == null || targetVmid <= 0) {
-                throw new IllegalStateException("failed to allocate target VMID");
-            }
-            params.put("targetVmid", targetVmid);
+        String reservationOwner = stringValue(params.get("vmIdReservationOwner"));
+        if (targetVmid == null || reservationOwner == null) {
+            throw new IllegalStateException("旧迁移任务缺少VMID预留，请取消并重新提交迁移");
         }
+        vmIdReservationService.assertOwned(targetNodeId, targetVmid, reservationOwner);
         task.setParams(params);
-        taskService.updateTask(task);
+        persistTask(task);
 
         final Integer finalSourceNodeId = sourceNodeId;
         final Integer finalTargetNodeId = targetNodeId;
@@ -167,22 +185,46 @@ public class VmMigrationCron {
         final Integer finalSourceVmid = sourceVmid;
         final String finalTargetStorage = targetStorage;
         final String token = configService.getToken();
+        if (StringUtils.isBlank(sourceNode.getNodePublicKey())) {
+            throw new IllegalStateException("源节点尚未登记QAgent证书，无法建立迁移授信通道");
+        }
+        requireMigrationCapabilities(sourceNode, token);
+        requireMigrationCapabilities(targetNode, token);
+        revokeTransferChannel(task, params, sourceNode, token);
         // 续跑时沿用任务里已保存的源端快照，避免上一轮已把数据库切到目标端后重新取到错的数据
         VmhostSnapshot sourceSnapshot = restoreSnapshot(params);
         if (sourceSnapshot == null) {
             sourceSnapshot = VmhostSnapshot.of(vmhost);
             params.put("sourceSnapshot", sourceSnapshot.toMap());
             task.setParams(params);
-            taskService.updateTask(task);
+            persistTask(task);
         }
-        List<NatRule> oldNatRules = fetchNatRules(sourceSnapshot);
-        List<VpcIpBinding> oldVpcBindings = fetchActiveVpcBindings(sourceSnapshot);
+        List<NatRule> oldNatRules = savedNatRules(params, sourceSnapshot);
+        List<VpcIpBinding> oldVpcBindings = savedVpcBindings(params, sourceSnapshot);
+        persistTask(task);
         final VmhostSnapshot finalSourceSnapshot = sourceSnapshot;
         final List<NatRule> finalNatRules = oldNatRules;
         final List<VpcIpBinding> finalVpcBindings = oldVpcBindings;
 
         String resumeFrom = stringValue(params.get("resumeFromStage"));
+        if (resumeFrom == null) {
+            String checkpoint = stringValue(params.get("checkpointStage"));
+            int next = stageIndex(checkpoint) + 1;
+            if (checkpoint != null && next > 0 && next < VmMigrationServiceImpl.STAGES.size()) {
+                resumeFrom = VmMigrationServiceImpl.STAGES.get(next);
+            }
+        }
         int startIndex = resumeFrom == null ? 0 : stageIndex(resumeFrom);
+        if (!Boolean.TRUE.equals(params.get("targetCommitted")) && Boolean.TRUE.equals(params.get("networkRolledBack"))) {
+            startIndex = Math.min(startIndex, stageIndex("NETWORK_REBIND"));
+        }
+        // 未提交的网络变更先按持久化清单回收，再完整重建；不能复用已回滚的网络检查点。
+        if (!Boolean.TRUE.equals(params.get("targetCommitted")) && params.containsKey("targetNetwork")) {
+            rollbackJournal(task, params, finalSourceSnapshot, finalVpcBindings);
+            if (startIndex > stageIndex("NETWORK_REBIND")) {
+                startIndex = stageIndex("NETWORK_REBIND");
+            }
+        }
         if (startIndex < 0) {
             params.remove("resumeFromStage");
             startIndex = 0;
@@ -191,44 +233,79 @@ public class VmMigrationCron {
             appendLog(task, params, "从断点继续: " + resumeFrom);
             params.remove("resumeFromStage");
             task.setParams(params);
-            taskService.updateTask(task);
+            persistTask(task);
         }
 
         migrateStage(task, params, startIndex, "BACKUP", 1, "源节点开始打包", () -> {
             // 被控端已存在可用镜像时会直接复用，不重新 vzdump
-            ClientApiUtil.startMigrationBackup(sourceNode.getHost(), token, sourceNode.getControllerPort(),
-                    String.valueOf(task.getId()), finalSourceVmid, backupDir);
+            requireAgentAccepted(requestMigrationBackup(sourceNode, token, String.valueOf(task.getId()), finalSourceVmid, backupDir));
             JSONObject backupData = waitAgentStage(task, sourceNode, token, String.valueOf(task.getId()), "BACKUP_DONE", 1, 35);
             if (toInteger(params.get("targetVmid")) == null) {
                 throw new IllegalStateException("failed to allocate target VMID");
             }
             params.put("sourceBackupFile", getFileName(backupData.getString("backup_file")));
+            params.put("sourceBackupSize", backupData.getLong("backup_size"));
+            params.put("sourceBackupSha256", backupData.getString("backup_sha256"));
             return null;
         });
 
         migrateStage(task, params, startIndex, "RESTORE", 35, "目标节点开始导入", () -> {
             String backupFileName = getFileName(stringValue(params.get("sourceBackupFile")));
-            String sourceUrl = "https://" + sourceNode.getHost() + ":" + sourceNode.getControllerPort()
-                    + "/migrationAction/file/" + task.getId() + "/" + encodePath(backupFileName);
-            ClientApiUtil.startMigrationRestore(targetNode.getHost(), token, targetNode.getControllerPort(),
-                    String.valueOf(task.getId()), sourceUrl, token, finalTargetVmid,
-                    finalTargetStorage, backupDir);
-            waitAgentStage(task, targetNode, token, String.valueOf(task.getId()), "RESTORE_DONE", 35, 88);
+            Number size = params.get("sourceBackupSize") instanceof Number n ? n : null;
+            String sha256 = stringValue(params.get("sourceBackupSha256"));
+            if (size == null || size.longValue() <= 0 || sha256 == null || !sha256.matches("[0-9a-fA-F]{64}")) {
+                throw new IllegalStateException("源备份缺少大小或SHA256，需重新完成备份阶段");
+            }
+            revokeTransferChannel(task, params, sourceNode, token);
+            JSONObject opened = requestMigrationChannel(sourceNode, token, String.valueOf(task.getId()), "create", null);
+            requireAgentAccepted(opened);
+            JSONObject grant = opened.getJSONObject("data");
+            String channelId = grant == null ? null : grant.getString("channel_id");
+            if (channelId == null || !channelId.matches("[A-Za-z0-9_-]{16,128}")) {
+                throw new IllegalStateException("迁移通道标识无效");
+            }
+            params.put("sourceTransferChannel", channelId);
+            try {
+                persistTask(task);
+                String path = grant.getString("path");
+                if (path == null || !path.equals("/migration-transfer/" + channelId + "/" + backupFileName)
+                        || grant.getLongValue("size") != size.longValue()
+                        || !sha256.equalsIgnoreCase(grant.getString("sha256"))) {
+                    throw new IllegalStateException("迁移通道归档身份与源备份不一致");
+                }
+                String sourceUrl = "https://" + sourceNode.getHost() + ":" + sourceNode.getControllerPort() + path;
+                requireAgentAccepted(requestMigrationRestore(targetNode, token,
+                        String.valueOf(task.getId()), sourceUrl, grant.getString("token"), finalTargetVmid,
+                        finalTargetStorage, backupDir, sourceNode.getNodePublicKey(), size.longValue(), sha256));
+                waitAgentStage(task, targetNode, token, String.valueOf(task.getId()), "RESTORE_DONE", 35, 88);
+            } finally {
+                revokeTransferChannel(task, params, sourceNode, token);
+            }
             return null;
         });
 
-        NetworkMigrationResult networkResult = migrateStage(task, params, startIndex, "NETWORK_REBIND", 88,
+        migrateStage(task, params, startIndex, "NETWORK_REBIND", 88,
                 "重建目标端网络与端口转发", () -> {
+                    requireTargetStopped(targetNode, finalTargetVmid);
                     Vmhost current = vmhostService.getById(task.getHostid());
-                    NetworkMigrationResult result = allocateTargetNetwork(current, finalSourceSnapshot, targetNode,
-                            finalTargetNodeId, finalTargetVmid);
-                    switchVmhostToTarget(current, finalSourceSnapshot, result, finalTargetNodeId,
-                            finalTargetVmid, finalTargetStorage);
+                    NetworkMigrationResult result = new TransactionTemplate(transactionManager).execute(transaction -> {
+                        NetworkMigrationResult allocated = allocateTargetNetwork(current, finalSourceSnapshot, targetNode,
+                                finalTargetNodeId, finalTargetVmid);
+                        allocated.targetNodeId = finalTargetNodeId;
+                        allocated.targetVmid = finalTargetVmid;
+                        params.remove("networkRolledBack");
+                        saveNetworkJournal(task, params, allocated);
+                        return allocated;
+                    });
+                    new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+                        switchVmhostToTarget(current, finalSourceSnapshot, result, finalTargetNodeId,
+                                finalTargetVmid, finalTargetStorage);
+                        saveNetworkJournal(task, params, result);
+                    });
                     syncTargetCloudInit(current, targetNode, result);
-                    migrateNetworkForwards(current, sourceNode, targetNode, finalNatRules, finalVpcBindings, result, token);
+                    migrateNetworkForwards(task, params, current, sourceNode, targetNode, finalNatRules, finalVpcBindings, result, token);
                     syncSecurityGroupAfterMigration(current);
                     invalidateVncCache(current);
-                    // 失败回滚时按 IP 反查目标端资源：IP 与转发都是在数据库里登记的，跨进程重试也能复原
                     vmMigrationService.appendTaskLog(task, params, "目标端网络已重建: "
                             + String.join(",", result.ipList));
                     return result;
@@ -240,17 +317,23 @@ public class VmMigrationCron {
                     || !Objects.equals(current.getVmid(), finalTargetVmid)) {
                 throw new IllegalStateException("target VM network has not been rebound");
             }
-            startTargetVm(targetNode, finalTargetNodeId, finalTargetVmid);
-            current.setStatus(0);
-            vmhostService.updateById(current);
-            createApplyWindowsVmIpTaskIfNeeded(current);
+            // 在可能启动目标之前持久化提交边界；此后失败只向前重试，保留两端资源。
             params.put("targetCommitted", Boolean.TRUE);
+            persistTask(task);
+            boolean start = !Boolean.FALSE.equals(params.get("startAfterMigration"));
+            if (start) {
+                startTargetVm(targetNode, finalTargetNodeId, finalTargetVmid);
+                current.setStatus(0);
+                if (!vmhostService.updateById(current)) {
+                    throw new IllegalStateException("目标虚拟机状态保存失败");
+                }
+                createApplyWindowsVmIpTaskIfNeeded(current);
+            }
             return null;
         });
 
         migrateStage(task, params, startIndex, "CLEANUP_SOURCE", 95, "清理源虚拟机", () -> {
-            JSONObject cleanupResult = ClientApiUtil.cleanupMigrationSource(sourceNode.getHost(), token,
-                    sourceNode.getControllerPort(), String.valueOf(task.getId()), finalSourceVmid);
+            JSONObject cleanupResult = requestCleanupMigrationSource(sourceNode, token, String.valueOf(task.getId()), finalSourceVmid);
             JSONObject cleanupData = cleanupResult == null ? null : cleanupResult.getJSONObject("data");
             if (cleanupResult == null || cleanupResult.getInteger("code") == null || cleanupResult.getInteger("code") != 200
                     || cleanupData == null || !"SUCCESS".equals(cleanupData.getString("status"))) {
@@ -266,7 +349,15 @@ public class VmMigrationCron {
 
         updateProgress(task, "DONE", 100, null, "迁移完成");
         task.setStatus(2);
-        taskService.updateTask(task);
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+                persistTask(task);
+                vmIdReservationService.release(reservationOwner);
+            });
+        } catch (RuntimeException e) {
+            params.put("lastFailedStep", "RELEASE_SOURCE_NETWORK");
+            throw e;
+        }
         UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM, "VM migration success, taskId=" + task.getId());
     }
 
@@ -279,20 +370,22 @@ public class VmMigrationCron {
      */
     private <T> T migrateStage(Task task, Map<Object, Object> params, int startIndex, String stage, int progress,
                                String message, StageAction<T> action) throws Exception {
+        assertExecutionLock();
         int currentIndex = stageIndex(stage);
         if (currentIndex < startIndex) {
             appendLog(task, params, "跳过已完成步骤: " + stage);
             task.setParams(params);
-            taskService.updateTask(task);
+            persistTask(task);
             return null;
         }
         updateProgress(task, stage, progress, null, message);
         try {
+            params.remove("lastFailedStep");
             T result = action.run();
             params.put("checkpointStage", stage);
             appendLog(task, params, "步骤完成: " + stage);
             task.setParams(params);
-            taskService.updateTask(task);
+            persistTask(task);
             return result;
         } catch (Exception e) {
             handleStageFailure(task, params, stage, e);
@@ -304,15 +397,142 @@ public class VmMigrationCron {
         params.put("lastFailedStep", stage);
         appendLog(task, params, "步骤失败: " + stage + ", " + e.getMessage());
         task.setParams(params);
-        taskService.updateTask(task);
+        persistTask(task);
         if (!Boolean.TRUE.equals(params.get("targetCommitted"))) {
             Vmhost vmhost = vmhostService.getById(task.getHostid());
             if (vmhost != null) {
                 VmhostSnapshot snapshot = restoreSnapshot(params);
                 if (snapshot != null) {
-                    rollbackTargetNetwork(vmhost, snapshot, null, fetchActiveVpcBindings(snapshot));
+                    rollbackJournal(task, params, snapshot, savedVpcBindings(params, snapshot));
                 }
             }
+        }
+    }
+
+    private void assertExecutionLock() {
+        if (migrationExecutionLock != null) {
+            migrationExecutionLock.assertHeld();
+        }
+    }
+
+    private void persistTask(Task task) {
+        assertExecutionLock();
+        if (!taskService.updateTask(task)) {
+            throw new IllegalStateException("迁移任务检查点保存失败");
+        }
+    }
+
+    private void requireMigrationCapabilities(Master node, String token) {
+        JSONObject response = requestMigrationCapabilities(node, token);
+        requireAgentAccepted(response);
+        JSONObject data = response.getJSONObject("data");
+        if (data == null || data.getIntValue("protocol") < 2 || !data.getBooleanValue("temporary_channel")
+                || !data.getBooleanValue("safe_restore") || !data.getBooleanValue("source_identity")) {
+            throw new IllegalStateException("节点 " + node.getId() + " 的QAgent不支持安全迁移，请先升级被控");
+        }
+    }
+
+    protected JSONObject requestMigrationCapabilities(Master node, String token) {
+        return ClientApiUtil.getMigrationCapabilities(node, token);
+    }
+
+    protected JSONObject requestMigrationBackup(Master node, String token, String taskId, Integer vmid, String backupDir) {
+        return ClientApiUtil.startMigrationBackup(node.getHost(), token, node.getControllerPort(), taskId, vmid, backupDir);
+    }
+
+    protected JSONObject requestMigrationRestore(Master target, String token, String taskId, String sourceUrl,
+                                                  String sourceToken, Integer targetVmid, String storage, String backupDir,
+                                                  String certificate, Long size, String sha256) {
+        return ClientApiUtil.startMigrationRestore(target.getHost(), token, target.getControllerPort(), taskId,
+                sourceUrl, sourceToken, targetVmid, storage, backupDir, certificate, size, sha256);
+    }
+
+    protected JSONObject requestMigrationStatus(Master node, String token, String taskId) {
+        return ClientApiUtil.getMigrationStatus(node.getHost(), token, node.getControllerPort(), taskId);
+    }
+
+    protected JSONObject requestCleanupMigrationSource(Master node, String token, String taskId, Integer vmid) {
+        return ClientApiUtil.cleanupMigrationSource(node.getHost(), token, node.getControllerPort(), taskId, vmid);
+    }
+
+    private void requireAgentAccepted(JSONObject response) {
+        if (response == null || !Integer.valueOf(200).equals(response.getInteger("code"))) {
+            throw new IllegalStateException("QAgent迁移请求失败: "
+                    + (response == null ? "节点未响应" : response.getString("message")));
+        }
+    }
+
+    protected JSONObject requestMigrationChannel(Master source, String token, String taskId, String action, String channelId) {
+        return ClientApiUtil.migrationChannel(source, token, taskId, action, channelId);
+    }
+
+    private void revokeTransferChannel(Task task, Map<Object, Object> params, Master source, String token) {
+        String channelId = stringValue(params.get("sourceTransferChannel"));
+        if (channelId != null) {
+            requireAgentAccepted(requestMigrationChannel(source, token, String.valueOf(task.getId()), "revoke", channelId));
+            params.remove("sourceTransferChannel");
+            persistTask(task);
+        }
+    }
+
+    private void saveNetworkJournal(Task task, Map<Object, Object> params, NetworkMigrationResult result) {
+        params.put("targetNetwork", JSON.parseObject(JSON.toJSONString(result, JSONWriter.Feature.FieldBased)));
+        task.setParams(params);
+        persistTask(task);
+    }
+
+    private NetworkMigrationResult restoreNetworkJournal(Map<Object, Object> params) {
+        Object value = params.get("targetNetwork");
+        return value == null ? null : JSON.parseObject(JSON.toJSONString(value),
+                NetworkMigrationResult.class, JSONReader.Feature.FieldBased);
+    }
+
+    private List<NatRule> savedNatRules(Map<Object, Object> params, VmhostSnapshot snapshot) {
+        if (!params.containsKey("sourceNatRules")) {
+            params.put("sourceNatRules", JSON.parseArray(JSON.toJSONString(fetchNatRules(snapshot), JSONWriter.Feature.FieldBased)));
+        }
+        JSONArray values = JSON.parseArray(JSON.toJSONString(params.get("sourceNatRules")));
+        List<NatRule> result = new ArrayList<>();
+        for (int i = 0; i < values.size(); i++) {
+            result.add(JSON.parseObject(values.getJSONObject(i).toJSONString(), NatRule.class, JSONReader.Feature.FieldBased));
+        }
+        return result;
+    }
+
+    private List<VpcIpBinding> savedVpcBindings(Map<Object, Object> params, VmhostSnapshot snapshot) {
+        if (!params.containsKey("sourceVpcBindings")) {
+            params.put("sourceVpcBindings", JSON.parseArray(JSON.toJSONString(fetchActiveVpcBindings(snapshot))));
+        }
+        return JSON.parseArray(JSON.toJSONString(params.get("sourceVpcBindings")), VpcIpBinding.class);
+    }
+
+    private void rollbackJournal(Task task, Map<Object, Object> params, VmhostSnapshot snapshot,
+                                 List<VpcIpBinding> oldBindings) {
+        NetworkMigrationResult result = restoreNetworkJournal(params);
+        if (result == null) {
+            return;
+        }
+        Vmhost current = requireCurrentVmhost(task);
+        Object savedJournal = params.get("targetNetwork");
+        Object checkpoint = params.get("checkpointStage");
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+                rollbackTargetNetwork(current, snapshot, result, oldBindings);
+                params.remove("targetNetwork");
+                params.put("checkpointStage", "RESTORE");
+                params.put("networkRolledBack", true);
+                persistTask(task);
+            });
+        } catch (RuntimeException e) {
+            // 数据库回滚时也恢复内存清单，后续 failTask 不能把尚未回收的资源信息覆盖掉。
+            params.put("targetNetwork", savedJournal);
+            if (checkpoint == null) {
+                params.remove("checkpointStage");
+            } else {
+                params.put("checkpointStage", checkpoint);
+            }
+            params.remove("networkRolledBack");
+            throw e;
         }
     }
 
@@ -329,8 +549,8 @@ public class VmMigrationCron {
         T run() throws Exception;
     }
 
-    private boolean isLegacyQAgentMigrationAvailable() {
-        return false;
+    protected ProxmoxApiUtil newProxmoxApi() {
+        return new ProxmoxApiUtil();
     }
 
     private NetworkMigrationResult allocateTargetNetwork(Vmhost vmhost, VmhostSnapshot sourceSnapshot, Master targetNode,
@@ -745,13 +965,16 @@ public class VmMigrationCron {
         vmhost.setIpList(result.ipList);
         vmhost.setIpData(VmUtil.splitIpAddress(new HashMap<>(result.ipConfig)));
         vmhost.setStatus(1);
-        vmhostService.updateById(vmhost);
+        if (!vmhostService.update(vmhost, new UpdateWrapper<Vmhost>().eq("id", vmhost.getId())
+                .eq("nodeid", sourceSnapshot.nodeid).eq("vmid", sourceSnapshot.vmid))) {
+            throw new IllegalStateException("目标虚拟机网络记录保存失败");
+        }
         result.dbSwitched = true;
     }
 
     private void syncTargetCloudInit(Vmhost vmhost, Master targetNode, NetworkMigrationResult result) {
         String token = configService.getToken();
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        ProxmoxApiUtil proxmoxApiUtil = newProxmoxApi();
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         JSONObject pveVmConfig = proxmoxApiUtil.getVmConfig(targetNode, cookieMap, vmhost.getVmid());
         String oldNet0 = pveVmConfig == null ? vmhost.getNet0() : pveVmConfig.getString("net0");
@@ -790,18 +1013,18 @@ public class VmMigrationCron {
         syncVmFirewallProtection(proxmoxApiUtil, targetNode, cookieMap, vmhost, CloudInitNetworkUtil.getFirewallCidrList(result.ipConfig));
     }
 
-    private void migrateNetworkForwards(Vmhost vmhost, Master sourceNode, Master targetNode, List<NatRule> oldNatRules,
+    private void migrateNetworkForwards(Task task, Map<Object, Object> params, Vmhost vmhost, Master sourceNode, Master targetNode, List<NatRule> oldNatRules,
                                         List<VpcIpBinding> oldVpcBindings, NetworkMigrationResult result, String token) {
         if (result.vpc) {
-            migrateVpcIpForwards(vmhost, oldVpcBindings, result);
+            migrateVpcIpForwards(task, params, vmhost, oldVpcBindings, result);
             return;
         }
         if (Objects.equals(vmhost.getIfnat(), 1)) {
-            migrateNatRules(vmhost, sourceNode, targetNode, oldNatRules, result, token);
+            migrateNatRules(task, params, vmhost, sourceNode, targetNode, oldNatRules, result, token);
         }
     }
 
-    private void migrateNatRules(Vmhost vmhost, Master sourceNode, Master targetNode, List<NatRule> oldNatRules,
+    private void migrateNatRules(Task task, Map<Object, Object> params, Vmhost vmhost, Master sourceNode, Master targetNode, List<NatRule> oldNatRules,
                                  NetworkMigrationResult result, String token) {
         if (oldNatRules.isEmpty()) {
             return;
@@ -810,32 +1033,47 @@ public class VmMigrationCron {
             throw new IllegalStateException("target NAT VM has no IPv4 address");
         }
         for (NatRule oldRule : oldNatRules) {
-            int targetSourcePort = addNatRuleWithPortFallback(vmhost, targetNode, sourceNode, oldRule, result.primaryIpv4);
-            NatRule createdRule = new NatRule(resolveTargetNatSourceIp(oldRule.sourceIp, sourceNode, targetNode),
-                    targetSourcePort, result.primaryIpv4, oldRule.destinationPort, oldRule.protocol);
-            result.createdNatRules.add(createdRule);
+            addNatRuleWithPortFallback(task, params, result, vmhost, targetNode, sourceNode, oldRule, result.primaryIpv4);
         }
     }
 
-    private int addNatRuleWithPortFallback(Vmhost vmhost, Master targetNode, Master sourceNode, NatRule oldRule, String destinationIp) {
+    private int addNatRuleWithPortFallback(Task task, Map<Object, Object> params, NetworkMigrationResult result,
+                                         Vmhost vmhost, Master targetNode, Master sourceNode, NatRule oldRule, String destinationIp) {
         String targetSourceIp = resolveTargetNatSourceIp(oldRule.sourceIp, sourceNode, targetNode);
-        int preferredPort = oldRule.sourcePort == null ? 0 : oldRule.sourcePort;
-        if (isUsableNatPort(preferredPort, targetNode)
-                && Boolean.TRUE.equals(vmhostService.addVmhostNat(targetSourceIp, preferredPort, destinationIp,
-                oldRule.destinationPort, oldRule.protocol, vmhost.getId()))) {
-            return preferredPort;
+        JSONObject exported = ClientApiUtil.exportNatRules(targetNode.getHost(), configService.getToken(), targetNode.getControllerPort());
+        requireAgentAccepted(exported);
+        Set<Integer> occupied = new LinkedHashSet<>();
+        JSONArray rules = exported.getJSONObject("data").getJSONArray("port_rules");
+        if (rules == null) {
+            throw new IllegalStateException("目标NAT规则导出无效");
         }
-        for (int port = 1000; port <= 60050; port++) {
-            if (port == preferredPort || !isUsableNatPort(port, targetNode)) {
-                continue;
-            }
-            if (Boolean.TRUE.equals(vmhostService.addVmhostNat(targetSourceIp, port, destinationIp,
-                    oldRule.destinationPort, oldRule.protocol, vmhost.getId()))) {
-                return port;
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (Objects.equals(targetSourceIp, rule.getString("source_ip"))
+                    && Objects.equals(oldRule.protocol, rule.getString("protocol"))) {
+                occupied.add(rule.getInteger("source_port"));
             }
         }
-        throw new IllegalStateException("failed to recreate NAT rule: destPort=" + oldRule.destinationPort
-                + ", protocol=" + oldRule.protocol);
+        int port = oldRule.sourcePort == null ? 0 : oldRule.sourcePort;
+        if (!isUsableNatPort(port, targetNode) || occupied.contains(port)) {
+            for (port = 1000; port <= 60050 && (!isUsableNatPort(port, targetNode) || occupied.contains(port)); port++) {
+                // 只选择空闲端口；连接失败不得对数万个端口重复发起请求。
+            }
+        }
+        if (port > 60050) {
+            throw new IllegalStateException("目标节点没有空闲NAT端口");
+        }
+        NatRule planned = new NatRule(targetSourceIp, port, destinationIp, oldRule.destinationPort, oldRule.protocol);
+        result.createdNatRules.add(planned);
+        saveNetworkJournal(task, params, result);
+        if (!Boolean.TRUE.equals(ClientApiUtil.addPortForward(targetNode.getHost(), configService.getToken(),
+                targetNode.getControllerPort(), vmhost.getId(), targetSourceIp, port, destinationIp,
+                oldRule.destinationPort, oldRule.protocol))
+                || !natForwardSyncService.savePortRule(targetNode.getId(), vmhost.getId(), targetSourceIp, port,
+                destinationIp, oldRule.destinationPort, oldRule.protocol)) {
+            throw new IllegalStateException("目标NAT规则创建失败，已保留回收清单");
+        }
+        return port;
     }
 
     private String resolveTargetNatSourceIp(String oldSourceIp, Master sourceNode, Master targetNode) {
@@ -859,17 +1097,48 @@ public class VmMigrationCron {
                 && !(port >= 59000 && port <= 60050);
     }
 
-    private void migrateVpcIpForwards(Vmhost vmhost, List<VpcIpBinding> oldVpcBindings, NetworkMigrationResult result) {
+    private void migrateVpcIpForwards(Task task, Map<Object, Object> params, Vmhost vmhost, List<VpcIpBinding> oldVpcBindings, NetworkMigrationResult result) {
         deactivateVpcBindings(oldVpcBindings);
         int count = Math.min(result.targetVpcPrivateIps.size(), result.targetVpcPublicIps.size());
         for (int i = 0; i < count; i++) {
             String privateIp = result.targetVpcPrivateIps.get(i).getIp();
             String publicIp = result.targetVpcPublicIps.get(i).getIp();
+            Master target = masterService.getById(result.targetNodeId);
+            VpcForward forward = plannedVpcForward(target, publicIp, privateIp);
+            result.createdVpcForwards.add(forward);
+            saveNetworkJournal(task, params, result);
             if (!Boolean.TRUE.equals(vmhostService.addVmhostVpcIpForward(vmhost.getId(), publicIp, privateIp))) {
                 throw new IllegalStateException("failed to recreate VPC IP forward: publicIp=" + publicIp + ", privateIp=" + privateIp);
             }
-            result.createdVpcForwards.add(new VpcForward(publicIp, privateIp));
         }
+    }
+
+    private VpcForward plannedVpcForward(Master target, String publicIp, String privateIp) {
+        VpcForward forward = new VpcForward(publicIp, privateIp);
+        String mode = StringUtils.defaultIfBlank(target.getPublicIpMode(), "legacy").trim().toLowerCase(Locale.ROOT);
+        String iface = StringUtils.trimToNull(target.getPublicIpInterface());
+        if ("auto".equals(mode) || ("legacy".equals(mode) && iface != null)) {
+            mode = iface == null ? "legacy" : "l2_alias";
+        }
+        forward.deliveryMode = mode;
+        forward.interfaceName = iface;
+        if ("l2_alias".equals(mode) || "proxy_arp".equals(mode)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("public_ip", publicIp);
+            body.put("mode", mode);
+            body.put("interface", iface);
+            JSONObject inspected = ClientApiUtil.postControllerApi("https://" + target.getHost() + ":"
+                    + target.getControllerPort() + "/network/public-ip/check", body, configService.getToken());
+            requireAgentAccepted(inspected);
+            JSONObject data = inspected.getJSONObject("data");
+            if (data == null || !data.containsKey("address_installed") || !data.containsKey("route_installed")) {
+                throw new IllegalStateException("无法确认目标公网IP接入状态，停止分配");
+            }
+            // 在 ensure 之前持久化接入意图，响应丢失时仍能只撤回本次新增的地址/路由。
+            forward.addressInstalled = "l2_alias".equals(mode) && !data.getBooleanValue("address_installed") ? 1 : 0;
+            forward.routeInstalled = "proxy_arp".equals(mode) && !data.getBooleanValue("route_installed") ? 1 : 0;
+        }
+        return forward;
     }
 
     private void deactivateVpcBindings(List<VpcIpBinding> bindings) {
@@ -881,7 +1150,9 @@ public class VmMigrationCron {
             updateWrapper.eq("id", binding.getId());
             updateWrapper.set("status", VPC_BINDING_STATUS_DELETED);
             updateWrapper.set("update_time", System.currentTimeMillis());
-            vpcIpBindingService.update(updateWrapper);
+            if (!vpcIpBindingService.update(updateWrapper)) {
+                throw new IllegalStateException("源VPC绑定状态保存失败");
+            }
             binding.setStatus(VPC_BINDING_STATUS_DELETED);
         }
     }
@@ -893,7 +1164,9 @@ public class VmMigrationCron {
         for (VpcIpBinding binding : oldVpcBindings) {
             binding.setStatus(VPC_BINDING_STATUS_ACTIVE);
             binding.setUpdateTime(System.currentTimeMillis());
-            vpcIpBindingService.updateById(binding);
+            if (!vpcIpBindingService.updateById(binding)) {
+                throw new IllegalStateException("源VPC绑定恢复失败");
+            }
         }
     }
 
@@ -935,10 +1208,46 @@ public class VmMigrationCron {
     }
 
     private void startTargetVm(Master targetNode, Integer targetNodeId, Integer targetVmid) {
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        ProxmoxApiUtil proxmoxApiUtil = newProxmoxApi();
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(targetNodeId);
-        proxmoxApiUtil.postNodeApi(targetNode, cookieMap,
+        if ("running".equals(vmPowerState(proxmoxApiUtil, targetNode, cookieMap, targetVmid))) {
+            return;
+        }
+        JSONObject response = proxmoxApiUtil.postNodeApi(targetNode, cookieMap,
                 "/nodes/" + targetNode.getNodeName() + "/qemu/" + targetVmid + "/status/start", new HashMap<>());
+        if (response == null || response.get("data") == null) {
+            throw new IllegalStateException("PVE未接受目标虚拟机启动请求");
+        }
+        long deadline = System.currentTimeMillis() + 180_000;
+        while (System.currentTimeMillis() < deadline) {
+            assertExecutionLock();
+            if ("running".equals(vmPowerState(proxmoxApiUtil, targetNode, cookieMap, targetVmid))) {
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("目标虚拟机启动等待已中断", e);
+            }
+        }
+        throw new IllegalStateException("目标虚拟机未确认启动，保留源端资源等待重试");
+    }
+
+    private String vmPowerState(ProxmoxApiUtil api, Master node, HashMap<String, String> cookies, Integer vmid) {
+        JSONObject response = api.getVmStatus(node, cookies, vmid);
+        JSONObject data = response == null ? null : response.getJSONObject("data");
+        String state = data == null ? null : data.getString("status");
+        if (!"running".equals(state) && !"stopped".equals(state)) {
+            throw new IllegalStateException("无法确认目标虚拟机运行状态，保留迁移资源");
+        }
+        return state;
+    }
+
+    protected void requireTargetStopped(Master node, Integer vmid) {
+        if (!"stopped".equals(vmPowerState(newProxmoxApi(), node, masterService.getMasterCookieMap(node.getId()), vmid))) {
+            throw new IllegalStateException("目标虚拟机正在运行，禁止回收其网络资源");
+        }
     }
 
     private void releaseSourceNetwork(VmhostSnapshot sourceSnapshot, Master sourceNode, List<NatRule> oldNatRules,
@@ -956,17 +1265,41 @@ public class VmMigrationCron {
 
     private void deleteSourceNatRules(VmhostSnapshot sourceSnapshot, Master sourceNode, List<NatRule> oldNatRules, String token) {
         for (NatRule rule : oldNatRules) {
-            ClientApiUtil.deletePortForward(sourceNode.getHost(), token, sourceNode.getControllerPort(), sourceSnapshot.hostId,
-                    rule.sourceIp, rule.sourcePort, rule.destinationIp, rule.destinationPort, rule.protocol);
-            natForwardSyncService.deletePortRule(sourceNode.getId(), rule.sourceIp, rule.sourcePort, rule.protocol);
+            if (!Boolean.TRUE.equals(requestDeletePortForward(sourceNode, token, sourceSnapshot.hostId,
+                    rule.sourceIp, rule.sourcePort, rule.destinationIp, rule.destinationPort, rule.protocol))
+                    || !natForwardSyncService.deletePortRule(sourceNode.getId(), rule.sourceIp, rule.sourcePort, rule.protocol)) {
+                throw new IllegalStateException("源NAT规则删除未确认，保留源IP等待重试");
+            }
         }
     }
 
     private void deleteSourceVpcForwards(VmhostSnapshot sourceSnapshot, Master sourceNode, List<VpcIpBinding> oldVpcBindings, String token) {
         for (VpcIpBinding binding : oldVpcBindings) {
-            ClientApiUtil.deleteIpForward(sourceNode.getHost(), token, sourceNode.getControllerPort(), sourceSnapshot.hostId,
-                    binding.getPublicIp(), binding.getPrivateIp());
-            natForwardSyncService.deleteIpForwardRule(sourceNode.getId(), binding.getPublicIp());
+            if (!Boolean.TRUE.equals(requestDeleteIpForward(sourceNode, token, sourceSnapshot.hostId,
+                    binding.getPublicIp(), binding.getPrivateIp()))
+                    || !natForwardSyncService.deleteIpForwardRule(sourceNode.getId(), binding.getPublicIp())) {
+                throw new IllegalStateException("源VPC规则删除未确认，保留源IP等待重试");
+            }
+            releaseVpcAlias(sourceNode, token, binding.getPublicIp(), binding.getDeliveryMode(), binding.getInterfaceName(),
+                    binding.getAddressInstalled(), binding.getRouteInstalled());
+        }
+    }
+
+    protected Boolean requestDeletePortForward(Master node, String token, Integer hostId, String sourceIp,
+                                                Integer sourcePort, String destinationIp, Integer destinationPort, String protocol) {
+        return ClientApiUtil.deletePortForward(node.getHost(), token, node.getControllerPort(), hostId,
+                sourceIp, sourcePort, destinationIp, destinationPort, protocol);
+    }
+
+    protected Boolean requestDeleteIpForward(Master node, String token, Integer hostId, String publicIp, String privateIp) {
+        return ClientApiUtil.deleteIpForward(node.getHost(), token, node.getControllerPort(), hostId, publicIp, privateIp);
+    }
+
+    private void releaseVpcAlias(Master node, String token, String publicIp, String mode, String iface,
+                                  Integer addressInstalled, Integer routeInstalled) {
+        if (Integer.valueOf(1).equals(addressInstalled) || Integer.valueOf(1).equals(routeInstalled)) {
+            requireAgentAccepted(ClientApiUtil.releaseVpcPublicIp(node.getHost(), token, node.getControllerPort(), publicIp,
+                    mode, iface, addressInstalled, routeInstalled));
         }
     }
 
@@ -976,6 +1309,8 @@ public class VmMigrationCron {
             queryWrapper.eq("node_id", sourceSnapshot.nodeid);
             queryWrapper.eq("subnat_id", sourceSnapshot.vpcSubnetId);
             queryWrapper.eq("ip", privateIp);
+            queryWrapper.eq("vm_id", sourceSnapshot.vmid);
+            queryWrapper.eq("status", 1);
             queryWrapper.last("limit 1");
             Subnetpool subnetpool = subnetpoolService.getOne(queryWrapper);
             if (subnetpool != null) {
@@ -996,22 +1331,43 @@ public class VmMigrationCron {
 
     private void rollbackTargetNetwork(Vmhost vmhost, VmhostSnapshot sourceSnapshot, NetworkMigrationResult result,
                                        List<VpcIpBinding> oldVpcBindings) {
-        if (result != null) {
-            if (result.vpc && result.dbSwitched) {
-                for (VpcForward forward : result.createdVpcForwards) {
-                    try {
-                        vmhostService.delVmhostVpcIpForward(vmhost.getId(), forward.publicIp, forward.privateIp);
-                    } catch (Exception ignored) {
-                    }
-                }
+        if (result == null) {
+            return;
+        }
+        Master target = masterService.getById(result.targetNodeId);
+        if (target == null) {
+            throw new IllegalStateException("目标节点不存在，保留回收清单");
+        }
+        requireTargetStopped(target, result.targetVmid);
+        String token = configService.getToken();
+        // 先确认所有外部规则已删除，任一失败都不释放任何地址。
+        for (VpcForward forward : result.createdVpcForwards) {
+            if (!Boolean.TRUE.equals(requestDeleteIpForward(target, token, vmhost.getId(), forward.publicIp, forward.privateIp))
+                    || !natForwardSyncService.deleteIpForwardRule(target.getId(), forward.publicIp)) {
+                throw new IllegalStateException("目标VPC转发回收失败，保留IP与回收清单");
             }
-            if (!result.vpc && result.dbSwitched) {
-                for (NatRule rule : result.createdNatRules) {
-                    try {
-                        vmhostService.delVmhostNat(rule.sourceIp, rule.sourcePort, rule.destinationIp,
-                                rule.destinationPort, rule.protocol, vmhost.getId());
-                    } catch (Exception ignored) {
-                    }
+            releaseVpcAlias(target, token, forward.publicIp, forward.deliveryMode, forward.interfaceName,
+                    forward.addressInstalled, forward.routeInstalled);
+        }
+        for (NatRule rule : result.createdNatRules) {
+            if (!Boolean.TRUE.equals(requestDeletePortForward(target, token, vmhost.getId(), rule.sourceIp,
+                    rule.sourcePort, rule.destinationIp, rule.destinationPort, rule.protocol))
+                    || !natForwardSyncService.deletePortRule(target.getId(), rule.sourceIp, rule.sourcePort, rule.protocol)) {
+                throw new IllegalStateException("目标NAT转发回收失败，保留IP与回收清单");
+            }
+        }
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            for (VpcForward forward : result.createdVpcForwards) {
+                UpdateWrapper<VpcIpBinding> update = new UpdateWrapper<VpcIpBinding>()
+                        .eq("host_id", vmhost.getId()).eq("node_id", target.getId())
+                        .eq("public_ip", forward.publicIp).eq("private_ip", forward.privateIp)
+                        .set("status", VPC_BINDING_STATUS_DELETED).set("update_time", System.currentTimeMillis());
+                vpcIpBindingService.update(update);
+                if (vpcIpBindingService.count(new QueryWrapper<VpcIpBinding>()
+                        .eq("host_id", vmhost.getId()).eq("node_id", target.getId())
+                        .eq("public_ip", forward.publicIp).eq("private_ip", forward.privateIp)
+                        .eq("status", VPC_BINDING_STATUS_ACTIVE)) != 0) {
+                    throw new IllegalStateException("目标VPC绑定清理未确认，保留IP");
                 }
             }
             for (Ippool ippool : result.targetIppools) {
@@ -1023,17 +1379,26 @@ public class VmMigrationCron {
             for (Subnetpool subnetpool : result.targetVpcPrivateIps) {
                 releaseSubnetpool(subnetpool);
             }
-        }
-        sourceSnapshot.restore(vmhost);
-        vmhostService.updateById(vmhost);
-        restoreOldVpcBindings(oldVpcBindings);
+            sourceSnapshot.restore(vmhost);
+            if (!vmhostService.update(vmhost, new UpdateWrapper<Vmhost>().eq("id", vmhost.getId())
+                    .and(location -> location.eq("nodeid", sourceSnapshot.nodeid).eq("vmid", sourceSnapshot.vmid)
+                            .or(targetLocation -> targetLocation.eq("nodeid", result.targetNodeId).eq("vmid", result.targetVmid))))) {
+                throw new IllegalStateException("源虚拟机网络记录恢复失败");
+            }
+            restoreOldVpcBindings(oldVpcBindings);
+        });
     }
 
     private void releaseIppool(Ippool ippool) {
         if (ippool == null || ippool.getId() == null) {
             return;
         }
-        ippoolService.releaseBoundIppool(ippool.getId(), ippool.getVmId());
+        if (!ippoolService.releaseBoundIppool(ippool.getId(), ippool.getVmId())) {
+            Ippool current = ippoolService.getById(ippool.getId());
+            if (current == null || !Integer.valueOf(0).equals(current.getStatus())) {
+                throw new IllegalStateException("迁移IP释放未确认: " + ippool.getIp());
+            }
+        }
     }
 
     private void releaseSubnetpool(Subnetpool subnetpool) {
@@ -1047,7 +1412,12 @@ public class VmMigrationCron {
         updateWrapper.set("status", 0);
         updateWrapper.set("vm_id", 0);
         updateWrapper.set("mac", null);
-        subnetpoolService.update(updateWrapper);
+        if (!subnetpoolService.update(updateWrapper)) {
+            Subnetpool current = subnetpoolService.getById(subnetpool.getId());
+            if (current == null || !Integer.valueOf(0).equals(current.getStatus())) {
+                throw new IllegalStateException("迁移私网IP释放未确认: " + subnetpool.getIp());
+            }
+        }
     }
 
     private void removeCicustomNetworkConfig(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap,
@@ -1300,8 +1670,17 @@ public class VmMigrationCron {
         int lastProgress = -1;
         long lastProgressTime = System.currentTimeMillis();
         long deadline = System.currentTimeMillis() + 24L * 60L * 60L * 1000L;
+        long nextChannelRenewal = 0;
         while (System.currentTimeMillis() < deadline) {
-            JSONObject result = ClientApiUtil.getMigrationStatus(node.getHost(), token, node.getControllerPort(), taskId);
+            assertExecutionLock();
+            Map<Object, Object> params = ensureParams(task);
+            String channel = stringValue(params.get("sourceTransferChannel"));
+            if (channel != null && System.currentTimeMillis() >= nextChannelRenewal) {
+                Master source = masterService.getById(toInteger(params.get("sourceNodeId")));
+                requireAgentAccepted(requestMigrationChannel(source, token, taskId, "renew", channel));
+                nextChannelRenewal = System.currentTimeMillis() + 60_000;
+            }
+            JSONObject result = requestMigrationStatus(node, token, taskId);
             JSONObject data = result == null ? null : result.getJSONObject("data");
             if (data == null) {
                 throw new IllegalStateException("failed to get migration status");
@@ -1341,7 +1720,7 @@ public class VmMigrationCron {
         task.setParams(params);
         task.setStatus(3);
         task.setError(error);
-        taskService.updateTask(task);
+        persistTask(task);
         UnifiedLogger.error(UnifiedLogger.LogType.TASK_MIGRATE_VM, "VM migration failed, taskId=" + task.getId() + ", error=" + error);
     }
 
@@ -1355,7 +1734,7 @@ public class VmMigrationCron {
         }
         appendLog(task, params, message);
         task.setParams(params);
-        taskService.updateTask(task);
+        persistTask(task);
     }
 
     /**
@@ -1366,7 +1745,7 @@ public class VmMigrationCron {
         params.put("progress", progress);
         params.put("updateTime", System.currentTimeMillis());
         task.setParams(params);
-        taskService.updateTask(task);
+        persistTask(task);
     }
 
     public void appendLog(Task task, Map<Object, Object> params, String message) {
@@ -1414,24 +1793,22 @@ public class VmMigrationCron {
         return index >= 0 ? normalizedPath.substring(index + 1) : normalizedPath;
     }
 
-    private String encodePath(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
-    }
-
     private static class NetworkMigrationResult {
         private boolean vpc;
         private boolean dbSwitched;
+        private Integer targetNodeId;
+        private Integer targetVmid;
         private Integer targetVpcSubnetId;
         private String targetBridge;
         private Map<String, String> ipConfig = new LinkedHashMap<>();
         private List<String> ipList = new ArrayList<>();
         private List<String> nameservers = new ArrayList<>();
         private String primaryIpv4;
-        private final List<Ippool> targetIppools = new ArrayList<>();
-        private final List<Subnetpool> targetVpcPrivateIps = new ArrayList<>();
-        private final List<Ippool> targetVpcPublicIps = new ArrayList<>();
-        private final List<NatRule> createdNatRules = new ArrayList<>();
-        private final List<VpcForward> createdVpcForwards = new ArrayList<>();
+        private List<Ippool> targetIppools = new ArrayList<>();
+        private List<Subnetpool> targetVpcPrivateIps = new ArrayList<>();
+        private List<Ippool> targetVpcPublicIps = new ArrayList<>();
+        private List<NatRule> createdNatRules = new ArrayList<>();
+        private List<VpcForward> createdVpcForwards = new ArrayList<>();
     }
 
     private static class VmhostSnapshot {
@@ -1567,11 +1944,14 @@ public class VmMigrationCron {
     }
 
     private static class NatRule {
-        private final String sourceIp;
-        private final Integer sourcePort;
-        private final String destinationIp;
-        private final Integer destinationPort;
-        private final String protocol;
+        private String sourceIp;
+        private Integer sourcePort;
+        private String destinationIp;
+        private Integer destinationPort;
+        private String protocol;
+
+        private NatRule() {
+        }
 
         private NatRule(String sourceIp, Integer sourcePort, String destinationIp, Integer destinationPort, String protocol) {
             this.sourceIp = sourceIp;
@@ -1583,8 +1963,15 @@ public class VmMigrationCron {
     }
 
     private static class VpcForward {
-        private final String publicIp;
-        private final String privateIp;
+        private String publicIp;
+        private String privateIp;
+        private String deliveryMode;
+        private String interfaceName;
+        private Integer addressInstalled;
+        private Integer routeInstalled;
+
+        private VpcForward() {
+        }
 
         private VpcForward(String publicIp, String privateIp) {
             this.publicIp = publicIp;

@@ -34,10 +34,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/{adminPath}")
 public class SysVmHostController {
-    private boolean isLegacyQAgentMigrationAvailable() {
-        return false;
-    }
-
     @Resource
     private VmhostService vmhostService;
     @Resource
@@ -127,9 +123,6 @@ public class SysVmHostController {
     @AdminApiCheck
     @RequestMapping(value = "/migrateVm", method = {RequestMethod.POST, RequestMethod.PUT})
     public Object migrateVm(@RequestBody VmMigrationParams params) throws UnauthorizedException {
-        if (!isLegacyQAgentMigrationAvailable()) {
-            return ResponseResult.fail("主机迁移已停用：QAgent 恢复端点已移除");
-        }
         if (params == null || params.getTargetNodeId() == null
                 || (params.getHostId() == null && (params.getHostIds() == null || params.getHostIds().isEmpty()))) {
             return ResponseResult.fail("hostId/hostIds和targetNodeId不能为空");

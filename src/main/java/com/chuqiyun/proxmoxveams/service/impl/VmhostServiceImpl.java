@@ -64,6 +64,25 @@ import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
 @Slf4j
 @Service("vmhostService")
 public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements VmhostService {
+    @Resource
+    private VmIdReservationService vmIdReservationService;
+    @Resource
+    private MigrationExecutionLock migrationExecutionLock;
+
+    private UnifiedResultDto<Object> migrationBusyResult() {
+        return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                "虚拟机有迁移任务占用资源，请等待迁移完成；失败任务请从迁移页面继续处理");
+    }
+
+    /** 后台任务持有旧快照时，不得将已迁移虚拟机的位置与网络写回源节点。 */
+    @Override
+    public boolean updateById(Vmhost entity) {
+        if (entity != null && entity.getId() != null && entity.getNodeid() != null && entity.getVmid() != null) {
+            return baseMapper.update(entity, new UpdateWrapper<Vmhost>().eq("id", entity.getId())
+                    .eq("nodeid", entity.getNodeid()).eq("vmid", entity.getVmid())) > 0;
+        }
+        return super.updateById(entity);
+    }
     private static final int NAT_SOURCE_PORT_MIN = 1000;
     private static final int NAT_SOURCE_PORT_MAX = 60050;
     private static final int NAT_LEGACY_RESERVED_PORT_MIN = 5900;
@@ -355,8 +374,14 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return HashMap<String,Object> 返回操作结果
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public HashMap<String,Object> power(Integer hostId, String action,JSONObject data) {
         HashMap<String,Object> result = new HashMap<>();
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            result.put("status", false);
+            result.put("msg", migrationBusyResult().getMessage());
+            return result;
+        }
         // 获取虚拟机实例信息
         Vmhost vmhost = this.getById(hostId);
         // 获取虚拟机id
@@ -845,6 +870,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Params: JSONArray vmHosts pve中虚拟机信息 ，Integer nodeId 节点id
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void syncVmStatus(JSONArray vmHosts, Integer nodeId) {
         for (int i = 0; i < vmHosts.size(); i++){
             JSONObject vmHostJson = vmHosts.getJSONObject(i);
@@ -860,6 +886,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
             Vmhost vmhost = this.getOne(vmhostQueryWrapper.eq("delete_state",0));
             // 判空
             if (vmhost == null){
+                continue;
+            }
+            if (vmIdReservationService.isHostReserved(vmhost.getId())) {
                 continue;
             }
             // pve中虚拟机状态
@@ -921,12 +950,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return UnifiedResultDto<Object> 统一返回结果
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk) {
         return resetVmOs(vmHostId, osName, newPassword, resetDataDisk, Collections.emptyList());
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk, List<Integer> initScriptIds){
+        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+            return migrationBusyResult();
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
@@ -1174,7 +1208,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return UnifiedResultDto<Object> 统一返回结果
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> deleteVm(Long vmHostId){
+        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+            return migrationBusyResult();
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 如果虚拟机不存在
@@ -1221,7 +1259,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Return UnifiedResultDto<Object> 统一返回结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> deleteVmToRecycle(Long vmHostId){
+        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+            return migrationBusyResult();
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
@@ -1253,7 +1295,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Return UnifiedResultDto<Object> 统一返回结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> unDeleteVm(Long vmHostId){
+        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+            return migrationBusyResult();
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 判空
@@ -1285,9 +1331,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Return UnifiedResultDto<Object> 统一返回结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> updateVm(VmParams vmParams){
         if (vmParams == null || vmParams.getHostid() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        if (vmIdReservationService.lockAndIsHostReserved(vmParams.getHostid())) {
+            return migrationBusyResult();
         }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmParams.getHostid());
@@ -1487,6 +1537,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
+        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+            return migrationBusyResult();
+        }
         if (vmIpParams.getIpVersion() != null
                 && !Objects.equals(vmIpParams.getIpVersion(), 4)
                 && !Objects.equals(vmIpParams.getIpVersion(), 6)) {
@@ -1592,6 +1645,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
+        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+            return migrationBusyResult();
+        }
         if (vmIpParams.getIpVersion() != null
                 && !Objects.equals(vmIpParams.getIpVersion(), 4)
                 && !Objects.equals(vmIpParams.getIpVersion(), 6)) {
@@ -1681,6 +1737,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     public UnifiedResultDto<Object> deleteVmIp(VmIpParams vmIpParams) {
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
+        }
+        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+            return migrationBusyResult();
         }
         Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
         if (vmhost == null) {
@@ -3805,7 +3864,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     * @Return UnifiedResultDto<Object> 统一返回结果
     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword){
+        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+            return migrationBusyResult();
+        }
         // 获取虚拟机信息
         Vmhost vmhost = this.getById(vmHostId);
         // 如果虚拟机不存在
@@ -4009,13 +4072,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean addVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         return addVmhostNatWithResult(source_ip, source_port, destination_ip, destination_port, protocol, vm).isSuccess();
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public NatOperationResult addVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
+        if (vmIdReservationService.lockAndIsHostReserved(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
+            return NatOperationResult.failure(migrationBusyResult().getMessage());
+        }
         synchronized (NatForwardSyncService.class) {
             return addVmhostNatLocked(source_ip, source_port, destination_ip, destination_port, protocol, vm);
         }
@@ -4158,13 +4226,18 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Params: vm 虚拟机数据库ID, source_port宿主机端口, destination_ip虚拟机IP destination_port虚拟机端口, protocol协议
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean delVmhostNat(String source_ip, int source_port, String destination_ip, int destination_port, String protocol , int vm) {
         return delVmhostNatWithResult(source_ip, source_port, destination_ip, destination_port, protocol, vm).isSuccess();
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
+        if (vmIdReservationService.lockAndIsHostReserved(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
+            return NatOperationResult.failure(migrationBusyResult().getMessage());
+        }
         synchronized (NatForwardSyncService.class) {
             return delVmhostNatLocked(source_ip, source_port, destination_ip, destination_port, protocol, vm);
         }
@@ -4257,7 +4330,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
+        if (vmIdReservationService.lockAndIsHostReserved(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
+            return false;
+        }
         synchronized (NatForwardSyncService.class) {
             return addVmhostVpcIpForwardLocked(hostId, publicIp, privateIp);
         }
@@ -4352,12 +4429,17 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean delVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
         return delVmhostVpcIpForwardWithResult(hostId, publicIp, privateIp).isSuccess();
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public NatOperationResult delVmhostVpcIpForwardWithResult(int hostId, String publicIp, String privateIp) {
+        if (vmIdReservationService.lockAndIsHostReserved(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
+            return NatOperationResult.failure(migrationBusyResult().getMessage());
+        }
         synchronized (NatForwardSyncService.class) {
             return delVmhostVpcIpForwardLocked(hostId, publicIp, privateIp);
         }
@@ -4467,6 +4549,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean syncVmhostVpcIpForward(int hostId) {
         Vmhost vmhost = this.getById(hostId);
         if (!isVpcNetwork(vmhost) || vmhost.getIpList() == null || vmhost.getIpList().isEmpty()) {
@@ -4748,6 +4831,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Params: hostId 虚拟机id flow 流量 单位G
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean addVmHostFlow (int hostId, Long flow) {
         Vmhost vmhost = this.getById(hostId);
         if (vmhost == null || flow == null || flow < 0) {
@@ -4772,6 +4856,9 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private void recoverFlowLimitedVm(int hostId) {
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            return;
+        }
         final Vmhost vmhost;
         try {
             vmhost = this.getById(hostId);
@@ -4867,7 +4954,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:13
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean addVmSnapShot(Vmhost vmhost, String snapName, Boolean vmstate, String description) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
@@ -4885,7 +4976,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:13
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteVmSnapShot(Vmhost vmhost, String snapName) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
@@ -4900,7 +4995,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:13
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean rollbackVmSnapShot(Vmhost vmhost, String snapName) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         // 获取cookie
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
@@ -4910,9 +5009,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> addVmDataDisk(Long hostId, Integer size, String storage) {
         if (hostId == null || size == null || size <= 0) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "hostId和size必须有效，size必须大于0");
+        }
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            return migrationBusyResult();
         }
         Vmhost vmhost = this.getById(hostId);
         if (vmhost == null || Objects.equals(vmhost.getDeleteState(), 1)) {
@@ -4986,9 +5089,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> deleteVmDataDisk(Long hostId, String disk) {
         if (hostId == null || StringUtils.isBlank(disk) || !disk.matches("(?i)^scsi[1-9][0-9]*$")) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "disk必须是scsi1及以上的数据盘设备名");
+        }
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            return migrationBusyResult();
         }
         Vmhost vmhost = this.getById(hostId);
         if (vmhost == null || Objects.equals(vmhost.getDeleteState(), 1)) {
@@ -5036,7 +5143,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resizeVmDataDisk(Long hostId, String disk, Integer size) {
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            return migrationBusyResult();
+        }
         if (hostId == null || size == null || size <= 0
                 || StringUtils.isBlank(disk) || !disk.matches("(?i)^scsi[1-9][0-9]*$")) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
@@ -5237,7 +5348,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:03
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public JSONObject addVmBackup(Vmhost vmhost, String mode, String compress, String notes) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         if (StringUtils.isBlank(node.getBackupStorage())) {
             throw new IllegalArgumentException("节点备份存储未配置");
@@ -5357,7 +5472,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:03
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public JSONObject deleteVmBackup(Vmhost vmhost, String volid) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
@@ -5370,7 +5489,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @DateTime: 2026/5/29 23:03
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public JSONObject rollbackVmBackup(Vmhost vmhost, String volid, Boolean force, Boolean start) {
+        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+            throw new IllegalStateException(migrationBusyResult().getMessage());
+        }
         Master node = masterService.getById(vmhost.getNodeid());
         HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();

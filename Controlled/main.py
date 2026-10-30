@@ -73,7 +73,8 @@ app=FastAPI(
 )
 
 # 路由
-from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk,migration,natForward
+from controller import changePassword,importDisk,status,file,vnc,netWork,securityGroup,disk,migration,natForward,migrationTransfer
+from service.MigrationTransfer import is_transfer_path
 
 # 挂载路由
 app.include_router(changePassword.changePassword_router,tags=["changePassword"])
@@ -87,6 +88,7 @@ app.include_router(securityGroup.security_group_router,tags=["securityGroup"])
 app.include_router(disk.disk_router,tags=["disk"])
 # 迁移阶段接口：主控逐步调用，仅节点间鉴权后可访问
 app.include_router(migration.migration_router,tags=["migration"])
+app.include_router(migrationTransfer.transfer_router,tags=["migration"])
 
 # 无需鉴权的接口：接口文档，以及只返回固定值的版本号，均不含节点信息
 PUBLIC_PATHS = ('/docs', '/openapi.json', '/redoc', '/version')
@@ -177,6 +179,9 @@ Set interceptor to verify that the token is correct
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     try:
+        # 下载专用能力票据由路由独立核验，不接受主控全局 token 作为下载凭据。
+        if is_transfer_path(request.url.path) and request.method in ("GET", "HEAD"):
+            return await call_next(request)
         # 放行文档与免鉴权接口
         if request.url.path.startswith(PUBLIC_PATHS):
             return await call_next(request)

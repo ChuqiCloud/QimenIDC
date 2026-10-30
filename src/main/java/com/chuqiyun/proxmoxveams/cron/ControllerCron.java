@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.cron;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.chuqiyun.proxmoxveams.entity.Config;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
@@ -70,22 +71,18 @@ public class ControllerCron {
                 result = ClientApiUtil.getControllerConnectStatus(node.getHost(),node.getControllerPort(),config.getToken());
             }catch (Exception e){
                 log.error("获取控制器连接状态失败:["+e.getMessage()+"]");
-                node.setControllerStatus(1);
-                masterService.updateById(node);
+                updateControllerStatus(node, 1);
                 continue;
             }
             if (result == null){
-                node.setControllerStatus(1);
-                masterService.updateById(node);
+                updateControllerStatus(node, 1);
                 continue;
             }
             if (result.getInteger("code") != 200){
-                node.setControllerStatus(1);
-                masterService.updateById(node);
+                updateControllerStatus(node, 1);
                 continue;
             }
-            node.setControllerStatus(0);
-            masterService.updateById(node);
+            updateControllerStatus(node, 0);
             trustedNetworkManager.observeAgentReport(node.getId(), result);
             syncAgentSecurity(node, config.getToken());
             if (Objects.equals(node.getStatus(), 1)) {
@@ -97,6 +94,13 @@ public class ControllerCron {
         } catch (Exception e) {
             log.warn("可信白名单补偿同步失败: {}", e.getMessage());
         }
+    }
+
+    private void updateControllerStatus(Master node, int status) {
+        node.setControllerStatus(status);
+        // 巡检快照不回写节点配置或其他轮次已更新的版本。
+        masterService.update(new UpdateWrapper<Master>().eq("id", node.getId())
+                .set("controller_status", status));
     }
 
     /**
@@ -118,6 +122,7 @@ public class ControllerCron {
         }
         String apiVersion = versionInfo.getString("api_version");
         String agentVersion = versionInfo.getString("version");
+        recordAgentVersion(node, agentVersion);
         if (!Objects.equals(apiVersion, EXPECTED_AGENT_API_VERSION)) {
             log.warn("节点[{}]被控端接口协议不兼容或未声明: 预期协议={}, 被控协议={}, 被控程序={}, nodeId={}",
                     node.getName(), EXPECTED_AGENT_API_VERSION, apiVersion, agentVersion, node.getId());
@@ -125,6 +130,27 @@ public class ControllerCron {
         }
         log.debug("节点[{}]接口协议兼容: 协议={}, 主控程序={}, 被控程序={}, nodeId={}",
                 node.getName(), apiVersion, masterVersion, agentVersion, node.getId());
+    }
+
+    private void recordAgentVersion(Master node, String reportedVersion) {
+        if (reportedVersion == null || reportedVersion.trim().isEmpty()) {
+            return;
+        }
+        String version = reportedVersion.trim();
+        if (version.length() > 64) {
+            log.warn("节点[{}]上报的 QAgent 版本过长，保留原记录: nodeId={}", node.getName(), node.getId());
+            return;
+        }
+        if (Objects.equals(version, node.getQagentVersion())) {
+            return;
+        }
+        // 程序版本不参与协议兼容判定；即便协议不兼容，也记录节点实际运行版本。
+        if (masterService.update(new UpdateWrapper<Master>().eq("id", node.getId())
+                .set("qagent_version", version))) {
+            node.setQagentVersion(version);
+        } else {
+            log.warn("保存节点[{}]的 QAgent 版本失败: nodeId={}", node.getName(), node.getId());
+        }
     }
 
 }

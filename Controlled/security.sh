@@ -464,6 +464,17 @@ server {
     ssl_certificate_key ${SECURITY_DIR}/qagent/qimenidc-qagent.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     access_log off;
+    # 只有此归档下载前缀允许节点间访问；被控独立校验短期票据、任务、文件和真实来源 IP。
+    location ^~ /migration-transfer/ {
+        limit_except GET HEAD { deny all; }
+        proxy_pass http://127.0.0.1:${QAGENT_BACKEND_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$realip_remote_addr;
+        proxy_set_header X-Forwarded-For \$realip_remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
     # 自救入口仍由 QAgent 校验 Token、密文和请求签名，其他业务继续限制来源。
     location = /net/trust {
         limit_except POST { deny all; }

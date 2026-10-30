@@ -60,7 +60,9 @@ public class ControllerApiSchema {
         // 迁移（阶段化接口，主控按步骤调用并可单步重试）
         put("/migrationAction/backup", "task_id", "action", "vmid", "backup_dir", "shutdown_timeout");
         put("/migrationAction/run", "task_id", "action", "vmid", "backup_dir", "shutdown_timeout",
-                "source_url", "source_token", "target_vmid", "target_storage");
+                "source_url", "source_token", "target_vmid", "target_storage",
+                "source_certificate", "archive_size", "archive_sha256");
+        put("/migrationAction/channel", "task_id", "action", "channel_id", "ttl_seconds");
         put("/migrationAction/cleanup-source", "task_id", "vmid", "purge");
     }
 

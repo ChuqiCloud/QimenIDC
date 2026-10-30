@@ -569,6 +569,13 @@ public class ClientApiUtil {
 
     public static JSONObject startMigrationRestore(String ip, String token, Integer controllerPort, String taskId, String sourceUrl,
                                                    String sourceToken, Integer targetVmid, String targetStorage, String backupDir) {
+        return startMigrationRestore(ip, token, controllerPort, taskId, sourceUrl, sourceToken, targetVmid,
+                targetStorage, backupDir, null, null, null);
+    }
+
+    public static JSONObject startMigrationRestore(String ip, String token, Integer controllerPort, String taskId, String sourceUrl,
+                                                   String sourceToken, Integer targetVmid, String targetStorage, String backupDir,
+                                                   String sourceCertificate, Long archiveSize, String archiveSha256) {
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("task_id", taskId);
         paramMap.put("action", "restore");
@@ -576,6 +583,9 @@ public class ClientApiUtil {
         paramMap.put("source_token", sourceToken);
         paramMap.put("target_vmid", targetVmid);
         paramMap.put("target_storage", targetStorage);
+        paramMap.put("source_certificate", sourceCertificate);
+        paramMap.put("archive_size", archiveSize);
+        paramMap.put("archive_sha256", archiveSha256);
         if (backupDir != null && !backupDir.trim().isEmpty()) {
             paramMap.put("backup_dir", backupDir);
         }
@@ -583,8 +593,7 @@ public class ClientApiUtil {
     }
 
     /**
-     * 同步执行被控端单个迁移阶段（backup / restore），失败可直接用同一 taskId 重试。
-     * 被控端会在阶段完成后返回，因此超时时间按最长迁移场景放宽。
+     * 提交被控端单个迁移阶段（backup / restore），节点后台执行，主控轮询状态。
      */
     private static JSONObject postMigrationAction(String ip, String token, Integer controllerPort, Map<String, Object> paramMap) {
         String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/run";
@@ -595,6 +604,23 @@ public class ClientApiUtil {
         String url = AGENT_SCHEME + ip + ":" + controllerPort + "/migrationAction/status/" + taskId;
         Map<String, Object> paramMap = new HashMap<>();
         return getControllerApi(url, paramMap, token);
+    }
+
+    public static JSONObject getMigrationCapabilities(Master node, String token) {
+        return getControllerApi(AGENT_SCHEME + node.getHost() + ":" + node.getControllerPort()
+                + "/migrationAction/capabilities", new HashMap<>(), token);
+    }
+
+    public static JSONObject migrationChannel(Master source, String token, String taskId, String action, String channelId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("task_id", taskId);
+        payload.put("action", action);
+        payload.put("ttl_seconds", 900);
+        if (channelId != null) {
+            payload.put("channel_id", channelId);
+        }
+        return postControllerApi(AGENT_SCHEME + source.getHost() + ":" + source.getControllerPort()
+                + "/migrationAction/channel", payload, token);
     }
 
     /**

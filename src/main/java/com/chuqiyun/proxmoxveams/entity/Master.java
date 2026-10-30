@@ -1,12 +1,14 @@
 package com.chuqiyun.proxmoxveams.entity;
 
 import com.alibaba.fastjson2.annotation.JSONField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.chuqiyun.proxmoxveams.security.EncryptedPasswordTypeHandler;
+import com.chuqiyun.proxmoxveams.utils.QAgentVersion;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -64,6 +66,11 @@ public class Master extends Model<Master> {
     private String backupStorage;
     private Integer controllerStatus;
     private Integer controllerPort;
+    /** 节点最近一次成功上报的 QAgent 程序版本，由巡检维护；尚未获取时为 null。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JSONField(deserialize = false)
+    @TableField(value = "qagent_version", updateStrategy = FieldStrategy.NEVER)
+    private String qagentVersion;
     private Integer naton;
     private String natbridge;
     private Integer natippool;
@@ -85,6 +92,14 @@ public class Master extends Model<Master> {
      */
     @TableField("node_public_key")
     private String nodePublicKey;
+
+    /** 主控发布包包含的最新 QAgent 版本，不持久化、不接受接口修改。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JSONField(deserialize = false)
+    public String getQagentLatestVersion() {
+        return QAgentVersion.getVersion();
+    }
+
     /**
      * 获取主键值
      *

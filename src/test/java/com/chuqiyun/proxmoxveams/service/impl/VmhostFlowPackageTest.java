@@ -25,6 +25,7 @@ class VmhostFlowPackageTest {
     @BeforeEach
     void setUp() {
         service = spy(new VmhostServiceImpl());
+        ReflectionTestUtils.setField(service, "vmIdReservationService", mock(com.chuqiyun.proxmoxveams.service.VmIdReservationService.class));
         doReturn(true).when(service).update(any(Wrapper.class));
     }
 

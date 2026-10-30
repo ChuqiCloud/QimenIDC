@@ -65,6 +65,8 @@ public class CreateVmCron {
     @Resource
     private ConfigService configService;
     @Resource
+    private VmIdReservationService vmIdReservationService;
+    @Resource
     private VmInitScriptBusinessService vmInitScriptBusinessService;
     @Resource(name = "createVmExecutor")
     private TaskExecutor createVmExecutor;
@@ -152,7 +154,7 @@ public class CreateVmCron {
             Integer vmIdInit = null;
             try {
             //vmParams.setTask(params);
-            vmIdInit = vmhostService.getNewVmid(vmParams.getNodeid());
+            vmIdInit = vmIdReservationService.reserve(vmParams.getNodeid(), null, "create:" + task.getId());
             Master createNode = masterService.getById(vmParams.getNodeid());
             if (createNode == null) {
                 finishCreateVmFailed(task, null, vmParams, vmIdInit, "创建基础虚拟机失败，节点不存在");
@@ -457,7 +459,9 @@ public class CreateVmCron {
                     "create");
             // 更新主线程任务task状态为2
                 task.setStatus(2);
-                taskService.updateById(task);
+                if (taskService.updateById(task)) {
+                    vmIdReservationService.release("create:" + task.getId());
+                }
             } catch (Exception e) {
                 String error = "创建虚拟机异常: " + getExceptionMessage(e);
                 try {

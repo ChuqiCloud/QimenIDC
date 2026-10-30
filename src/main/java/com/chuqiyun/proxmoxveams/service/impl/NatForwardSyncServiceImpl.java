@@ -14,6 +14,7 @@ import com.chuqiyun.proxmoxveams.service.NatForwardRuleService;
 import com.chuqiyun.proxmoxveams.service.NatForwardSyncService;
 import com.chuqiyun.proxmoxveams.service.NatSyncStateService;
 import com.chuqiyun.proxmoxveams.service.VpcIpBindingService;
+import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -48,6 +49,8 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
     private ConfigService configService;
     @Resource
     private VpcIpBindingService vpcIpBindingService;
+    @Resource
+    private VmIdReservationService vmIdReservationService;
 
     @Override
     public synchronized boolean savePortRule(Integer nodeId, Integer hostId, String sourceIp, Integer sourcePort,
@@ -143,19 +146,25 @@ public class NatForwardSyncServiceImpl implements NatForwardSyncService {
             if (node == null || node.getId() == null || StringUtils.isBlank(node.getHost()) || node.getControllerPort() == null) {
                 continue;
             }
-            synchronized (NatForwardSyncService.class) {
-                syncNode(node);
-                // NAT 同步不会补齐历史 VPC 公网地址。节点升级或公网接入
-                // 模式切换后，独立执行一次幂等 ensure，修复“规则存在但
-                // vmbr0 没有 /32 地址”的旧绑定。
-                try {
-                    reconcileVpcPublicIpAddresses(node);
-                } catch (Exception e) {
-                    // 补偿失败不能阻断其他节点的 NAT 同步；下一个周期继续重试。
-                    log.warn("[VPC-IP-RECONCILE] 节点补偿任务异常: NodeId={}, Error={}",
-                            node.getId(), e.getMessage());
+            vmIdReservationService.withAllocationLock(() -> {
+                synchronized (NatForwardSyncService.class) {
+                    if (vmIdReservationService.isNodeInMigration(node.getId())) {
+                        // 迁移逐条清理期间不能将旧数据库快照同步回节点，失败任务也继续保留屏障。
+                        return;
+                    }
+                    syncNode(node);
+                    // NAT 同步不会补齐历史 VPC 公网地址。节点升级或公网接入
+                    // 模式切换后，独立执行一次幂等 ensure，修复“规则存在但
+                    // vmbr0 没有 /32 地址”的旧绑定。
+                    try {
+                        reconcileVpcPublicIpAddresses(node);
+                    } catch (Exception e) {
+                        // 补偿失败不能阻断其他节点的 NAT 同步；下一个周期继续重试。
+                        log.warn("[VPC-IP-RECONCILE] 节点补偿任务异常: NodeId={}, Error={}",
+                                node.getId(), e.getMessage());
+                    }
                 }
-            }
+            });
         }
     }
 
