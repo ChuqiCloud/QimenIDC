@@ -10,6 +10,7 @@ import com.chuqiyun.proxmoxveams.entity.Area;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.AreaService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.ReleaseVersionService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +28,8 @@ public class SysGroupController {
     private AreaService areaService;
     @Resource
     private MasterService masterService;
+    @Resource
+    private ReleaseVersionService releaseVersionService;
 
     /**
     * @Author: mryunqi
@@ -166,6 +169,7 @@ public class SysGroupController {
         QueryWrapper<Master> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("area",area);
         Page<Master> masterPage = masterService.getMasterList(page,size,queryWrapper);
+        releaseVersionService.fillQagentLatestVersion(masterPage.getRecords());
         return ResponseResult.ok(masterPage);
     }
 

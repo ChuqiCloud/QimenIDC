@@ -28,6 +28,8 @@ public class SysNodeMasterController {
     @Resource
     private MasterService masterService;
     @Resource
+    private ReleaseVersionService releaseVersionService;
+    @Resource
     private VmhostService vmhostService;
     @Resource
     private VncnodeService vncnodeService;
@@ -60,6 +62,7 @@ public class SysNodeMasterController {
     public ResponseResult<Object> selectNodeByPage(@RequestParam(name = "page",defaultValue = "1") Integer page,
                                                    @RequestParam(name = "size", defaultValue = "20") Integer size) throws UnauthorizedException {
         Page<Master> masterPage = masterService.getMasterList(page,size);
+        releaseVersionService.fillQagentLatestVersion(masterPage.getRecords());
         return ResponseResult.ok(masterPage);
     }
 

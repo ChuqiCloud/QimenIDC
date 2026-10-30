@@ -8,7 +8,6 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.chuqiyun.proxmoxveams.security.EncryptedPasswordTypeHandler;
-import com.chuqiyun.proxmoxveams.utils.QAgentVersion;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -93,12 +92,11 @@ public class Master extends Model<Master> {
     @TableField("node_public_key")
     private String nodePublicKey;
 
-    /** 主控发布包包含的最新 QAgent 版本，不持久化、不接受接口修改。 */
+    /** 仅在接口返回时从线上发布清单填充的最新 QAgent 版本，不入库。 */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @JSONField(deserialize = false)
-    public String getQagentLatestVersion() {
-        return QAgentVersion.getVersion();
-    }
+    @TableField(exist = false)
+    private String qagentLatestVersion;
 
     /**
      * 获取主键值

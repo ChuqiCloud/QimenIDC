@@ -9,7 +9,6 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
-import com.chuqiyun.proxmoxveams.utils.QAgentVersion;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -161,17 +160,20 @@ class ControllerCronVersionTest {
     @Test
     void exposesReportedVersionButIgnoresApiSubmittedVersion() throws Exception {
         node.setQagentVersion("1.0.9");
+        node.setQagentLatestVersion("1.1.0");
         ObjectMapper mapper = new ObjectMapper();
 
         assertThat(mapper.readTree(mapper.writeValueAsString(node)).get("qagentVersion").asText())
                 .isEqualTo("1.0.9");
         assertThat(mapper.readTree(mapper.writeValueAsString(node)).get("qagentLatestVersion").asText())
-                .isEqualTo(QAgentVersion.getVersion());
+                .isEqualTo("1.1.0");
         assertThat(JSON.parseObject(JSON.toJSONString(node)).getString("qagentVersion")).isEqualTo("1.0.9");
         assertThat(JSON.parseObject(JSON.toJSONString(node)).getString("qagentLatestVersion"))
-                .isEqualTo(QAgentVersion.getVersion());
+                .isEqualTo("1.1.0");
         assertThat(mapper.readValue("{\"qagentVersion\":\"forged\"}", Master.class).getQagentVersion()).isNull();
         assertThat(JSON.parseObject("{\"qagentVersion\":\"forged\"}", Master.class).getQagentVersion()).isNull();
+        assertThat(mapper.readValue("{\"qagentLatestVersion\":\"forged\"}", Master.class).getQagentLatestVersion()).isNull();
+        assertThat(JSON.parseObject("{\"qagentLatestVersion\":\"forged\"}", Master.class).getQagentLatestVersion()).isNull();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

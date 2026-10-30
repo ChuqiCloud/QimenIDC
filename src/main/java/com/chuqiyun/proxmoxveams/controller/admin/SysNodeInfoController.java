@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.ReleaseVersionService;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
@@ -22,6 +23,8 @@ import java.util.HashMap;
 public class SysNodeInfoController {
     @Resource
     private MasterService masterService;
+    @Resource
+    private ReleaseVersionService releaseVersionService;
 
     @AdminApiCheck
     @GetMapping("/getNodeInfoByOne")
@@ -41,7 +44,7 @@ public class SysNodeInfoController {
         JSONObject data = nodeStatus.getJSONObject("data");
         if (data != null) {
             data.put("qagentVersion", node.getQagentVersion());
-            data.put("qagentLatestVersion", node.getQagentLatestVersion());
+            data.put("qagentLatestVersion", releaseVersionService.getQagentVersion());
         }
         return ResponseResult.ok(data);
     }
