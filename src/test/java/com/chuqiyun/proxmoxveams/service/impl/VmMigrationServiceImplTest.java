@@ -10,12 +10,16 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Task;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.MigrationExecutionLock;
+import com.chuqiyun.proxmoxveams.service.MigrationTerminationGuard;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
 import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,8 +38,10 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +50,8 @@ class VmMigrationServiceImplTest {
     private VmhostService vmhostService;
     private MasterService masterService;
     private VmIdReservationService reservationService;
+    private MigrationExecutionLock executionLock;
+    private MigrationTerminationGuard terminationGuard;
     private VmMigrationServiceImpl service;
     private final List<Task> inserted = new ArrayList<>();
 
@@ -53,12 +61,23 @@ class VmMigrationServiceImplTest {
         vmhostService = mock(VmhostService.class);
         masterService = mock(MasterService.class);
         reservationService = mock(VmIdReservationService.class);
+        executionLock = mock(MigrationExecutionLock.class);
+        terminationGuard = mock(MigrationTerminationGuard.class);
         inserted.clear();
         service = spy(new VmMigrationServiceImpl());
         ReflectionTestUtils.setField(service, "taskService", taskService);
         ReflectionTestUtils.setField(service, "vmhostService", vmhostService);
         ReflectionTestUtils.setField(service, "masterService", masterService);
         ReflectionTestUtils.setField(service, "vmIdReservationService", reservationService);
+        ReflectionTestUtils.setField(service, "migrationExecutionLock", executionLock);
+        ReflectionTestUtils.setField(service, "migrationTerminationGuard", terminationGuard);
+        PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+        when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        ReflectionTestUtils.setField(service, "transactionManager", transactions);
+        when(executionLock.runLocked(any())).thenAnswer(invocation -> {
+            invocation.<Runnable>getArgument(0).run();
+            return true;
+        });
         JSONObject capability = JSONObject.parseObject("{\"code\":200,\"data\":{\"protocol\":2,\"temporary_channel\":true,\"safe_restore\":true,\"source_identity\":true}}");
         doReturn(capability).when(service).requestMigrationCapabilities(any(Master.class));
         Master source = new Master();
@@ -470,5 +489,160 @@ class VmMigrationServiceImplTest {
         assertEquals("CLEANUP_SOURCE", result.getParams().get("resumeFromStage"));
         verify(reservationService).assertOwned(2, 201, "migration:13");
         verify(reservationService, never()).release(anyString());
+    }
+
+    private Task failedRestoreTask() {
+        Task task = new Task();
+        task.setId(9);
+        task.setType(TaskType.MIGRATE_VM);
+        task.setStatus(3);
+        task.setHostid(1);
+        task.setParams(new HashMap<>(Map.of("stage", "FAILED", "lastFailedStep", "RESTORE",
+                "sourceNodeId", 1, "sourceVmid", 101, "targetNodeId", 2, "targetVmid", 201,
+                "vmIdReservationOwner", "migration:9", "checkpointStage", "BACKUP")));
+        when(taskService.getById(9)).thenReturn(task);
+        return task;
+    }
+
+    @Test
+    void terminateFailedRestorePreservesCheckpointsAndPreventsResume() {
+        Task task = failedRestoreTask();
+        task.getParams().put("sourceBackupFile", "vzdump-qemu-101-2026_10_30-15_00_00.vma.zst");
+
+        Task terminated = service.terminate(9);
+
+        assertEquals(3, terminated.getStatus());
+        assertEquals("TERMINATED", terminated.getParams().get("stage"));
+        assertEquals("RESTORE", terminated.getParams().get("terminatedFromStage"));
+        assertEquals("BACKUP", terminated.getParams().get("checkpointStage"));
+        assertEquals("vzdump-qemu-101-2026_10_30-15_00_00.vma.zst",
+                terminated.getParams().get("sourceBackupFile"));
+        assertFalse(service.isResumable(terminated, "RESTORE"));
+        VmMigrationTaskView view = service.getTaskView(9);
+        assertEquals("TERMINATED", view.getStage());
+        assertFalse(view.getResumable());
+        assertThrows(IllegalStateException.class, () -> service.resume(9));
+        verify(terminationGuard).verify(org.mockito.ArgumentMatchers.eq(task), any());
+        verify(reservationService).assertOwned(2, 201, "migration:9");
+        verify(reservationService).release("migration:9");
+        verify(vmhostService, never()).updateById(any(Vmhost.class));
+    }
+
+    @Test
+    void terminationIsIdempotentAndDoesNotReleaseAnotherReservation() {
+        Task task = failedRestoreTask();
+
+        assertEquals(task, service.terminate(9));
+        assertEquals(task, service.terminate(9));
+
+        verify(terminationGuard, times(1)).verify(org.mockito.ArgumentMatchers.eq(task), any());
+        verify(taskService, times(1)).update(any(Task.class), any());
+        verify(reservationService, times(1)).release("migration:9");
+    }
+
+    @Test
+    void terminationGuardFailureLeavesTaskAndReservationUntouched() {
+        Task task = failedRestoreTask();
+        doThrow(new IllegalStateException("目标VMID仍存在"))
+                .when(terminationGuard).verify(org.mockito.ArgumentMatchers.eq(task), any());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.terminate(9));
+
+        assertTrue(error.getMessage().contains("目标VMID"));
+        assertEquals("FAILED", task.getParams().get("stage"));
+        verify(taskService, never()).update(any(Task.class), any());
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void terminationCasFailureNeverReleasesReservation() {
+        failedRestoreTask();
+        when(taskService.update(any(Task.class), any())).thenReturn(false);
+
+        assertThrows(IllegalStateException.class, () -> service.terminate(9));
+
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void losingExecutionLockDuringRemoteChecksPreventsTaskAndReservationChanges() {
+        failedRestoreTask();
+        doThrow(new IllegalStateException("迁移执行锁已丢失")).when(executionLock).assertHeld();
+
+        assertThrows(IllegalStateException.class, () -> service.terminate(9));
+
+        verify(taskService, never()).update(any(Task.class), any());
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void terminationCannotProceedWhenAnotherWorkerHoldsExecutionLock() {
+        doReturn(false).when(executionLock).runLocked(any());
+
+        assertThrows(IllegalStateException.class, () -> service.terminate(9));
+
+        verify(taskService, never()).getById(anyInt());
+        verify(taskService, never()).update(any(Task.class), any());
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void resumeCannotQueueTaskWhenAnotherWorkerHoldsExecutionLock() {
+        doReturn(false).when(executionLock).runLocked(any());
+
+        assertThrows(IllegalStateException.class, () -> service.resume(9));
+
+        verify(taskService, never()).getById(anyInt());
+        verify(taskService, never()).update(any(Task.class), any());
+    }
+
+    @Test
+    void terminationRejectsQueuedRunningSuccessfulAndCancelledTasks() {
+        Task task = failedRestoreTask();
+        for (int status : new int[]{0, 1, 2}) {
+            task.setStatus(status);
+            assertThrows(IllegalStateException.class, () -> service.terminate(9));
+        }
+        task.setStatus(3);
+        task.getParams().put("stage", "CANCELLED");
+        assertThrows(IllegalStateException.class, () -> service.terminate(9));
+
+        verify(terminationGuard, never()).verify(any(Task.class), any());
+        verify(reservationService, never()).release(anyString());
+    }
+
+    @Test
+    void terminatedTaskNoLongerBlocksNewMigrationToTheSameTargetVmid() {
+        Task task = failedRestoreTask();
+        when(masterService.getById(2)).thenReturn(targetNode());
+        when(vmhostService.getById(1)).thenReturn(vmhost(1, 101, 1));
+        when(taskService.list(any())).thenReturn(Arrays.asList(task));
+        VmMigrationParams request = new VmMigrationParams();
+        request.setHostId(1);
+        request.setTargetNodeId(2);
+        request.setTargetVmid(201);
+
+        service.terminate(9);
+        VmMigrationBatchDto result = service.submit(request);
+
+        assertEquals(1, result.getAcceptedCount());
+        assertEquals(0, result.getRejectedCount());
+        assertEquals(201, inserted.get(0).getParams().get("targetVmid"));
+        verify(reservationService).reserve(org.mockito.ArgumentMatchers.eq(2),
+                org.mockito.ArgumentMatchers.eq(201), anyString(), org.mockito.ArgumentMatchers.eq(1));
+    }
+
+    @Test
+    void terminationCanRecordUnrevokedChannelWhenSourceNodeHasBeenRemoved() {
+        Task task = failedRestoreTask();
+        task.getParams().put("sourceNodeId", 999);
+        task.getParams().put("sourceTransferChannel", "old-task-ticket");
+
+        Task terminated = service.terminate(9);
+
+        assertEquals("TERMINATED", terminated.getParams().get("stage"));
+        assertEquals("old-task-ticket", terminated.getParams().get("sourceTransferChannel"));
+        assertTrue(String.valueOf(terminated.getParams().get("logLines")).contains("等待票据到期"));
+        verify(reservationService).release("migration:9");
     }
 }

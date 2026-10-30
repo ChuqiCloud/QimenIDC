@@ -16,6 +16,8 @@ import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.security.TaskPasswordValues;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.MigrationExecutionLock;
+import com.chuqiyun.proxmoxveams.service.MigrationTerminationGuard;
 import com.chuqiyun.proxmoxveams.service.TaskService;
 import com.chuqiyun.proxmoxveams.service.VmMigrationService;
 import com.chuqiyun.proxmoxveams.service.VmhostService;
@@ -23,6 +25,8 @@ import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -36,6 +40,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * 迁移任务的通用能力：入队、查询、日志与断点续跑。
@@ -63,6 +69,8 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         text.put("CLEANUP_SOURCE", "清理源虚拟机");
         text.put("RELEASE_SOURCE_NETWORK", "回收源端网络资源");
         text.put("DONE", "已完成");
+        text.put("CANCELLED", "已取消");
+        text.put("TERMINATED", "已终结");
         STAGE_TEXT = Collections.unmodifiableMap(text);
     }
 
@@ -82,6 +90,12 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     private ConfigService configService;
     @Resource
     private VmIdReservationService vmIdReservationService;
+    @Resource
+    private MigrationExecutionLock migrationExecutionLock;
+    @Resource
+    private MigrationTerminationGuard migrationTerminationGuard;
+    @Resource
+    private PlatformTransactionManager transactionManager;
 
     @Override
     public synchronized VmMigrationBatchDto submit(VmMigrationParams params) {
@@ -226,7 +240,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         }
         for (Task task : tasks) {
             Map<Object, Object> params = safeParams(task);
-            if (!"CANCELLED".equals(stringValue(params.get("stage")))
+            if (!isTerminalStage(stringValue(params.get("stage")))
                     && Objects.equals(targetNodeId, toInteger(params.get("targetNodeId")))) {
                 Integer vmid = toInteger(params.get("targetVmid"));
                 if (vmid != null && vmid > 0) {
@@ -491,6 +505,10 @@ public class VmMigrationServiceImpl implements VmMigrationService {
 
     @Override
     public Task resume(Integer taskId) {
+        return withMigrationExecutionLock(() -> resumeLocked(taskId));
+    }
+
+    private Task resumeLocked(Integer taskId) {
         Task task = taskId == null ? null : taskService.getById(taskId);
         if (task == null || !TaskType.MIGRATE_VM.equals(task.getType())) {
             throw new IllegalStateException("迁移任务不存在");
@@ -499,8 +517,8 @@ public class VmMigrationServiceImpl implements VmMigrationService {
             throw new IllegalStateException("只有失败的迁移任务可以从断点继续");
         }
         Map<Object, Object> params = new HashMap<>(safeParams(task));
-        if ("CANCELLED".equals(stringValue(params.get("stage")))) {
-            throw new IllegalStateException("已取消的迁移任务不能继续");
+        if (isTerminalStage(stringValue(params.get("stage")))) {
+            throw new IllegalStateException("已取消或终结的迁移任务不能继续");
         }
         String failedStage = stringValue(params.get("lastFailedStep"));
         if (failedStage == null || !RESUMABLE_STAGES.contains(failedStage)) {
@@ -533,6 +551,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
         task.setParams(params);
         task.setStatus(0);
         task.setError(null);
+        migrationExecutionLock.assertHeld();
         if (!taskService.update(task, new UpdateWrapper<Task>().eq("id", taskId).eq("status", 3).set("error", null))) {
             throw new IllegalStateException("迁移任务状态已改变，请刷新后重试");
         }
@@ -568,6 +587,81 @@ public class VmMigrationServiceImpl implements VmMigrationService {
     }
 
     @Override
+    public Task terminate(Integer taskId) {
+        return withMigrationExecutionLock(() -> {
+            // 在取得执行锁后重新读取，不能与续跑或调度器共享旧的失败状态。
+            Task task = taskId == null ? null : taskService.getById(taskId);
+            if (task == null || !TaskType.MIGRATE_VM.equals(task.getType())) {
+                throw new IllegalStateException("迁移任务不存在");
+            }
+            Map<Object, Object> params = new HashMap<>(safeParams(task));
+            if ("TERMINATED".equals(stringValue(params.get("stage")))) {
+                return task;
+            }
+            if (!Integer.valueOf(3).equals(task.getStatus()) || isTerminalStage(stringValue(params.get("stage")))) {
+                throw new IllegalStateException("只有失败且尚未终结的迁移任务可以终结");
+            }
+            migrationTerminationGuard.verify(task, params);
+            String owner = stringValue(params.get("vmIdReservationOwner"));
+            vmIdReservationService.assertOwned(toInteger(params.get("targetNodeId")),
+                    toInteger(params.get("targetVmid")), owner);
+            revokeTerminatedChannel(task, params);
+            params.put("terminatedFromStage", params.get("lastFailedStep"));
+            params.put("stage", "TERMINATED");
+            params.put("updateTime", System.currentTimeMillis());
+            params.remove("resumeFromStage");
+            appendTaskLog(task, params, "用户终结了失败的迁移任务，保留节点备份；目标 VMID 预留已释放，可重新创建迁移任务");
+            task.setParams(params);
+            task.setError("用户终结了失败的迁移任务");
+            new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+                migrationExecutionLock.assertHeld();
+                if (!taskService.update(task, new UpdateWrapper<Task>().eq("id", taskId).eq("status", 3))) {
+                    throw new IllegalStateException("迁移任务状态已改变，请刷新后重试");
+                }
+                migrationExecutionLock.assertHeld();
+                vmIdReservationService.release(owner);
+            });
+            UnifiedLogger.log(UnifiedLogger.LogType.TASK_MIGRATE_VM, "迁移任务已终结, taskId={}", taskId);
+            return task;
+        });
+    }
+
+    private void revokeTerminatedChannel(Task task, Map<Object, Object> params) {
+        String channelId = stringValue(params.get("sourceTransferChannel"));
+        if (channelId == null) {
+            return;
+        }
+        Master source = masterService.getById(toInteger(params.get("sourceNodeId")));
+        JSONObject response = null;
+        try {
+            if (source != null) {
+                response = ClientApiUtil.migrationChannel(source, configService.getToken(),
+                        String.valueOf(task.getId()), "revoke", channelId);
+            }
+        } catch (RuntimeException ignored) {
+            // 源端不可达时仍由票据有效期兜底，不把凭据或原始响应写入任务日志。
+        }
+        if (response != null && Integer.valueOf(200).equals(response.getInteger("code"))) {
+            params.remove("sourceTransferChannel");
+        } else {
+            // 源节点或其状态已丢失时保留审计信息，短期票据仍由源端到期机制拒绝。
+            appendTaskLog(task, params, "旧迁移通道未确认撤销，保留通道记录并等待票据到期");
+        }
+    }
+
+    private <T> T withMigrationExecutionLock(Supplier<T> action) {
+        AtomicReference<T> result = new AtomicReference<>();
+        if (!migrationExecutionLock.runLocked(() -> result.set(action.get()))) {
+            throw new IllegalStateException("当前有迁移流程正在执行，请稍后重试");
+        }
+        return result.get();
+    }
+
+    private static boolean isTerminalStage(String stage) {
+        return "CANCELLED".equals(stage) || "TERMINATED".equals(stage);
+    }
+
+    @Override
     public boolean hasRunningTask() {
         QueryWrapper<Task> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("type", TaskType.MIGRATE_VM);
@@ -578,6 +672,7 @@ public class VmMigrationServiceImpl implements VmMigrationService {
 
     public boolean isResumable(Task task, String stage) {
         return Integer.valueOf(3).equals(task.getStatus()) && stage != null && RESUMABLE_STAGES.contains(stage)
+                && !isTerminalStage(stringValue(safeParams(task).get("stage")))
                 && (!List.of("CLEANUP_SOURCE", "RELEASE_SOURCE_NETWORK").contains(stage)
                 || Boolean.TRUE.equals(safeParams(task).get("targetCommitted")));
     }

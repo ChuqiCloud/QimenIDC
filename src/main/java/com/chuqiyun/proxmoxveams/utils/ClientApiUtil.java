@@ -17,6 +17,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.apache.commons.lang3.StringUtils;
 import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
@@ -27,6 +28,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -142,7 +144,7 @@ public class ClientApiUtil {
      * @Params: params 业务参数
      * @Params: token 被控端token
      * @Params: encryptBody 是否加密请求体
-    * @Return JSONObject 被控端响应，失败返回null
+    * @Return JSONObject 被控端响应；HTTP错误保留状态与脱敏详情，连接失败返回null
     */
     private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token,
                                      boolean encryptBody, int timeoutMillis){
@@ -150,6 +152,8 @@ public class ClientApiUtil {
             filterJsonFields(params, rawUrl);
         }
         String path = URI.create(rawUrl).getRawPath();
+        String logEndpoint = UriComponentsBuilder.fromHttpUrl(rawUrl)
+                .replaceQuery(null).fragment(null).userInfo(null).build().toUriString();
         // 防重放参数放请求头，避免落到被控端与中间设备的访问日志里
         String timestamp = String.valueOf(System.currentTimeMillis() / 1000L);
         String nonce = UUID.randomUUID().toString().replace("-", "");
@@ -189,10 +193,86 @@ public class ClientApiUtil {
                         HttpMethod.POST, entity, String.class);
             }
             return parseResponse(response.getBody(), token, method, path, timestamp, nonce);
+        } catch (RestClientResponseException e) {
+            JSONObject failure = httpErrorResponse(e, token, method, path, timestamp, nonce, params);
+            log.error("调用被控端接口失败: url={}, code={}, error={}", logEndpoint,
+                    failure.getInteger("code"), failure.getString("message"));
+            return failure;
         } catch (RestClientException e) {
-            log.error("调用被控端接口失败: url={}, error={}", rawUrl, e.getMessage());
+            log.error("调用被控端接口失败: url={}, error={}", logEndpoint,
+                    sanitizeAgentErrorMessage(e.getMessage(), token, params));
             return null;
         }
+    }
+
+    // HTTP拒绝已经收到节点响应，不能与连接失败混为一谈，也不能把异常里的响应原文写入日志。
+    private static JSONObject httpErrorResponse(RestClientResponseException error, String token, String method,
+                                                String path, String timestamp, String nonce,
+                                                Map<String, Object> params) {
+        String message = null;
+        String body = error.getResponseBodyAsString();
+        if (body != null && body.length() <= 64 * 1024) {
+            try {
+                JSONObject response = parseResponse(body, token, method, path, timestamp, nonce);
+                if (response != null) {
+                    Object detail = response.get("message");
+                    if (!(detail instanceof String) || ((String) detail).isBlank()) {
+                        detail = response.get("detail");
+                    }
+                    if (detail instanceof String) {
+                        message = (String) detail;
+                    } else if (detail instanceof JSONArray) {
+                        List<String> messages = new ArrayList<>();
+                        for (Object item : (JSONArray) detail) {
+                            // FastAPI校验错误的input/ctx可能包含凭据，只取可读错误描述。
+                            if (item instanceof JSONObject && ((JSONObject) item).get("msg") instanceof String) {
+                                messages.add(((JSONObject) item).getString("msg"));
+                            }
+                            if (messages.size() == 8) {
+                                break;
+                            }
+                        }
+                        message = String.join("；", messages);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // nginx HTML、损坏的JSON或无法解密的响应均不回显原文。
+            }
+        }
+        message = sanitizeAgentErrorMessage(message, token, params);
+        if (message.isBlank()) {
+            message = "节点返回错误，未提供可读详情";
+        }
+        JSONObject failure = new JSONObject();
+        // 始终使用HTTP错误状态，避免错误响应体中的code=200被误认为成功。
+        failure.put("code", error.getRawStatusCode());
+        failure.put("message", "HTTP " + error.getRawStatusCode() + "：" + message);
+        failure.put("data", new JSONObject());
+        return failure;
+    }
+
+    private static String sanitizeAgentErrorMessage(String message, String token, Map<String, Object> params) {
+        String sanitized = message == null ? "" : message;
+        if (StringUtils.isNotBlank(token)) {
+            sanitized = sanitized.replace(token, "***");
+        }
+        if (params != null) {
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                String key = entry.getKey().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                if (key.endsWith("token") || key.endsWith("password") || key.endsWith("passwd")
+                        || key.endsWith("secret") || key.equals("channelid") || key.equals("sourceurl")
+                        || key.equals("authorization") || key.equals("pwd")) {
+                    if (entry.getValue() instanceof String && !((String) entry.getValue()).isBlank()) {
+                        sanitized = sanitized.replace((String) entry.getValue(), "***");
+                    }
+                }
+            }
+        }
+        // 未知凭据也不回显；保留HTTP状态即可继续排查，避免错误详情成为泄露通道。
+        if (sanitized.matches("(?is).*?[\\\"']?(?:[a-z0-9_-]*(?:token|password|passwd|secret)|authorization|channel[_-]?id|pwd|ticket)[\\\"']?\\s*[:=].*")) {
+            sanitized = "节点错误详情含敏感字段，已隐藏";
+        }
+        return sanitizeNatErrorMessage(sanitized);
     }
 
     /**

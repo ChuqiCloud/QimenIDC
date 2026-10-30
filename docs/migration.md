@@ -42,7 +42,7 @@
 
 多主控通过数据库会话锁串行执行迁移，并以任务状态条件更新避免抢占/取消竞态。进程中断的 running 任务在取得执行锁后恢复。失败任务保留预留并阻止源 VM 的启动、删除、重装、配置和磁盘等冲突操作；普通创建和受影响节点的规则同步使用相同分配互斥机制。
 
-首次排队且从未执行的任务可以取消。已执行或失败的任务应从原任务续跑，不能取消后新建任务绕过资源归属。升级前的旧任务没有数据库预留，不允许直接执行或续跑，应重新提交。
+首次排队且从未执行的任务可以取消。已执行或失败的任务默认从原任务续跑；若源归档丢失，可以通过下述终结接口确认无目标残留后释放预留，再创建新任务。升级前的旧任务没有数据库预留，不允许直接执行或续跑，应重新提交。
 
 ## 使用接口
 
@@ -63,8 +63,40 @@
 - `GET /{adminPath}/migrateVm/{taskId}/log`：增量日志，游标约定见上文。
 - `POST|PUT /{adminPath}/migrateVm/{taskId}/resume`：从失败阶段重试。
 - `POST|PUT /{adminPath}/migrateVm/{taskId}/cancel`：取消从未执行的排队任务。
+- `POST|PUT /{adminPath}/migrateVm/{taskId}/terminate`：终结打包或导入阶段失败、尚未切换网络的任务。无需请求体，成功返回更新后的任务详情。
 
 主控先检查两端 `protocol >= 2`、`temporary_channel`、`safe_restore` 与 `source_identity` 能力，旧版被控会在分配资源前被拒绝。
+
+## 源归档丢失后终结任务
+
+构建 `1.3.5_6` 增加失败任务终结入口。例如任务 1158 已无法在源节点建立下载通道，可在管理员认证下请求：
+
+```http
+POST /{adminPath}/migrateVm/1158/terminate
+```
+
+终结要求失败步骤为 `BACKUP` 或 `RESTORE`、尚未提交目标、没有未回收的目标网络清单，且主控的 VM 位置仍是原源节点。主控核对两端被控任务均已停止（源端状态丢失的 `NOT_FOUND` 可接受），并查询目标 PVE 集群确认目标 VMID 不存在；存在但无法连接的节点不能视为空闲。已从主控删除的源节点无需连接，但新迁移仍需有效的源节点与虚拟机记录。
+
+若提示目标 VMID 仍存在，请先核对任务中的目标节点和 VMID，人工确认其归属并处理残留后再请求终结。接口不会删除源 VM、目标 VM、磁盘或备份。尚有被控任务运行、已进入网络切换或目标提交的任务会拒绝终结，继续保留预留。
+
+成功后任务保持历史失败状态 `status=3`，`stage=TERMINATED`、`stageText=已终结`、`resumable=false`，日志与备份保留，VMID 预留及源 VM 的迁移占用在同一数据库事务内释放。终结与续跑使用同一迁移执行锁，重复终结返回原结果。此后可重新提交迁移；新任务仍会检查真实 PVE 资源，不会覆盖已有 VM。
+
+源端旧通道会尝试撤销；无法确认撤销时保留审计记录，短期票据到期后失效。被控 HTTP 拒绝现在保留状态码和脱敏后的 `message`/`detail`，不会再把已收到的 400/410 错误显示为“节点未响应”。
+
+本次构建 `1.3.5_6` 在 Windows/JDK 20 下完成 Java 全量 330 项测试，全部通过，并生成兼容 Java 17 的可执行主控 JAR。新增验证覆盖管理员鉴权、终结与续跑互斥、锁丢失、真实 H2 事务回滚及本机 HTTP 错误传递；PVE 响应使用模拟，尚未在现网执行终结或重新迁移。
+
+## NAT 同步返回 410
+
+`This QAgent endpoint has been retired for security reasons` 来自旧版被控的接口下线策略。当前 QAgent 已恢复经过鉴权及加密校验的 `/nat/*`，无需关闭安全校验。可在报错节点执行以下只读诊断：
+
+```bash
+curl -sS http://127.0.0.1:17600/version
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:17600/nat/sync
+sed -n '1,30p' /home/software/QAgent/service/EndpointPolicy.py
+systemctl show qagent.service -p ExecStart -p WorkingDirectory -p MainPID
+```
+
+未带凭据的空请求不会同步规则；当前策略应返回 401，旧下线策略返回 410。若磁盘上的策略已没有 `/nat`，运行中仍返回 410，检查服务实际加载目录、未重启的旧进程以及反代后端地址。两台故障节点应分别核对。
 
 ## 恢复时报归档信息无法识别
 

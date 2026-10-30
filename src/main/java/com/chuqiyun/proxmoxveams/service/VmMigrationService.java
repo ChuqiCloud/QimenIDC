@@ -47,6 +47,11 @@ public interface VmMigrationService {
     boolean cancel(Integer taskId);
 
     /**
+     * 终结尚未切换网络的失败任务，确认无活动任务或目标 VM 后释放预留。
+     */
+    Task terminate(Integer taskId);
+
+    /**
      * 当前是否有迁移任务在跑，供调度器做单并发控制。
      */
     boolean hasRunningTask();

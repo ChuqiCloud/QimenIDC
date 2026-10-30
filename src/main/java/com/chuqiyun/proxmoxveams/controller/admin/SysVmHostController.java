@@ -192,6 +192,18 @@ public class SysVmHostController {
         return ResponseResult.ok(vmMigrationService.getTaskView(taskId));
     }
 
+    /** 终结导入之前失败的迁移，保留备份并在确认目标无残留 VM 后释放预留。 */
+    @AdminApiCheck
+    @RequestMapping(value = "/migrateVm/{taskId}/terminate", method = {RequestMethod.POST, RequestMethod.PUT})
+    public Object terminateMigrateVmTask(@PathVariable("taskId") Integer taskId) throws UnauthorizedException {
+        try {
+            vmMigrationService.terminate(taskId);
+            return ResponseResult.ok(vmMigrationService.getTaskView(taskId));
+        } catch (IllegalStateException e) {
+            return ResponseResult.fail(e.getMessage());
+        }
+    }
+
     private List<Integer> getInitScriptIds(JSONObject params) {
         List<Integer> initScriptIds = new java.util.ArrayList<>();
         if (params == null) {
