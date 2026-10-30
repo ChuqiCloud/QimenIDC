@@ -1,6 +1,6 @@
 # 迁移修复与接口约定
 
-迁移入口与执行器已恢复，使用安全迁移协议 2。旧 `/migration/*` 接口保持下线，主控仅调用 `/migrationAction/*`。迁移功能从构建 `1.3.5_2` 恢复，当前主控构建为 `1.3.5_3`，产品版本保持 `1.3.5`，QAgent 版本为 `1.0.9`。
+迁移入口与执行器已恢复，使用安全迁移协议 2。旧 `/migration/*` 接口保持下线，主控仅调用 `/migrationAction/*`。迁移功能从构建 `1.3.5_2` 恢复，产品版本保持 `1.3.5`，QAgent 版本为 `1.0.10`。
 
 ## 临时授信直传
 
@@ -66,9 +66,30 @@
 
 主控先检查两端 `protocol >= 2`、`temporary_channel`、`safe_restore` 与 `source_identity` 能力，旧版被控会在分配资源前被拒绝。
 
+## 恢复时报归档信息无法识别
+
+QAgent `1.0.10` 修复目标节点将归档统一改名为 `backup.vma.zst` 导致 `qmrestore` 报 `couldn't determine archive info` 的问题。PVE 先按 `vzdump-qemu-*` 文件名识别类型，再恢复归档；因此 `zstd -t` 和 VMA 文件头通过仍可能出现这个错误。
+
+修复后优先使用源 `vzdump` 文件名，文件名中的源 VMID 与 `qmrestore` 参数中的目标 VMID可以不同。旧任务已经下载的 `backup.vma.zst` 会在任务目录内改名，并保留完整归档或部分下载的续传状态；改名前后进程中断均可重试。任务目录中有冲突文件时停止并保留两个文件，不自动覆盖。
+
+升级目标被控后，从主控的原任务恢复接口继续，避免另建任务重新下载。更新脚本保留 `migration` 下的备份、任务状态和日志。若目标 VMID 已存在，仍会拒绝覆盖；`VM state is NOT cleaned up` 是 PVE 的通用失败提示，应先查询目标 VM 配置确认实际状态，不要添加 `--force`。
+
+旧节点的 `update.sh` 未保留迁移目录，需要先替换为修复版再执行常规升级。对于本次已失败的目标节点，可上传修复包为 `/root/QAgent-1.0.10.tar.gz`，仅替换下面三个文件；现有归档和任务状态不变：
+
+```bash
+tar -czf /root/QAgent-before-1.0.10.tar.gz -C /home/software/QAgent service/Migration.py version update.sh
+systemctl stop qagent.service && tar -xzf /root/QAgent-1.0.10.tar.gz -C /home/software/QAgent service/Migration.py version update.sh && systemctl start qagent.service
+```
+
+替换后先用 `qm config 126` 查询本例目标 VMID。不存在时，在主控对原任务重试；存在时先核对其归属和实际磁盘，不应直接删除或强制覆盖。
+
 ## 验证范围
 
 自动回归覆盖完整主控阶段链的成功迁移、网络重建失败回滚、重启恢复、通道创建/续期/撤销、撤销失败保留资源、源清理失败保留 IP、并发预留和状态竞争。被控测试包含本机真实 HTTPS 证书校验、Range 传输、密文管理请求、票据权限、过期与撤销，以及无强制覆盖的恢复命令。
+
+QAgent `1.0.10` 本次验证：恢复与续传 20 项、迁移数据更新保留 5 项、更新预检 18 项通过。使用 PVE 官方 `archive_info()` 和 `decompressor_info()` 原样函数独立复现同一内容在 `backup.vma.zst` 名称下被拒绝、在 `vzdump-qemu-*` 名称下被接受。命令与更新测试在 Windows/Python 及 Git Bash 隔离目录执行，PVE 命令仍使用模拟；本次未连接真实 PVE 执行数据恢复。
+
+发布前在断网的 Linux/Python 3.10 隔离容器中补充全量验证：使用镜像站离线依赖，196 项中 195 项通过、1 项因运行时版本条件跳过；修改的 Shell 脚本语法检查通过。
 
 2026-10-30 发布验证：Java 全量 285 项通过；QAgent 在隔离的 Linux/Python 3.10 容器中使用自有镜像站离线依赖运行全量测试，184 项中 183 项通过、1 项因运行时版本条件跳过。Linux 文件锁与文件安全功能使用真实系统实现。生成主控 `build/libs/QimenIDC-Server.jar` 和仅含被控生产文件的 `build/distributions/QAgent.tar.gz`，确认主控包包含 CNB 专属的 `ReportCron.class`。
 

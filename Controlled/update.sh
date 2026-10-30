@@ -66,6 +66,13 @@ function restore_old_config(){
     if [ -f "${BACKUP_DIR}/forward_rules.db" ]; then
         cp -f "${BACKUP_DIR}/forward_rules.db" "${QAGENT_DIR}/forward_rules.db"
     fi
+    if [ -d "${BACKUP_DIR}/migration" ]; then
+        [ ! -e "${QAGENT_DIR}/migration" ] && [ ! -L "${QAGENT_DIR}/migration" ] || \
+            fail "new package contains migration state; original data kept at ${BACKUP_DIR}"
+        # 同一软件目录内原子移动，保留归档、断点、任务状态与权限，不再复制大文件。
+        mv "${BACKUP_DIR}/migration" "${QAGENT_DIR}/migration" || \
+            fail "cannot restore migration data; original data kept at ${BACKUP_DIR}"
+    fi
 }
 
 function normalize_shell_scripts(){
@@ -94,6 +101,8 @@ function stage_package(){
     for required in main.py lib.sh qa.sh harden.sh security.sh python-runtime.sh service/SecurityConfig.py service/DependencyBundle.py dependencies.json; do
         [ -f "${STAGING_DIR}/${required}" ] && [ ! -L "${STAGING_DIR}/${required}" ] || fail "invalid package: missing ${required}"
     done
+    [ ! -e "${STAGING_DIR}/migration" ] && [ ! -L "${STAGING_DIR}/migration" ] || \
+        fail "invalid package: migration state must not be included"
     normalize_shell_scripts "${STAGING_DIR}"
     # 新包也先读已有配置，失败时原目录、运行服务与证书仍然保留。
     bash "${STAGING_DIR}/harden.sh" --prepare-config || fail "security settings are incomplete; existing QAgent was not replaced"
@@ -101,12 +110,23 @@ function stage_package(){
 }
 
 function install_package(){
+    [ ! -e "${STAGING_DIR}/migration" ] && [ ! -L "${STAGING_DIR}/migration" ] || \
+        fail "invalid package: migration state must not be included"
+    if [ -L "${QAGENT_DIR}/migration" ] || { [ -e "${QAGENT_DIR}/migration" ] && [ ! -d "${QAGENT_DIR}/migration" ]; }; then
+        fail "existing migration state is not a regular directory; existing QAgent was not replaced"
+    fi
+    # 先停服再取快照，避免任务仍在写入状态或归档时复制出不一致的备份。
+    systemctl stop qagent.service || fail "cannot stop qagent.service; existing QAgent was not replaced"
     backup_old_config
     # 保存完整源码，后续依赖或服务配置失败时仍可人工恢复。
-    cp -a "${QAGENT_DIR}" "${BACKUP_DIR}/QAgent"
-    systemctl stop qagent.service
+    cp -a "${QAGENT_DIR}" "${BACKUP_DIR}/QAgent" || \
+        fail "cannot snapshot old QAgent; existing source and data were not replaced; backup kept at ${BACKUP_DIR}"
+    if [ -d "${QAGENT_DIR}/migration" ]; then
+        mv "${QAGENT_DIR}/migration" "${BACKUP_DIR}/migration" || \
+            fail "cannot preserve migration data; source and backup kept at ${BACKUP_DIR}"
+    fi
     rm -rf "${QAGENT_DIR}"
-    mv "${STAGING_DIR}" "${QAGENT_DIR}"
+    mv "${STAGING_DIR}" "${QAGENT_DIR}" || fail "cannot install new QAgent; source and data kept at ${BACKUP_DIR}"
     STAGING_DIR=""
     restore_old_config
 

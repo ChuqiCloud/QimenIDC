@@ -715,6 +715,42 @@ def run_restore(item):
         _run_restore(item)
 
 
+def prepare_restore_archive(item, directory):
+    """保留 PVE 可识别的归档名，并无损接续旧版任务的完整或部分下载。"""
+    source_name = urllib.parse.unquote(urllib.parse.urlsplit(item.source_url).path.rsplit("/", 1)[-1])
+    validate_archive_filename(source_name)
+    existing = read_status(item.task_id)
+    filename = existing.get("restore_archive_filename")
+    if filename is None:
+        if source_name.startswith("vzdump-qemu-"):
+            filename = source_name
+        else:
+            # PVE 先按文件名前缀识别归档类型；旧接口的通用文件名也必须加上此前缀。
+            suffix = ".vma.zst" if source_name.endswith(".vma.zst") else ".vma"
+            filename = f"vzdump-qemu-{int(item.target_vmid)}-migration{suffix}"
+        # 先记路径计划，再改名；进程在任一写入点中断后仍能定位已下载的数据。
+        write_status(item.task_id, restore_archive_filename=filename)
+    validate_archive_filename(filename)
+    if not filename.startswith("vzdump-qemu-"):
+        raise ValueError("migration restore archive must use a vzdump-qemu filename")
+    backup_file = os.path.join(directory, filename)
+    legacy_file = os.path.join(directory, "backup.vma.zst")
+    if existing.get("backup_file") not in (None, legacy_file, backup_file):
+        raise RuntimeError("migration cached archive path differs from the task restore archive")
+    for path in (legacy_file, backup_file):
+        if os.path.lexists(path) and (os.path.islink(path) or not os.path.isfile(path)):
+            raise RuntimeError("migration cached archive is not a regular file")
+    if os.path.exists(legacy_file):
+        if os.path.exists(backup_file):
+            raise RuntimeError("both legacy and renamed migration archives exist; refusing to overwrite either")
+        # task_lock 与仅限服务用户访问的任务目录保证内部操作不会竞争覆盖文件。
+        os.rename(legacy_file, backup_file)
+        append_log(item.task_id, f"rename cached archive for PVE restore -> {filename}")
+    # 同步续传路径，保留 download_source、download_complete 与字节内容。
+    write_status(item.task_id, backup_file=backup_file)
+    return backup_file
+
+
 def _run_restore(item):
     task_id = item.task_id
     try:
@@ -735,7 +771,8 @@ def _run_restore(item):
         if cluster_vm_exists(item.target_vmid):
             raise RuntimeError(f"target VMID {int(item.target_vmid)} already exists; automatic overwrite is forbidden")
         directory = task_backup_dir(item)
-        backup_file = os.path.join(directory, "backup.vma.zst")
+        backup_file = prepare_restore_archive(item, directory)
+        existing = read_status(task_id)
         resumed = False
         if (existing.get("download_complete") and os.path.isfile(backup_file)
                 and os.path.getsize(backup_file) == expected_size and sha256_file(backup_file) == expected_digest):

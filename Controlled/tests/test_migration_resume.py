@@ -1,11 +1,13 @@
 """
 @Author: 星禾
-@Description: 验证归档中转、恢复幂等和源虚拟机清理边界；所有 PVE 命令均为模拟。
+@Description: 验证归档直传、恢复幂等和源虚拟机清理边界；所有 PVE 命令均为模拟。
 @DateTime: 2026/10/30 12:00
 """
 import base64
 import hashlib
+import io
 import os
+import shlex
 import sys
 import tempfile
 import threading
@@ -33,7 +35,7 @@ class MigrationResumeTest(unittest.TestCase):
     def item(self, **values):
         defaults = dict(task_id="task-1", vmid=100, target_vmid=200, target_storage="local-lvm",
                         backup_dir=Migration.DEFAULT_BACKUP_DIR, shutdown_timeout=1, action="restore",
-                        source_url="https://source/migration-transfer/channel/backup.vma.zst",
+                        source_url="https://source/migration-transfer/channel/vzdump-qemu-100-2026_10_30-15_00_00.vma.zst",
                         source_token="ticket", source_certificate=None, archive_size=7,
                         archive_sha256=hashlib.sha256(b"archive").hexdigest(), purge=True)
         defaults.update(values)
@@ -71,6 +73,123 @@ class MigrationResumeTest(unittest.TestCase):
             Migration.run_restore(item)
         self.assertIn("overwrite is forbidden", Migration.read_status(item.task_id)["error"])
         command.assert_not_called()
+
+    def test_restore_preserves_source_filename_and_reuses_legacy_complete_download(self):
+        item = self.cached_archive()
+        calls = []
+
+        def qmrestore(_task, command, _callback=None):
+            args = shlex.split(command)
+            # 对齐 PVE archive_info 的文件名识别，内容正确也不能用 backup.vma.zst。
+            if not os.path.basename(args[1]).startswith("vzdump-qemu-"):
+                raise RuntimeError("couldn't determine archive info")
+            calls.append(args)
+            return ""
+
+        with patch.object(Migration, "cluster_vm_exists", return_value=False), \
+                patch.object(Migration, "vm_identity", return_value="target-identity"), \
+                patch.object(Migration, "validate_restore_archive"), \
+                patch.object(Migration, "download_file_with_progress") as download, \
+                patch.object(Migration, "run_command", side_effect=qmrestore):
+            Migration.run_restore(item)
+
+        download.assert_not_called()
+        status = Migration.read_status(item.task_id)
+        self.assertEqual("RESTORE_DONE", status["stage"])
+        self.assertEqual("vzdump-qemu-100-2026_10_30-15_00_00.vma.zst", os.path.basename(status["backup_file"]))
+        self.assertEqual("200", calls[0][2])
+        self.assertTrue(status["resumed"])
+        self.assertFalse(os.path.exists(os.path.join(Migration.task_backup_dir(item), "backup.vma.zst")))
+        with open(status["backup_file"], "rb") as archive:
+            self.assertEqual(b"archive", archive.read())
+
+    def test_legacy_partial_download_keeps_its_range_and_source_fingerprint_after_rename(self):
+        item = self.cached_archive(content=b"arc")
+        directory = Migration.task_backup_dir(item)
+        fingerprint = hashlib.sha256((str(item.archive_size) + ":" + item.archive_sha256).encode()).hexdigest()
+        Migration.write_status(item.task_id, download_complete=False, download_source=fingerprint,
+                               backup_file=os.path.join(directory, "backup.vma.zst"))
+        response = io.BytesIO(b"hive")
+        response.status = 206
+        response.headers = {"Content-Length": "4", "Content-Range": "bytes 3-6/7"}
+        response.getcode = lambda: 206
+        requests = []
+
+        def open_response(request, **_kwargs):
+            requests.append(request)
+            return response
+
+        with patch.object(Migration, "cluster_vm_exists", return_value=False), \
+                patch.object(Migration, "vm_identity", return_value="target-identity"), \
+                patch.object(Migration, "validate_restore_archive"), \
+                patch.object(Migration, "backup_download_opener", return_value=SimpleNamespace(open=open_response)), \
+                patch.object(Migration, "run_command", return_value=""):
+            Migration.run_restore(item)
+
+        self.assertEqual("bytes=3-", requests[0].get_header("Range"))
+        status = Migration.read_status(item.task_id)
+        self.assertEqual("RESTORE_DONE", status["stage"])
+        self.assertEqual(fingerprint, status["download_source"])
+        with open(status["backup_file"], "rb") as archive:
+            self.assertEqual(b"archive", archive.read())
+
+    def test_restore_filename_plan_recovers_when_rename_was_interrupted(self):
+        item = self.cached_archive()
+        directory = Migration.task_backup_dir(item)
+        with patch.object(Migration.os, "rename", side_effect=RuntimeError("interrupted before rename")):
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                Migration.prepare_restore_archive(item, directory)
+        planned = Migration.read_status(item.task_id)["restore_archive_filename"]
+        path = Migration.prepare_restore_archive(item, directory)
+        self.assertEqual(planned, os.path.basename(path))
+        with open(path, "rb") as archive:
+            self.assertEqual(b"archive", archive.read())
+
+    def test_restore_filename_plan_recovers_when_status_update_after_rename_was_interrupted(self):
+        item = self.cached_archive()
+        directory = Migration.task_backup_dir(item)
+        original_write_status = Migration.write_status
+
+        def interrupted_write(task_id, **values):
+            if "backup_file" in values:
+                raise RuntimeError("interrupted after rename")
+            return original_write_status(task_id, **values)
+
+        with patch.object(Migration, "write_status", side_effect=interrupted_write):
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                Migration.prepare_restore_archive(item, directory)
+        path = Migration.prepare_restore_archive(item, directory)
+        self.assertEqual(path, Migration.read_status(item.task_id)["backup_file"])
+        with open(path, "rb") as archive:
+            self.assertEqual(b"archive", archive.read())
+
+    def test_restore_filename_conflict_does_not_overwrite_either_archive(self):
+        item = self.cached_archive()
+        directory = Migration.task_backup_dir(item)
+        destination = os.path.join(directory, "vzdump-qemu-100-2026_10_30-15_00_00.vma.zst")
+        with open(destination, "wb") as archive:
+            archive.write(b"another archive")
+        with self.assertRaisesRegex(RuntimeError, "refusing to overwrite"):
+            Migration.prepare_restore_archive(item, directory)
+        with open(destination, "rb") as archive:
+            self.assertEqual(b"another archive", archive.read())
+        with open(os.path.join(directory, "backup.vma.zst"), "rb") as archive:
+            self.assertEqual(b"archive", archive.read())
+
+    def test_restore_filename_rejects_encoded_path_separators_and_unsupported_suffixes(self):
+        for name in ("%2fetc%2farchive.vma.zst", "..%5carchive.vma.zst", "archive.vma.gz", "archive.vma.zst%00"):
+            item = self.item(source_url="https://source/migration-transfer/channel/" + name)
+            with self.assertRaises(ValueError):
+                Migration.prepare_restore_archive(item, Migration.task_backup_dir(item))
+
+    def test_generic_source_uses_stable_pve_name_without_changing_compression(self):
+        for suffix in (".vma", ".vma.zst"):
+            item = self.item(task_id="generic" + str(len(suffix)), source_url="https://source/archive" + suffix)
+            directory = Migration.task_backup_dir(item)
+            path = Migration.prepare_restore_archive(item, directory)
+            self.assertEqual("vzdump-qemu-200-migration" + suffix, os.path.basename(path))
+            item.source_url = "https://source/renamed" + suffix
+            self.assertEqual(path, Migration.prepare_restore_archive(item, directory))
 
     def test_restore_is_idempotent_only_for_the_same_target_identity(self):
         item = self.cached_archive()
