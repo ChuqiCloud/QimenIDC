@@ -4,10 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.VncnodeDao;
+import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vncnode;
 import com.chuqiyun.proxmoxveams.service.VncnodeService;
+import com.chuqiyun.proxmoxveams.manager.VncNetworksChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import javax.annotation.Resource;
 
 /**
  * (Vncnode)表服务实现类
@@ -18,6 +25,9 @@ import org.springframework.stereotype.Service;
 @Service("vncnodeService")
 public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> implements VncnodeService {
 
+    @Resource
+    private ApplicationEventPublisher eventPublisher;
+
     /**
     * @Author: mryunqi
     * @Description: 添加VNC控制器节点
@@ -27,7 +37,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
     */
     @Override
     public boolean addVncnode(Vncnode vncnode) {
-        return this.save(vncnode);
+        return publishChangeIfSuccessful(this.save(vncnode));
     }
 
     /**
@@ -39,7 +49,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
     */
     @Override
     public boolean deleteVncnode(Long id) {
-        return this.removeById(id);
+        return publishChangeIfSuccessful(this.removeById(id));
     }
 
     /**
@@ -51,7 +61,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
     */
     @Override
     public boolean updateVncnode(Vncnode vncnode) {
-        return this.updateById(vncnode);
+        return publishChangeIfSuccessful(this.updateById(vncnode));
     }
 
     /**
@@ -97,7 +107,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
         vncnode.setProxy(0);
         vncnode.setStatus(0);
         vncnode.setCreateDate(System.currentTimeMillis());
-        return this.save(vncnode);
+        return publishChangeIfSuccessful(this.save(vncnode));
     }
 
     /**
@@ -112,6 +122,35 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
         QueryWrapper<Vncnode> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("host", host);
         return this.getOne(queryWrapper);
+    }
+
+    private boolean publishChangeIfSuccessful(boolean successful) {
+        if (!successful) {
+            return false;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+                && TransactionSynchronizationManager.isActualTransactionActive()) {
+            // 查询完整节点列表必须发生在提交之后，回滚时不能下发尚未生效的配置。
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishNetworksChanged();
+                }
+            });
+        } else {
+            publishNetworksChanged();
+        }
+        return true;
+    }
+
+    private void publishNetworksChanged() {
+        try {
+            eventPublisher.publishEvent(new VncNetworksChangedEvent());
+        } catch (RuntimeException e) {
+            // 数据已提交；异步任务调度失败交给周期同步补偿，不能误报节点保存失败。
+            UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
+                    "[Whitelist] VNC 节点变更同步调度失败，将由周期同步补偿: {}", e.getMessage());
+        }
     }
 
 }

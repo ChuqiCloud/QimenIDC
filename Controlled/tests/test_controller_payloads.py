@@ -178,17 +178,32 @@ class TrustedNetworkEndpointTest(unittest.IsolatedAsyncioTestCase):
             response.json()['_encrypted'], 'POST', path, timestamp, nonce))
 
     async def test_net_trust_returns_sync_result(self):
-        result = {'cluster': 'pool-hk', 'changed': True, 'addresses': ['198.51.100.7/32']}
+        result = {'cluster': 'pool-hk', 'changed': True, 'addresses': ['198.51.100.7/32'],
+                  'vnc_addresses': ['203.0.113.9/32', '192.0.2.9/32'], 'vnc_changed': True,
+                  'cluster_vnc_addresses': ['203.0.113.9/32', '192.0.2.9/32']}
         with patch('controller.netWork.TrustStore') as store:
             store.return_value.security.return_value = result
             response, body = await self.post('/net/trust', {
-                'networks': ['198.51.100.7/32'], 'cluster_id': 'pool-hk'})
+                'networks': ['198.51.100.7/32'], 'cluster_id': 'pool-hk',
+                'vnc_networks': ['203.0.113.9/32', '192.0.2.9/32']})
         self.assertEqual(200, response.status_code)
         self.assertEqual(200, body['code'])
         self.assertEqual(['198.51.100.7/32'], body['data']['addresses'])
         entity = store.return_value.security.call_args.args[0]
         self.assertEqual(['198.51.100.7/32'], entity)
         self.assertEqual('pool-hk', store.return_value.security.call_args.args[1])
+        self.assertEqual(['203.0.113.9/32', '192.0.2.9/32'],
+                         store.return_value.security.call_args.args[3])
+        self.assertEqual(result['vnc_addresses'], body['data']['vnc_addresses'])
+        self.assertTrue(body['data']['vnc_changed'])
+
+    async def test_net_trust_distinguishes_omitted_null_and_empty_vnc_snapshots(self):
+        for payload, expected in (({}, None), ({'vnc_networks': None}, None), ({'vnc_networks': []}, [])):
+            with self.subTest(payload=payload), patch('controller.netWork.TrustStore') as store:
+                store.return_value.security.return_value = {}
+                response, _ = await self.post('/net/trust', payload)
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(expected, store.return_value.security.call_args.args[3])
 
     async def test_net_trust_still_requires_token(self):
         response = await self.client.post('/net/trust', content='{}', headers={'Content-Type': 'text/plain'})

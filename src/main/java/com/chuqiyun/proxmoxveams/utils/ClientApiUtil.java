@@ -363,10 +363,22 @@ public class ClientApiUtil {
     */
     public static JSONObject syncTrustedNetworks(String ip, Integer port, String token,
                                                  List<String> networks, String clusterId, int timeoutMillis){
+        return syncTrustedNetworks(ip, port, token, networks, null, clusterId, timeoutMillis);
+    }
+
+    /**
+     * 下发主控管理源及本集群完整的 VNC 代理来源；null 保留被控端原有 VNC 策略，空列表清空本集群来源。
+     */
+    public static JSONObject syncTrustedNetworks(String ip, Integer port, String token,
+                                                 List<String> networks, List<String> vncNetworks,
+                                                 String clusterId, int timeoutMillis){
         String url = AGENT_SCHEME + ip + ":" + port + "/net/trust";
         Map<String, Object> paramMap = new HashMap<>();
         paramMap.put("networks", networks == null ? new ArrayList<>() : networks);
         paramMap.put("cluster_id", clusterId == null ? "" : clusterId);
+        if (vncNetworks != null) {
+            paramMap.put("vnc_networks", vncNetworks);
+        }
         return postControllerApi(url, paramMap, token, timeoutMillis);
     }
 

@@ -71,5 +71,6 @@ class ClientPayloadUtilTest {
         assertTrue(ControllerApiSchema.getAllowedFields("http://1.1.1.1:7600/writeFile").contains("content"));
         assertEquals(3, ControllerApiSchema.getAllowedFields("http://1.1.1.1:7600/writeFile").size());
         assertNotNull(ControllerApiSchema.getAllowedFields("http://1.1.1.1:7600/security-group/apply"));
+        assertTrue(ControllerApiSchema.getAllowedFields("https://1.1.1.1:7600/net/trust").contains("vnc_networks"));
     }
 }

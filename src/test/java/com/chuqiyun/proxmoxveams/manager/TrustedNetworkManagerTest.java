@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
+import com.chuqiyun.proxmoxveams.service.VncnodeService;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -31,6 +32,7 @@ class TrustedNetworkManagerTest {
         when(config.getToken()).thenReturn("shared-cluster-token");
         setField(manager, "jdbc", jdbc);
         setField(manager, "configService", config);
+        setField(manager, "vncnodeService", mock(VncnodeService.class));
         setField(manager, "transactionManager", mock(PlatformTransactionManager.class));
         setField(manager, "configuredMemberId", "manager-1");
     }

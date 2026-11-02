@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -9,3 +9,4 @@ Define manager source whitelist sync entity
 class TrustedNetwork(BaseModel):
     networks: List[str] = []
     cluster_id: str = ''
+    vnc_networks: Optional[List[str]] = None

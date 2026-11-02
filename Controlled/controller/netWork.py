@@ -23,7 +23,7 @@ async def restart(request: Request):
     return secured_response(request, CodeEnum.SUCCESS, 'success', {'pid':process.pid})
 
 '''
-同步管理源白名单
+同步管理源和 VNC 中转白名单
 主控把集群内所有主控出口IP下发到本节点，本节点同时回传自己实测到的对端地址，
 主控据此发现出口IP漂移。接口幂等，内容无变化时不重载 nginx。
 '''
@@ -34,5 +34,6 @@ async def trust_network(request: Request):
     # 只有回环 nginx 的覆盖头可作为来源，外部请求头不能自行声明授权地址。
     source = request.headers.get('X-Real-IP', peer) if peer in ('127.0.0.1', '::1') else peer
     source = str(ipaddress.ip_address(source))
-    data = await asyncio.to_thread(TrustStore().security, item.networks, item.cluster_id, source)
+    data = await asyncio.to_thread(TrustStore().security, item.networks, item.cluster_id,
+                                   source, item.vnc_networks)
     return secured_response(request, CodeEnum.SUCCESS, 'success', data)

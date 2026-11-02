@@ -66,6 +66,32 @@ Run the stream once per node and then update the manager's shared token using it
 
 ## 管理源白名单自动同步
 
+### VNC 中转来源自动同步（QAgent 1.1.1 / 主控 1.3.5_8）
+
+主控从 `vncnode` 查询**全部启用的 VNC 节点**（`status=0`），使用 `host` 字段解析来源地址，汇总全部 A/AAAA 记录并去重，以 `/32` 或 `/128` 下发到所有被控。不限于一台中转，也不受列表分页影响；浏览器访问用的 `domain` 不参与来源白名单。无需改数据库结构。
+
+首次启动、约每 5 分钟的心跳补偿，以及 VNC 节点新增、修改、停用、删除提交后，都会同步完整快照。某条记录无效或 DNS 解析失败时，本轮省略 VNC 快照、保留被控原有 VNC 白名单，管理源仍可同步；诊断接口返回具体错误，后续重试。不会把查询失败当成空列表清空所有来源。
+
+同步复用加密且经过 token 鉴权的 `POST /net/trust`：
+
+```json
+{
+  "networks": ["103.236.61.8/32"],
+  "cluster_id": "db-1a2b3c4d5e6f",
+  "vnc_networks": ["103.109.20.138/32", "150.138.77.26/32"]
+}
+```
+
+`vnc_networks` 缺省或为 `null` 时保留现有策略；明确传 `[]` 时撤销本集群全部 VNC 来源。第一次有效同步替换安装时手填的 VNC 名单，此后按集群完整替换；多个管理集群的有效名单按 24 小时租约合并。返回 `data.vnc_addresses` 为最终有效名单，`cluster_vnc_addresses` 为本集群快照，`vnc_changed` 表示是否变更。主控必须核对本集群快照，不会把旧被控忽略新字段的响应视为同步成功。
+
+名单写入 `/etc/qimenidc/security.conf` 的 `QAGENT_VNC_PROXY_IPS`，并标记 `QAGENT_VNC_PROXY_MANAGED=1`。运行中的 TCP 代理对每个新连接读取磁盘名单，无需重启 QAgent/noVNC；已有连接继续保持。只变更 VNC 名单不重载 nginx。空名单表示拒绝所有新连接，不回退旧 systemd 环境变量；后续 `harden.sh`、`update.sh` 保留托管标记和空名单。新安装仍可先填引导名单，主控首次同步后自动接管。
+
+先升级相关被控至 **1.1.1**，再部署主控 **1.3.5_8**。在 `GET /{adminPath}/getAgentWhitelist` 查看 `vncNetworks`、`vncCollectionError`、`syncErrors` 和 `pendingNodes`；旧被控没有确认字段时，错误会提示升级。发布清单中的最新 QAgent 版本仍来自原有线上 `newversion` 数据源，本地构建不会自动修改线上清单。
+
+中转的 `host` 应对应它连接 PVE 节点时的实际出口。若中转经过 SNAT 且出口与 `host` 的解析结果不同，现有节点记录无法推断该出口，应先修正中转地址或网络出口配置。例如 `cqszwy` 的实际公网出口为 `103.109.20.138`，不能只放行目标 PVE 自身的 `103.236.61.8`。应用白名单在 TCP 接收后检查；若 `nc` 建连仍超时，需要另外检查路由、安全组和宿主机防火墙。
+
+本次验证：主控 `clean test bootJar` 全量 362 项通过，输出 `build/libs/QimenIDC-Server.jar`；被控同步、代理和加密接口 43 项，更新预检 21 项，版本接口 5 项通过，生成 `build/distributions/QAgent-1.1.1.tar.gz`。被控测试在 Windows/Python 与 Git Bash 隔离目录执行，`fcntl`/`O_NOFOLLOW` 使用兼容桩；尚未验证 Linux 实际文件锁、PVE 控制台或现网端到端连接。请使用正常 `update.sh` 流程完成升级；仅覆盖源文件不能让旧代理进程加载新版代码。
+
 ### 更新失败：`Invalid manager whitelist`
 
 `easy-install.pth`、`Finished processing dependencies for websockify` 是依赖安装的正常输出。真正的失败发生在其后的 `harden.sh`：旧节点没有 `/etc/qimenidc/security.conf`，也没有提供 `QAGENT_MANAGER_IPS`，因此拒绝空白名单。还需要同时提供节点的证书 SAN（`QAGENT_CERT_HOSTS`）和 noVNC 控制节点的来源 IP/CIDR（`QAGENT_VNC_PROXY_IPS`）；不能用放通所有来源代替这些配置。
@@ -158,7 +184,7 @@ alter table master add node_public_key text null comment '节点公钥(PEM证书
 
 顺带修掉的两个同源问题：`config` 表没有 `id=1` 时 `setBuild` 会永久失败（每次启动都重跑一遍升级 SQL），现在会补建这一行；文件锁丢失但 `config` 已有数据时不再重复 `insert` 导致主键冲突。
 
-The VNC proxy accepts TCP connections only from the noVNC controller hosts. Supply every controller node's actual source IP/CIDR with the vnc-proxy-ips option; default routes are refused. For install, the installer asks for manager source IP/CIDRs, the node hostnames/IPs used by manager API calls, and noVNC controller IPs/CIDRs. For later changes, rerun:
+The VNC proxy accepts TCP connections only from trusted noVNC controller hosts. QAgent 1.1.1 receives the enabled controllers' complete source list from the manager. Before the first sync, supply bootstrap source IPs/CIDRs with the vnc-proxy-ips option; default routes are refused. For install, the installer asks for manager source IP/CIDRs, the node hostnames/IPs used by manager API calls, and noVNC controller IPs/CIDRs. For a manual bootstrap correction, rerun (the manager's next sync replaces this VNC list):
 
 ```bash
 cd /home/software/QAgent

@@ -21,6 +21,7 @@ server {
 '''
 
 SECURITY_TEMPLATE = '''QAGENT_MANAGER_IPS=10.0.0.1/32
+QAGENT_VNC_PROXY_IPS=192.0.2.9/32
 QAGENT_CERT_HOSTS=node.example.com
 QAGENT_BACKEND_PORT=17600
 '''
@@ -165,6 +166,109 @@ class TrustedNetworkTest(unittest.TestCase):
         # 主控自报两个出口，节点只看到其中一个，不应报漂移
         self.assertEqual([], TrustedNetwork.missing_networks(
             ['198.51.100.7/32', '203.0.113.9/32'], ['203.0.113.9/32']))
+
+    def test_vnc_snapshot_replaces_bootstrap_and_removed_addresses_without_reloading_nginx(self):
+        with mock.patch.object(TrustedNetwork.subprocess, 'run') as run:
+            first = self.store.security(['10.0.0.1'], 'pool-hk', '',
+                                        ['198.51.100.7', '198.51.100.7/32', '203.0.113.9/32'])
+            self.assertEqual(['198.51.100.7/32', '203.0.113.9/32'], first['vnc_addresses'])
+            self.assertEqual(first['vnc_addresses'], first['cluster_vnc_addresses'])
+            self.assertTrue(first['vnc_changed'])
+            self.assertFalse(first['changed'])
+            second = self.store.security(['10.0.0.1'], 'pool-hk', '', ['203.0.113.9'])
+            self.assertEqual(['203.0.113.9/32'], second['vnc_addresses'])
+            run.assert_not_called()
+        self.assertEqual(['203.0.113.9/32'], TrustedNetwork.read_networks(self.security_config)['vnc'])
+        self.assertNotIn('QAGENT_VNC_PROXY_IPS=192.0.2.9/32', self.read(self.security_config))
+        self.assertIn('QAGENT_VNC_PROXY_MANAGED=1', self.read(self.security_config))
+
+    def test_omitted_vnc_preserves_bootstrap_and_authoritative_snapshot(self):
+        self.assertEqual(['192.0.2.9/32'], self.store.refresh()['vnc_addresses'])
+        self.store.security(['10.0.0.1'], 'pool-hk', '', ['198.51.100.7'])
+        self.assertEqual(['198.51.100.7/32'],
+                         self.store.security(['10.0.0.1'], 'pool-hk')['vnc_addresses'])
+        result = TrustedNetwork.TrustStore(self.security_config).refresh()
+        self.assertEqual(['198.51.100.7/32'], result['vnc_addresses'])
+        self.assertFalse(result['vnc_changed'])
+
+    def test_empty_vnc_snapshot_is_persisted_and_removes_all_addresses(self):
+        result = self.store.security([], 'pool-hk', '', [])
+        self.assertEqual([], result['vnc_addresses'])
+        self.assertEqual([], result['cluster_vnc_addresses'])
+        self.assertTrue(result['vnc_changed'])
+        self.assertIn("QAGENT_VNC_PROXY_IPS=''", self.read(self.security_config))
+        self.assertEqual([], self.store.refresh()['vnc_addresses'])
+
+    def test_first_matching_snapshot_still_persists_authoritative_marker(self):
+        with mock.patch.object(TrustedNetwork.subprocess, 'run') as run:
+            result = self.store.security(['10.0.0.1'], 'pool-hk', '', ['192.0.2.9'])
+            self.assertTrue(result['vnc_changed'])
+            self.assertIn('QAGENT_VNC_PROXY_MANAGED=1', self.read(self.security_config))
+            self.assertFalse(self.store.security(['10.0.0.1'], 'pool-hk', '', ['192.0.2.9'])['vnc_changed'])
+            run.assert_not_called()
+
+    def test_empty_snapshot_writes_explicit_empty_key_when_bootstrap_key_is_absent(self):
+        with open(self.security_config, 'w') as stream:
+            stream.write('QAGENT_MANAGER_IPS=10.0.0.1/32\n')
+        result = self.store.security([], 'pool-hk', '', [])
+        self.assertTrue(result['vnc_changed'])
+        self.assertIn("QAGENT_VNC_PROXY_IPS=''", self.read(self.security_config))
+
+    def test_vnc_snapshots_merge_active_clusters_and_expire_stale_cluster(self):
+        with mock.patch.object(TrustedNetwork.time, 'time', return_value=100000):
+            self.store.security(['10.0.0.1'], 'pool-hk', '', ['198.51.100.7'])
+        with mock.patch.object(TrustedNetwork.time, 'time', return_value=100060):
+            result = self.store.security(['10.0.0.1'], 'pool-sz', '', ['203.0.113.9'])
+        self.assertEqual(['198.51.100.7/32', '203.0.113.9/32'], result['vnc_addresses'])
+        self.assertEqual(['203.0.113.9/32'], result['cluster_vnc_addresses'])
+        with mock.patch.object(TrustedNetwork.time, 'time', return_value=100000 + self.store.LEASE_SECONDS + 1):
+            self.assertEqual(['203.0.113.9/32'], self.store.refresh()['vnc_addresses'])
+        with mock.patch.object(TrustedNetwork.time, 'time', return_value=100060 + self.store.LEASE_SECONDS + 1):
+            self.assertEqual([], self.store.refresh()['vnc_addresses'])
+
+    def test_invalid_vnc_snapshot_preserves_previous_state_and_configuration(self):
+        self.store.security(['10.0.0.1'], 'pool-hk', '', ['198.51.100.7'])
+        before_security = self.read(self.security_config)
+        before_state = self.read(self.store.state_path)
+        for value in ('0.0.0.0/0', '::/0', 'invalid'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.store.security(['10.0.0.1'], 'pool-hk', '', [value])
+        self.assertEqual(before_security, self.read(self.security_config))
+        self.assertEqual(before_state, self.read(self.store.state_path))
+
+    def test_vnc_snapshot_rolls_back_with_manager_nginx_failure(self):
+        self.store.security(['10.0.0.1'], 'pool-hk', '', ['198.51.100.7'])
+        before_security = self.read(self.security_config)
+        before_nginx = self.read(self.nginx_config)
+        before_state = self.read(self.store.state_path)
+        with mock.patch.object(TrustedNetwork.subprocess, 'run', side_effect=OSError('nginx')):
+            with self.assertRaises(ValueError):
+                self.store.security(['10.0.0.2'], 'pool-hk', '', ['203.0.113.9'])
+        self.assertEqual(before_security, self.read(self.security_config))
+        self.assertEqual(before_nginx, self.read(self.nginx_config))
+        self.assertEqual(before_state, self.read(self.store.state_path))
+
+    def test_vnc_persistence_failure_rolls_back_lease_state(self):
+        self.store.security(['10.0.0.1'], 'pool-hk', '', ['198.51.100.7'])
+        before_state = self.read(self.store.state_path)
+        before_security = self.read(self.security_config)
+        original_write = TrustedNetwork.write_atomic
+
+        def fail_security_write(path, content, mode):
+            if path == self.security_config:
+                raise PermissionError('security.conf')
+            return original_write(path, content, mode)
+
+        with mock.patch.object(TrustedNetwork, 'write_atomic', side_effect=fail_security_write):
+            with self.assertRaises(PermissionError):
+                self.store.security(['10.0.0.1'], 'pool-hk', '', ['203.0.113.9'])
+        self.assertEqual(before_security, self.read(self.security_config))
+        self.assertEqual(before_state, self.read(self.store.state_path))
+
+    def test_managed_config_does_not_become_bootstrap_when_lease_state_is_missing(self):
+        with open(self.security_config, 'a') as stream:
+            stream.write('QAGENT_VNC_PROXY_MANAGED=1\n')
+        self.assertEqual([], self.store.refresh()['vnc_addresses'])
 
 
 if __name__ == '__main__':

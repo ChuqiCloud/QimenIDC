@@ -5,17 +5,21 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.chuqiyun.proxmoxveams.common.UnifiedLogger;
 import com.chuqiyun.proxmoxveams.entity.Master;
+import com.chuqiyun.proxmoxveams.entity.Vncnode;
 import com.chuqiyun.proxmoxveams.service.ConfigService;
 import com.chuqiyun.proxmoxveams.service.MasterService;
+import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.PublicIpProbe;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -31,6 +35,8 @@ import java.net.DatagramSocket;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -76,6 +82,9 @@ public class TrustedNetworkManager {
     private MasterService masterService;
 
     @Resource
+    private VncnodeService vncnodeService;
+
+    @Resource
     private ConfigService configService;
     @Resource
     private JdbcTemplate jdbc;
@@ -103,6 +112,12 @@ public class TrustedNetworkManager {
      * 节点ID -> 下次允许重试时间
      */
     private final Map<Integer, Long> nextRetryAt = new ConcurrentHashMap<>();
+
+    private final Map<Integer, String> syncErrors = new ConcurrentHashMap<>();
+
+    /** 完整的启用 VNC 节点来源快照，包含域名的全部 A/AAAA 记录。 */
+    private volatile List<String> vncNetworks = Collections.emptyList();
+    private volatile String vncCollectionError = "";
 
     /**
      * 集群内各主控上报的出口地址，键为主控标识
@@ -153,10 +168,11 @@ public class TrustedNetworkManager {
         }
         String cluster = getClusterId();
         refreshLocalAddresses();
+        List<String> vncSnapshot = refreshVncNetworks();
 
         int succeeded = 0;
         for (Master node : nodes) {
-            if (syncNode(node, token, cluster)) {
+            if (syncNode(node, token, cluster, vncSnapshot)) {
                 succeeded++;
             }
         }
@@ -178,12 +194,30 @@ public class TrustedNetworkManager {
         if (now - lastFullSyncAt >= RETRY_INTERVAL_MILLIS) {
             refreshLocalAddresses();
         }
+        List<String> previousVncNetworks = vncNetworks;
+        List<String> vncSnapshot = refreshVncNetworks();
+        boolean vncChanged = vncSnapshot != null && !vncSnapshot.equals(previousVncNetworks);
         for (Master node : listAgentNodes()) {
             long lastSuccess = syncedAt.getOrDefault(node.getId(), 0L);
-            if (now - lastSuccess < RETRY_INTERVAL_MILLIS || now < nextRetryAt.getOrDefault(node.getId(), 0L)) {
+            if (!vncChanged && (now - lastSuccess < RETRY_INTERVAL_MILLIS
+                    || now < nextRetryAt.getOrDefault(node.getId(), 0L))) {
                 continue;
             }
-            syncNode(node, token, cluster);
+            syncNode(node, token, cluster, vncSnapshot);
+        }
+    }
+
+    /** VNC 增删改提交后立即下发，公共出口探测由原有周期负责。 */
+    @Async("taskExecutor")
+    @EventListener
+    public synchronized void onVncNetworksChanged(VncNetworksChangedEvent event) {
+        String token = configService.getToken();
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        List<String> vncSnapshot = refreshVncNetworks();
+        for (Master node : listAgentNodes()) {
+            syncNode(node, token, getClusterId(), vncSnapshot);
         }
     }
 
@@ -287,29 +321,164 @@ public class TrustedNetworkManager {
         description.put("probedSources", new LinkedHashMap<>(probedAddresses));
         description.put("probeErrors", new LinkedHashMap<>(probeErrors));
         description.put("networks", collectNetworks());
+        List<String> desiredVncNetworks = vncNetworks;
+        String collectionError = vncCollectionError;
+        try {
+            // 诊断查询不改变周期同步的变更基线，避免读取页面吞掉尚未下发的 DNS/数据库变更。
+            desiredVncNetworks = collectVncNetworks();
+            collectionError = "";
+        } catch (Exception e) {
+            collectionError = e.getMessage() == null ? "VNC 白名单查询失败" : e.getMessage();
+        }
+        description.put("vncNetworks", new ArrayList<>(desiredVncNetworks));
+        description.put("vncCollectionError", collectionError);
+        description.put("syncErrors", new LinkedHashMap<>(syncErrors));
         description.put("lastFullSyncAt", lastFullSyncAt);
         description.put("syncedNodes", new ArrayList<>(syncedAt.keySet()));
         description.put("pendingNodes", new ArrayList<>(nextRetryAt.keySet()));
         return description;
     }
 
-    private boolean syncNode(Master node, String token, String cluster) {
+    private boolean syncNode(Master node, String token, String cluster, List<String> vncSnapshot) {
+        String failure = "被控端没有返回成功结果";
         try {
             List<String> networks = collectNetworks();
-            JSONObject result = ClientApiUtil.syncTrustedNetworks(node.getHost(), node.getControllerPort(), token,
-                    networks, cluster, SYNC_TIMEOUT_MILLIS);
+            JSONObject result = postTrustedNetworks(node, token, networks, vncSnapshot, cluster);
             if (result != null && Integer.valueOf(200).equals(result.getInteger("code"))) {
                 observeAgentReport(node.getId(), result);
-                syncedAt.put(node.getId(), System.currentTimeMillis());
-                nextRetryAt.remove(node.getId());
-                return true;
+                JSONObject data = result.getJSONObject("data");
+                if (vncSnapshot == null) {
+                    // VNC 查询失败只更新管理源，不能用空列表覆盖仍在工作的 VNC 策略。
+                    failure = vncCollectionError;
+                } else if (data == null || data.getJSONArray("cluster_vnc_addresses") == null) {
+                    failure = "被控端未确认 VNC 白名单，请升级 QAgent 至 1.1.1 或更高版本";
+                } else if (!normalizeVncNetworks(vncSnapshot).equals(
+                        normalizeVncNetworks(toStringList(data.getJSONArray("cluster_vnc_addresses"))))) {
+                    failure = "被控端确认的本集群 VNC 白名单与下发内容不一致";
+                } else {
+                    syncedAt.put(node.getId(), System.currentTimeMillis());
+                    nextRetryAt.remove(node.getId());
+                    syncErrors.remove(node.getId());
+                    return true;
+                }
+            } else if (result != null) {
+                failure = "被控端拒绝同步（code=" + result.getInteger("code") + "）";
             }
         } catch (Exception e) {
             // 单节点或探测失败不能中断其他节点的补偿。
+            failure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         }
+        syncedAt.remove(node.getId());
+        syncErrors.put(node.getId(), failure);
         nextRetryAt.put(node.getId(), System.currentTimeMillis() + RETRY_INTERVAL_MILLIS);
-        UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "[Whitelist] 节点[{}]白名单同步失败，稍后重试", node.getName());
+        UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM, "[Whitelist] 节点[{}]白名单同步失败，稍后重试: {}",
+                node.getName(), failure);
         return false;
+    }
+
+    protected JSONObject postTrustedNetworks(Master node, String token, List<String> networks,
+                                             List<String> vncSnapshot, String cluster) {
+        return ClientApiUtil.syncTrustedNetworks(node.getHost(), node.getControllerPort(), token,
+                networks, vncSnapshot, cluster, SYNC_TIMEOUT_MILLIS);
+    }
+
+    /**
+     * 从所有启用控制器读取来源，domain 只是浏览器访问域名，不能当作 TCP 代理的出口。
+     * 任一记录解析失败都保留原有快照，避免误删其他仍然有效的来源。
+     */
+    public List<String> collectVncNetworks() {
+        QueryWrapper<Vncnode> query = new QueryWrapper<>();
+        query.eq("status", 0).orderByAsc("id");
+        Set<String> networks = new LinkedHashSet<>();
+        for (Vncnode node : vncnodeService.list(query)) {
+            if (node == null || !Integer.valueOf(0).equals(node.getStatus())) {
+                continue;
+            }
+            String host = normalizeVncHost(node);
+            try {
+                InetAddress[] resolved = resolveVncHost(host);
+                if (resolved.length == 0) {
+                    throw new IOException("没有 A/AAAA 记录");
+                }
+                for (InetAddress address : resolved) {
+                    if (address.isAnyLocalAddress() || address.isMulticastAddress()) {
+                        throw new IOException("不能使用通配或多播地址");
+                    }
+                    networks.add(address.getHostAddress() + (address instanceof Inet4Address ? "/32" : "/128"));
+                }
+            } catch (IOException e) {
+                throw new IllegalStateException("VNC 节点[" + node.getId() + "]的服务器地址解析失败: " + host, e);
+            }
+        }
+        List<String> sorted = new ArrayList<>(networks);
+        Collections.sort(sorted);
+        return sorted;
+    }
+
+    protected InetAddress[] resolveVncHost(String host) throws IOException {
+        return InetAddress.getAllByName(host);
+    }
+
+    private String normalizeVncHost(Vncnode node) {
+        String value = node.getHost() == null ? "" : node.getHost().trim();
+        try {
+            String host;
+            if (!value.contains("://") && !value.startsWith("[")
+                    && value.chars().filter(character -> character == ':').count() > 1) {
+                // 裸 IPv6 不带端口；带端口时必须使用方括号，避免错误截断 IPv6。
+                host = value;
+            } else {
+                URI uri = new URI(value.contains("://") ? value : "http://" + value);
+                if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                        || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
+                        || (uri.getPath() != null && !uri.getPath().matches("/*"))
+                        || uri.getPort() == 0 || uri.getPort() > 65535) {
+                    throw new URISyntaxException(value, "不是有效的控制器服务器地址");
+                }
+                host = uri.getHost();
+            }
+            if (host != null && host.startsWith("[") && host.endsWith("]")) {
+                host = host.substring(1, host.length() - 1);
+            }
+            if (host == null || host.isEmpty() || host.length() > 253 || host.contains("%")
+                    || !host.matches("[a-zA-Z0-9.:-]+")) {
+                throw new URISyntaxException(value, "服务器主机名无效");
+            }
+            return host;
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("VNC 节点[" + node.getId() + "]的服务器地址无效", e);
+        }
+    }
+
+    private List<String> refreshVncNetworks() {
+        try {
+            List<String> snapshot = collectVncNetworks();
+            vncNetworks = Collections.unmodifiableList(new ArrayList<>(snapshot));
+            vncCollectionError = "";
+            return snapshot;
+        } catch (Exception e) {
+            vncCollectionError = e.getMessage() == null ? "VNC 白名单查询失败" : e.getMessage();
+            return null;
+        }
+    }
+
+    private Set<String> normalizeVncNetworks(List<String> networks) throws IOException {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String network : networks) {
+            String[] parts = network.split("/", -1);
+            // 回执必须是主机 CIDR，不能让非法回执触发 DNS 查询。
+            if (parts.length != 2 || !(parts[0].matches("\\d{1,3}(\\.\\d{1,3}){3}")
+                    || (parts[0].contains(":") && parts[0].matches("[0-9a-fA-F:.]+")))) {
+                throw new IOException("被控端 VNC 白名单回执地址无效");
+            }
+            InetAddress address = InetAddress.getByName(parts[0]);
+            String prefix = address instanceof Inet4Address ? "32" : "128";
+            if (!prefix.equals(parts[1])) {
+                throw new IOException("被控端 VNC 白名单回执掩码无效");
+            }
+            normalized.add(address.getHostAddress() + "/" + prefix);
+        }
+        return normalized;
     }
 
     private List<Master> listAgentNodes() {

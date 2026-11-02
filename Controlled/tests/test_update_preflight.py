@@ -21,7 +21,7 @@ GIT_BASH = Path('C:/Program Files/Git/bin/bash.exe')
 BASH = str(GIT_BASH) if GIT_BASH.is_file() else shutil.which('bash')
 RESULT_KEYS = (
     'QAGENT_MANAGER_IPS', 'QAGENT_STATIC_MANAGER_IPS', 'QAGENT_MANAGER_PROBES',
-    'QAGENT_CERT_HOSTS', 'QAGENT_VNC_PROXY_IPS', 'QAGENT_BACKEND_PORT',
+    'QAGENT_CERT_HOSTS', 'QAGENT_VNC_PROXY_IPS', 'QAGENT_VNC_PROXY_MANAGED', 'QAGENT_BACKEND_PORT',
     'MANAGER_ENDPOINT', 'CLUSTER_ID', 'QAGENT_TLS_PORT',
 )
 
@@ -402,6 +402,34 @@ fi
                 self.assertIn('must be root-owned mode 600', result.stderr)
                 self.assertEqual(before, self.config.read_bytes())
                 self.assert_preserved()
+
+    def test_managed_empty_vnc_policy_survives_prepare_and_reload(self):
+        self.write_config(QAGENT_VNC_PROXY_IPS='', QAGENT_VNC_PROXY_MANAGED='1')
+        # 模拟旧 systemd 或调用者仍有历史名单，落盘的空策略必须优先。
+        self.environment['QAGENT_VNC_PROXY_IPS'] = '203.0.113.99/32'
+        result, values = self.resolve(suffix='security_save_config\n')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('', values['QAGENT_VNC_PROXY_IPS'])
+        self.assertEqual('1', values['QAGENT_VNC_PROXY_MANAGED'])
+        result, values = self.resolve()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('', values['QAGENT_VNC_PROXY_IPS'])
+        self.assertEqual('1', values['QAGENT_VNC_PROXY_MANAGED'])
+        self.assert_preserved(allow_config_install=True)
+
+    def test_unmanaged_empty_vnc_policy_still_requires_initial_configuration(self):
+        self.write_config(QAGENT_VNC_PROXY_IPS='')
+        result, _ = self.resolve()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('missing QAGENT_VNC_PROXY_IPS', result.stderr)
+        self.assert_preserved()
+
+    def test_managed_policy_still_rejects_allow_all_sources(self):
+        self.write_config(QAGENT_VNC_PROXY_IPS='0.0.0.0/0', QAGENT_VNC_PROXY_MANAGED='1')
+        result, _ = self.resolve()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('allow-all networks are forbidden', result.stderr)
+        self.assert_preserved()
 
     def test_symlink_config_is_refused_without_changing_its_target(self):
         target = self.root / 'untrusted-security.conf'

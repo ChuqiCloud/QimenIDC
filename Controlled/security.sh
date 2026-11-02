@@ -48,7 +48,7 @@ security_load_config() {
         parsed=$(qagent_python "${SECURITY_SCRIPT_DIR}/service/SecurityConfig.py" "${SECURITY_CONFIG}") || return 1
         while IFS='=' read -r name value; do
             case "${name}" in
-                QAGENT_MANAGER_IPS|QAGENT_MANAGER_PROBES|QAGENT_STATIC_MANAGER_IPS|QAGENT_CERT_HOSTS|QAGENT_VNC_PROXY_IPS|QAGENT_BACKEND_PORT|QIMENIDC_MANAGER_ENDPOINT|QIMENIDC_CLUSTER_ID)
+                QAGENT_MANAGER_IPS|QAGENT_MANAGER_PROBES|QAGENT_STATIC_MANAGER_IPS|QAGENT_CERT_HOSTS|QAGENT_VNC_PROXY_IPS|QAGENT_VNC_PROXY_MANAGED|QAGENT_BACKEND_PORT|QIMENIDC_MANAGER_ENDPOINT|QIMENIDC_CLUSTER_ID)
                     printf -v "${name}" '%s' "${value}" ;;
             esac
         done <<< "${parsed}"
@@ -81,13 +81,23 @@ security_resolve_config() {
     [ -n "${QAGENT_MANAGER_IPS}" ] || explicit_manager=1
     security_require_setting QAGENT_MANAGER_IPS 'Manager source IP/CIDRs (space-separated)' || return 1
     security_require_setting QAGENT_CERT_HOSTS 'Node IP/DNS used by manager API calls (certificate SANs)' || return 1
-    security_require_setting QAGENT_VNC_PROXY_IPS 'noVNC controller source IP/CIDRs (space-separated)' || return 1
+    QAGENT_VNC_PROXY_MANAGED="${QAGENT_VNC_PROXY_MANAGED:-0}"
+    case "${QAGENT_VNC_PROXY_MANAGED}" in
+        0|1) ;;
+        *) security_fail 'invalid QAGENT_VNC_PROXY_MANAGED (expected 0 or 1)'; return 1 ;;
+    esac
+    # 主控全量同步为空表示没有启用的中转，升级时保留拒绝所有来源的策略。
+    if [ "${QAGENT_VNC_PROXY_MANAGED}" != 1 ]; then
+        security_require_setting QAGENT_VNC_PROXY_IPS 'noVNC controller source IP/CIDRs (space-separated)' || return 1
+    fi
     QAGENT_MANAGER_IPS=$(security_validate_manager_ips "${QAGENT_MANAGER_IPS}") || return 1
     if [ "${explicit_manager}" = 1 ] || [ ! -f "${SECURITY_CONFIG}" ]; then
         QAGENT_STATIC_MANAGER_IPS="${QAGENT_MANAGER_IPS}"
     fi
     QAGENT_CERT_HOSTS=$(security_validate_cert_hosts "${QAGENT_CERT_HOSTS}") || return 1
-    QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${QAGENT_VNC_PROXY_IPS}") || return 1
+    if [ -n "${QAGENT_VNC_PROXY_IPS}" ]; then
+        QAGENT_VNC_PROXY_IPS=$(security_validate_manager_ips "${QAGENT_VNC_PROXY_IPS}") || return 1
+    fi
     QAGENT_BACKEND_PORT="${backend_port:-${QAGENT_BACKEND_PORT:-17600}}"
     MANAGER_ENDPOINT="${manager_endpoint:-${MANAGER_ENDPOINT:-}}"
     CLUSTER_ID="${cluster_id:-${CLUSTER_ID:-}}"
@@ -184,6 +194,7 @@ security_save_config() {
         "QAGENT_STATIC_MANAGER_IPS=${QAGENT_STATIC_MANAGER_IPS:-}" \
         "QAGENT_CERT_HOSTS=${QAGENT_CERT_HOSTS}" \
         "QAGENT_VNC_PROXY_IPS=${QAGENT_VNC_PROXY_IPS}" \
+        "QAGENT_VNC_PROXY_MANAGED=${QAGENT_VNC_PROXY_MANAGED:-0}" \
         "QAGENT_BACKEND_PORT=${QAGENT_BACKEND_PORT}" \
         "QIMENIDC_MANAGER_ENDPOINT=${MANAGER_ENDPOINT}" \
         "QIMENIDC_CLUSTER_ID=${CLUSTER_ID}"

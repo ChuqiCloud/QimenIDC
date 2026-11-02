@@ -7500,7 +7500,7 @@ GET /{adminPath}/getRunningTaskSummary
 GET /{adminPath}/getAgentWhitelist
 
 被控端 nginx 只放行白名单内的管理源地址，这里返回当前集群标识、主控自报出口、
-节点实测到的来源，以及已同步和待重试的节点。主控换了出口 IP 导致节点「连接超时」时先看它。
+节点实测到的来源、全部启用 VNC 中转来源，以及已同步和待重试的节点。主控换了出口 IP 或 VNC 中转后先看它。
 
 ### 请求参数
 
@@ -7529,6 +7529,9 @@ GET /{adminPath}/getAgentWhitelist
       "ip.sb": "Connection refused"
     },
     "networks": ["111.230.93.5/32", "159.75.12.57/32", "198.51.100.7/32"],
+    "vncNetworks": ["103.109.20.138/32", "150.138.77.26/32"],
+    "vncCollectionError": "",
+    "syncErrors": {"4": "被控端未确认 VNC 白名单，请升级 QAgent 至 1.1.1 或更高版本"},
     "lastFullSyncAt": 1760700000000,
     "syncedNodes": [1, 2, 3],
     "pendingNodes": [4]
@@ -7543,7 +7546,12 @@ GET /{adminPath}/getAgentWhitelist
 - `probedSources`：每个公共探测源各自报告的本机出口地址
 - `probeErrors`：探测失败的源和原因，被墙/超时都会出现在这里
 - `networks`：当前会被下发到节点的全部来源（主控自报 ∪ 节点实测）
+- `vncNetworks`：全部启用 VNC 节点 `host` 解析并去重的来源列表；不使用页面 `domain`，不受分页限制。采集失败时保留上一次成功快照
+- `vncCollectionError`：VNC 节点查询或 DNS 解析错误；非空时本轮不替换被控 VNC 名单
+- `syncErrors`：按被控节点 ID 返回同步失败原因，包含旧版未确认 VNC 名单的升级提示
 - `pendingNodes`：同步失败、等待心跳重试的节点（退避 5 分钟）
+
+VNC 节点新增、修改、停用、删除提交后异步全量同步，主控启动和周期任务也会补偿。需先升级 QAgent 至 `1.1.1`，主控构建为 `1.3.5_8`。名单对代理的新连接生效，不中断已有连接。`host` 必须匹配中转连接 PVE 时的实际来源，SNAT 后的未知出口不能从页面域名自动推断。
 
 主控出口探测走三个公共源，并发请求后合并去重；部分源失败且已获得出口 IP 时不输出失败日志，失败原因保留在 `probeErrors` 中：
 

@@ -89,14 +89,20 @@ def read_networks(config_path=None):
     return {
         'managers': normalize_networks(values.get('QAGENT_MANAGER_IPS', ''), allow_empty=True),
         'probes': normalize_networks(values.get('QAGENT_MANAGER_PROBES', ''), allow_empty=True),
+        'vnc': normalize_networks(values.get('QAGENT_VNC_PROXY_IPS', ''), allow_empty=True),
+        'vnc_configured': 'QAGENT_VNC_PROXY_IPS' in values,
+        'vnc_managed': values.get('QAGENT_VNC_PROXY_MANAGED') == '1',
     }
 
 
 def render_security_config(networks, previous=''):
+    keys = {'managers': 'QAGENT_MANAGER_IPS', 'probes': 'QAGENT_MANAGER_PROBES',
+            'vnc': 'QAGENT_VNC_PROXY_IPS'}
+    values = {key: ' '.join(networks[name]) for name, key in keys.items() if name in networks}
+    if 'vnc' in networks:
+        values['QAGENT_VNC_PROXY_MANAGED'] = '1'
     lines = [line for line in (previous or '').splitlines()
-             if not line.startswith(('QAGENT_MANAGER_IPS=', 'QAGENT_MANAGER_PROBES='))]
-    values = {'QAGENT_MANAGER_IPS': ' '.join(networks.get('managers', [])),
-              'QAGENT_MANAGER_PROBES': ' '.join(networks.get('probes', []))}
+             if line.strip().partition('=')[0] not in values]
     return '\n'.join(lines) + '\n' + render_config(values)
 
 
@@ -133,7 +139,7 @@ def write_atomic(path, content, mode):
 
 '''
 白名单生效：
-先改 security.conf，再改 nginx geo 块并 reload。
+先改 security.conf，管理来源变化时再改 nginx geo 块并 reload。
 reload 失败或 nginx -t 不通过时回滚，避免把主控挡在门外。
 '''
 def apply_networks(networks, config_path=None):
@@ -141,6 +147,11 @@ def apply_networks(networks, config_path=None):
     nginx_path = get_nginx_config_path()
     with open(config_path, 'r', encoding='utf-8') as stream:
         previous = stream.read()
+    current = read_networks(config_path)
+    if networks.get('managers', current['managers']) == current['managers']:
+        # VNC 代理每次连接读取磁盘白名单，不需要重启代理或重载 nginx。
+        write_atomic(config_path, render_security_config(networks, previous), 0o600)
+        return
     with open(nginx_path, 'r', encoding='utf-8') as stream:
         previous_nginx = stream.read()
     next_nginx = render_nginx_acl(networks, nginx_path)
@@ -176,18 +187,19 @@ class TrustStore:
         self.state_path = self.config_path + '.trust.json'
         self.apply = apply or apply_networks
 
-    def security(self, networks=(), cluster_id='', source=''):
+    def security(self, networks=(), cluster_id='', source='', vnc_networks=None):
         declared = normalize_networks(networks, allow_empty=True)
         sources = normalize_networks([source] if source else [], allow_empty=True)
-        if not declared and not sources:
+        vnc = None if vnc_networks is None else normalize_networks(vnc_networks, allow_empty=True)
+        if not declared and not sources and vnc is None:
             return self.refresh()
         cluster = normalize_cluster_id(cluster_id) or get_cluster_id() or 'default'
-        return self._update(cluster, declared, sources)
+        return self._update(cluster, declared, sources, vnc)
 
     def refresh(self):
         return self._update()
 
-    def _update(self, cluster=None, declared=(), sources=()):
+    def _update(self, cluster=None, declared=(), sources=(), vnc=None):
         descriptor = os.open(self.config_path + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, 'r+') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -201,15 +213,23 @@ class TrustStore:
                 previous_state = None
                 # 存量动态来源在升级后保留一天；显式静态来源独立保留。
                 state = {'clusters': {}, 'legacy': current['managers'],
-                         'legacy_until': now + self.LEASE_SECONDS}
+                         'legacy_until': now + self.LEASE_SECONDS,
+                         'vnc_managed': current['vnc_managed']}
             clusters = {key: value for key, value in state['clusters'].items()
                         if value['expires_at'] > now}
             if cluster is not None:
-                observed = clusters.get(cluster, {}).get('sources', {})
+                previous_cluster = clusters.get(cluster, {})
+                observed = previous_cluster.get('sources', {})
                 observed = {key: expiry for key, expiry in observed.items() if expiry > now}
                 observed.update({source: now + self.LEASE_SECONDS for source in sources})
                 clusters[cluster] = {'networks': list(declared), 'sources': observed,
                                      'expires_at': now + self.LEASE_SECONDS}
+                if vnc is not None:
+                    # 首次权威同步替换安装时填写的名单，后续按集群快照替换而非累加。
+                    state['vnc_managed'] = True
+                    clusters[cluster]['vnc_networks'] = list(vnc)
+                elif 'vnc_networks' in previous_cluster:
+                    clusters[cluster]['vnc_networks'] = previous_cluster['vnc_networks']
             state['clusters'] = clusters
             values = read_config(self.config_path)
             merged = normalize_networks(values.get('QAGENT_STATIC_MANAGER_IPS', ''), allow_empty=True)
@@ -221,10 +241,21 @@ class TrustStore:
                 probes.extend(source for source, expiry in entry.get('sources', {}).items() if expiry > now)
             merged = merge_networks(merged + probes)
             changed = merged != current['managers']
+            managed_vnc = state.get('vnc_managed', False)
+            vnc_addresses = current['vnc']
+            if managed_vnc:
+                vnc_addresses = merge_networks([network for entry in clusters.values()
+                                               for network in entry.get('vnc_networks', [])])
+            # 显式空列表也要落盘，禁止旧服务环境变量重新放行已经删除的中转。
+            vnc_changed = (vnc_addresses != current['vnc'] or
+                           (managed_vnc and (not current['vnc_configured'] or not current['vnc_managed'])))
             write_atomic(self.state_path, json.dumps(state), 0o600)
             try:
-                if changed or merge_networks(probes) != current['probes']:
-                    self.apply({'managers': merged, 'probes': merge_networks(probes)}, self.config_path)
+                if changed or merge_networks(probes) != current['probes'] or vnc_changed:
+                    effective = {'managers': merged, 'probes': merge_networks(probes)}
+                    if managed_vnc:
+                        effective['vnc'] = vnc_addresses
+                    self.apply(effective, self.config_path)
             except Exception:
                 if previous_state is None:
                     os.unlink(self.state_path)
@@ -233,4 +264,5 @@ class TrustStore:
                 raise
             return {'cluster': cluster or '', 'changed': changed, 'addresses': merged,
                     'probes': list(sources), 'rejected': missing_networks(merged, declared),
-                    'probe_error': []}
+                    'probe_error': [], 'vnc_changed': vnc_changed, 'vnc_addresses': vnc_addresses,
+                    'cluster_vnc_addresses': clusters.get(cluster, {}).get('vnc_networks')}

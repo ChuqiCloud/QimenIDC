@@ -6,14 +6,30 @@ import subprocess
 import sys
 import threading
 
+if __package__:
+    from .SecurityConfig import read_config
+else:
+    from SecurityConfig import read_config
+
 
 BUFFER_SIZE = 64 * 1024
 TICKET_ENV_NAME = "QIMEN_VNC_TICKET"
 PROXY_CIDRS_ENV_NAME = "QIMEN_VNC_PROXY_CIDRS"
 
 
+def get_proxy_networks():
+    try:
+        # 现存代理也读取最新名单；显式空值表示已清空，不能退回旧环境变量。
+        values = read_config(os.environ.get("QIMENIDC_SECURITY_CONFIG", "/etc/qimenidc/security.conf"))
+        if values.get("QAGENT_VNC_PROXY_MANAGED") == "1":
+            return values.get("QAGENT_VNC_PROXY_IPS", "")
+        return values.get("QAGENT_VNC_PROXY_IPS", os.environ.get(PROXY_CIDRS_ENV_NAME, ""))
+    except (OSError, ValueError, UnicodeError):
+        return ""
+
+
 def is_allowed_proxy_peer(address, configured_networks=None):
-    configured_networks = os.environ.get(PROXY_CIDRS_ENV_NAME, "") if configured_networks is None else configured_networks
+    configured_networks = get_proxy_networks() if configured_networks is None else configured_networks
     try:
         peer = ipaddress.ip_address(address)
         networks = [
