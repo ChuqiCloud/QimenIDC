@@ -158,12 +158,12 @@ class TrustedNetworkManagerTest {
         setField(manager, "localAddresses", "198.51.100.7/32");
         seedMemberAddresses(manager, "198.51.100.7/32");
         ((java.util.Map<String, String>) field(manager, "probedAddresses")).put("ip.sb", "198.51.100.7");
-        ((java.util.Map<String, String>) field(manager, "probeErrors")).put("ipify", "Connection refused");
+        ((java.util.Map<String, String>) field(manager, "probeErrors")).put("cloudflare", "Connection refused");
 
         java.util.Map<?, ?> description = manager.describe();
         // 多源探测的原始结果要能看到，排查「为什么白名单里有这个地址」时全靠它
         assertEquals("{ip.sb=198.51.100.7}", description.get("probedSources").toString());
-        assertEquals("{ipify=Connection refused}", description.get("probeErrors").toString());
+        assertEquals("{cloudflare=Connection refused}", description.get("probeErrors").toString());
         assertTrue(description.get("networks").toString().contains("198.51.100.7/32"));
     }
 

@@ -13,8 +13,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * 主控出口 IPv4 探测。
  * <p>
- * 多个公共探测源里没有一个是永远可用的：机房线路可能连不上 ipify，Cloudflare 也可能被墙。
- * 因此四个源全部并发请求，谁回来算谁的，结果合并去重——主控部署在容器或云 NAT 后面时，
+ * 公共探测源可能因机房线路限制暂时不可达。
+ * 因此三个源全部并发请求，谁回来算谁的，结果合并去重——主控部署在容器或云 NAT 后面时，
  * 不同源甚至可能看到不同的出口地址，合并比「取第一个成功的」更接近真实情况。
  * <p>
  * 单源超时 {@link #PER_SOURCE_TIMEOUT_MILLIS}，整体最多等 {@link #TIMEOUT_MILLIS}，
@@ -37,7 +37,6 @@ public final class PublicIpProbe {
      */
     public enum Source {
         CLOUDFLARE("cloudflare", "https://www.cloudflare.com/cdn-cgi/trace", Format.TRACE),
-        IPIFY("ipify", "https://api.ipify.org/", Format.TEXT),
         IP_SB("ip.sb", "https://api.ip.sb/ip", Format.TEXT),
         IPIP("ipip", "https://myip.ipip.net/", Format.TEXT);
 
@@ -151,7 +150,7 @@ public final class PublicIpProbe {
      * 从任意文本里取出第一个合法 IPv4。
      * <p>
      * ipip.net 返回的是「当前 IP：159.75.12.57  来自于：中国 广东 广州  电信」这种中文串，
-     * ipify 也可能因为参数或风控返回 JSON、HTML，所以先按空白切词精确匹配，再对 JSON 取字段，
+     * 探测源也可能因为参数或风控返回 JSON、HTML，所以先按空白切词精确匹配，再对 JSON 取字段，
      * 最后用带边界断言的扫描兜底。边界断言保证 MAC 地址（00:1a:2b:3c:4d:5e）和
      * 形如 1.2.3.4.5 的版本号不会被误判成 IP。
      */

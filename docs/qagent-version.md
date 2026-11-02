@@ -24,7 +24,7 @@
   "message": "请求成功",
   "data": {
     "version": "1.3.5",
-    "buildVersion": "1.3.5_6",
+    "buildVersion": "1.3.5_7",
     "qagentVersion": "1.0.9"
   }
 }
@@ -35,7 +35,7 @@
 ```json
 {
   "frontend": {"version": "1.3.5_beta3"},
-  "backend": {"version": "1.3.5_6"},
+  "backend": {"version": "1.3.5_7"},
   "qagent": {"version": "1.0.9"}
 }
 ```

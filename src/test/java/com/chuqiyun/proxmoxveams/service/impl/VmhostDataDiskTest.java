@@ -141,6 +141,7 @@ class VmhostDataDiskTest {
                 "cookie", "PVEAuthCookie=test-ticket", "CSRFPreventionToken", "test-csrf")));
         service = spy(new VmhostServiceImpl());
         ReflectionTestUtils.setField(service, "vmIdReservationService", mock(com.chuqiyun.proxmoxveams.service.VmIdReservationService.class));
+        ReflectionTestUtils.setField(service, "taskService", mock(com.chuqiyun.proxmoxveams.service.TaskService.class));
         ReflectionTestUtils.setField(service, "masterService", masterService);
         doReturn(vm).when(service).getById(HOST_ID);
         doAnswer(invocation -> {

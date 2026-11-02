@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.HashMap;
 
@@ -26,7 +28,22 @@ class VmhostFlowPackageTest {
     void setUp() {
         service = spy(new VmhostServiceImpl());
         ReflectionTestUtils.setField(service, "vmIdReservationService", mock(com.chuqiyun.proxmoxveams.service.VmIdReservationService.class));
+        PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+        when(transactions.getTransaction(any())).thenAnswer(invocation -> new SimpleTransactionStatus());
+        ReflectionTestUtils.setField(service, "transactionManager", transactions);
+        TaskService tasks = mock(TaskService.class);
+        java.util.Map<Integer, Task> savedTasks = new java.util.HashMap<>();
+        when(tasks.save(any(Task.class))).thenAnswer(invocation -> {
+            Task task = invocation.getArgument(0);
+            task.setId(savedTasks.size() + 1);
+            savedTasks.put(task.getId(), task);
+            return true;
+        });
+        when(tasks.getById(anyInt())).thenAnswer(invocation -> savedTasks.get(invocation.getArgument(0)));
+        when(tasks.updateTask(any(Task.class))).thenReturn(true);
+        ReflectionTestUtils.setField(service, "taskService", tasks);
         doReturn(true).when(service).update(any(Wrapper.class));
+        doReturn(true).when(service).addVmHostTask(any(), any());
     }
 
     @Test
@@ -65,13 +82,13 @@ class VmhostFlowPackageTest {
         Vmhost after = vm(15, 12L * GIB);
         after.setUsedFlow(22D * GIB);
         doReturn(before, after).when(service).getById(17);
-        HashMap<String, Object> result = new HashMap<>();
-        result.put("status", true);
-        doReturn(result).when(service).power(17, "unpause", null);
-
         assertEquals(UnifiedResultCode.SUCCESS, service.updateVm(quota(12L)).getResultCode());
 
-        verify(service).power(17, "unpause", null);
+        TaskService tasks = (TaskService) ReflectionTestUtils.getField(service, "taskService");
+        ArgumentCaptor<Task> savedTasks = ArgumentCaptor.forClass(Task.class);
+        verify(tasks, times(2)).save(savedTasks.capture());
+        assertTrue(savedTasks.getAllValues().stream().anyMatch(task ->
+                task.getType() == com.chuqiyun.proxmoxveams.constant.TaskType.UNPAUSE_VM));
         verify(service, never()).updateById(any(Vmhost.class));
     }
 

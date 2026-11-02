@@ -1,5 +1,6 @@
 package com.chuqiyun.proxmoxveams.filter;
 
+import com.chuqiyun.proxmoxveams.common.ExceptionController;
 import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.service.SystemLogService;
 import org.junit.jupiter.api.Test;
@@ -7,9 +8,14 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLTimeoutException;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 密码字段仅对日志快照脱敏，保持业务请求与响应内容不变。
@@ -101,6 +110,67 @@ class ReplaceRequestBodyFilterTest {
         assertTrue(log.getResponseBody().contains("node-one"));
         assertEquals("hostId=7&SSH_password=***&name=node%20one", log.getQueryString());
         assertEquals("hostId=7&SSH_password=query-secret&name=node%20one", request.getQueryString());
+    }
+
+    @Test
+    void filterRecordsLockTimeoutHandledByControllerAdviceWithoutExposingItToClient() throws Exception {
+        IllegalStateException failure = new IllegalStateException("更新虚拟机配置失败",
+                new SQLTimeoutException("Lock wait timeout exceeded; try restarting transaction"));
+
+        SystemLog audit = handledFailureAudit(failure);
+
+        assertEquals("ERROR", audit.getLevel());
+        assertEquals(500, audit.getBusinessCode());
+        assertTrue(audit.getException().contains("IllegalStateException: 更新虚拟机配置失败"));
+        assertTrue(audit.getException().contains("SQLTimeoutException: Lock wait timeout exceeded"));
+        assertTrue(audit.getContent().contains("更新虚拟机配置失败"));
+        assertFalse(audit.getResponseBody().contains("Lock wait timeout"));
+        assertFalse(audit.getResponseBody().contains("更新虚拟机配置失败"));
+    }
+
+    @Test
+    void filterRedactsCredentialsInHandledExceptionAndItsCauses() throws Exception {
+        IllegalStateException failure = new IllegalStateException("connection failed password=node-secret",
+                new SQLTimeoutException("database failed token=database-secret"));
+
+        SystemLog audit = handledFailureAudit(failure);
+
+        assertTrue(audit.getException().contains("IllegalStateException:"));
+        assertTrue(audit.getException().contains("SQLTimeoutException:"));
+        assertFalse(audit.getException().contains("node-secret"));
+        assertFalse(audit.getException().contains("database-secret"));
+        assertFalse(audit.getContent().contains("node-secret"));
+        assertFalse(audit.getResponseBody().contains("node-secret"));
+    }
+
+    private SystemLog handledFailureAudit(RuntimeException failure) throws Exception {
+        ReplaceRequestBodyFilter filter = new ReplaceRequestBodyFilter();
+        SystemLogService systemLogService = mock(SystemLogService.class);
+        ReflectionTestUtils.setField(filter, "systemLogService", systemLogService);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailureController(failure))
+                .setControllerAdvice(new ExceptionController()).addFilters(filter).build();
+
+        mvc.perform(put("/updateVm")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.message").value("请求处理失败，请稍后重试"));
+
+        ArgumentCaptor<SystemLog> logCaptor = ArgumentCaptor.forClass(SystemLog.class);
+        verify(systemLogService).saveSystemLogAsync(logCaptor.capture());
+        return logCaptor.getValue();
+    }
+
+    @RestController
+    private static class FailureController {
+        private final RuntimeException failure;
+
+        private FailureController(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        @PutMapping("/updateVm")
+        public Object updateVm() {
+            throw failure;
+        }
     }
 
     private String sanitize(String requestBody) throws Exception {

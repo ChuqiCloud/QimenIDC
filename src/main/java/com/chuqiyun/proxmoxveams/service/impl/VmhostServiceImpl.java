@@ -38,6 +38,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -49,6 +52,7 @@ import java.util.*;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -68,10 +72,34 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     private VmIdReservationService vmIdReservationService;
     @Resource
     private MigrationExecutionLock migrationExecutionLock;
+    /** 改配需要先提交关机任务，再在事务外等待 PVE 停机。 */
+    @Resource
+    private PlatformTransactionManager transactionManager;
 
     private UnifiedResultDto<Object> migrationBusyResult() {
         return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
-                "虚拟机有迁移任务占用资源，请等待迁移完成；失败任务请从迁移页面继续处理");
+                "虚拟机有迁移或改配任务占用资源，请等待当前任务完成；失败迁移请从迁移页面继续处理");
+    }
+
+    /** 在源虚拟机行锁下检查迁移与改配占用，内部步骤仅能复用本任务的占用。 */
+    private boolean lockAndIsVmBusy(Number hostId) {
+        return lockAndIsVmBusy(hostId, null);
+    }
+
+    private boolean lockAndIsVmBusy(Number hostId, Task allowedUpdateTask) {
+        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+            return true;
+        }
+        QueryWrapper<Task> active = new QueryWrapper<>();
+        active.eq("hostid", hostId).eq("type", UPDATE_VM).in("status", 0, 1, 4).last("LIMIT 1");
+        if (allowedUpdateTask != null) {
+            if (hostId == null || !Objects.equals(allowedUpdateTask.getHostid(), hostId.intValue())) {
+                throw new IllegalStateException("虚拟机改配内部步骤与任务归属不一致");
+            }
+            assertUpdateVmTaskActive(allowedUpdateTask);
+            active.ne("id", allowedUpdateTask.getId());
+        }
+        return taskService.getOne(active) != null;
     }
 
     /** 后台任务持有旧快照时，不得将已迁移虚拟机的位置与网络写回源节点。 */
@@ -376,8 +404,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public HashMap<String,Object> power(Integer hostId, String action,JSONObject data) {
+        return power(hostId, action, data, null);
+    }
+
+    private HashMap<String, Object> power(Integer hostId, String action, JSONObject data, Task allowedUpdateTask) {
         HashMap<String,Object> result = new HashMap<>();
-        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+        if (lockAndIsVmBusy(hostId, allowedUpdateTask)) {
             result.put("status", false);
             result.put("msg", migrationBusyResult().getMessage());
             return result;
@@ -588,9 +620,13 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 vmShutdownTask.setType(STOP_VM_FORCE);
                 vmShutdownTask.setStatus(0);
                 vmShutdownTask.setCreateDate(time);
+                if (allowedUpdateTask != null) {
+                    vmShutdownTask.setParams(new HashMap<>(Map.of("parentUpdateTaskId", allowedUpdateTask.getId())));
+                }
                 if (taskService.save(vmShutdownTask)) {
                     log.info("[Task-ShutdownVm] 强制关机任务创建成功: NodeId: " + nodeId + ",VmId: " + vmId + ",HostId: " + hostId);
                     result.put("status", true);
+                    result.put("taskId", vmShutdownTask.getId());
                     // 添加任务流程
                     this.addVmHostTask(hostId, vmShutdownTask.getId());
                 }
@@ -958,7 +994,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk, List<Integer> initScriptIds){
-        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+        if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
         // 获取虚拟机信息
@@ -1210,7 +1246,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> deleteVm(Long vmHostId){
-        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+        if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
         // 获取虚拟机信息
@@ -1261,7 +1297,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> deleteVmToRecycle(Long vmHostId){
-        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+        if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
         // 获取虚拟机信息
@@ -1297,7 +1333,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> unDeleteVm(Long vmHostId){
-        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+        if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
         // 获取虚拟机信息
@@ -1331,55 +1367,127 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
      * @Return UnifiedResultDto<Object> 统一返回结果
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public UnifiedResultDto<Object> updateVm(VmParams vmParams){
         if (vmParams == null || vmParams.getHostid() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
+        UpdateVmOperation operation = runUpdateVmShortTransaction(() -> prepareUpdateVm(vmParams));
+        if (operation.failure != null) {
+            return operation.failure;
+        }
+        try {
+            UnifiedResultDto<Object> result = executeUpdateVm(vmParams, operation);
+            finishUpdateVm(operation, result.getResultCode() == UnifiedResultCode.SUCCESS, result.getMessage());
+            return result;
+        } catch (RuntimeException error) {
+            try {
+                finishUpdateVm(operation, false, error.getMessage());
+            } catch (RuntimeException completionError) {
+                error.addSuppressed(completionError);
+            }
+            log.error("[Task-UpdateVm] 改配失败: HostId={}, TaskId={}", vmParams.getHostid(), operation.task.getId(), error);
+            throw error;
+        }
+    }
+
+    /** 仅在短事务内校验并登记操作占用，任务提交后才能进行外部调用。 */
+    private UpdateVmOperation prepareUpdateVm(VmParams vmParams) {
         if (vmIdReservationService.lockAndIsHostReserved(vmParams.getHostid())) {
-            return migrationBusyResult();
+            return new UpdateVmOperation(migrationBusyResult());
         }
-        // 获取虚拟机信息
+        QueryWrapper<Task> active = new QueryWrapper<>();
+        active.eq("hostid", vmParams.getHostid()).eq("type", UPDATE_VM).in("status", 0, 1, 4).last("LIMIT 1");
+        if (taskService.getOne(active) != null) {
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "该虚拟机正在修改配置，请等待当前改配完成后再试"));
+        }
         Vmhost vmhost = this.getById(vmParams.getHostid());
-        // 判空
         if (vmhost == null){
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null);
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_NOT_EXIST, null));
         }
-        // 判断虚拟机是否在创建/重装中
         if (vmhost.getStatus() == 6 || vmhost.getStatus() == 13){
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null);
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_VM_IS_INSTALLOS, null));
+        }
+        if (requiresVmHardwareUpdate(vmParams) && (Objects.equals(vmhost.getStatus(), 8)
+                || Objects.equals(vmhost.getStatus(), 9))) {
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "虚拟机正在关机，请等待关机任务完成后再修改硬件配置"));
         }
         if (!FlowTypeUtil.isValid(vmParams.getFlowType())) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
-                    "flowType只能是in、out或in+out");
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "flowType只能是in、out或in+out"));
         }
+        try {
+            if (vmParams.getFlowLimit() != null) flowGiBToBytes(vmParams.getFlowLimit());
+            if (vmParams.getExtraFlowLimit() != null) flowGiBToBytes(vmParams.getExtraFlowLimit());
+        } catch (IllegalArgumentException | ArithmeticException error) {
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "流量额度不能为负数或超出可存储范围"));
+        }
+        if (vmParams.getSystemDiskSize() != null && vmhost.getSystemDiskSize() != null
+                && vmParams.getSystemDiskSize() < vmhost.getSystemDiskSize()) {
+            return new UpdateVmOperation(new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null,
+                    "系统盘不支持缩小"));
+        }
+        Task task = new Task();
+        task.setNodeid(vmhost.getNodeid());
+        task.setHostid(vmhost.getId());
+        task.setVmid(vmhost.getVmid());
+        task.setType(UPDATE_VM);
+        task.setStatus(1);
+        task.setCreateDate(System.currentTimeMillis());
+        task.setParams(new HashMap<>(Map.of("source", "update_vm", "stage", "CONFIGURING",
+                "updateTime", System.currentTimeMillis())));
+        if (!taskService.save(task) || task.getId() == null) {
+            throw new IllegalStateException("创建虚拟机改配任务失败");
+        }
+        return new UpdateVmOperation(vmhost, task);
+    }
+
+    private UnifiedResultDto<Object> executeUpdateVm(VmParams vmParams, UpdateVmOperation operation) {
+        Vmhost vmhost = operation.vmhost;
         UpdateWrapper<Vmhost> settings = new UpdateWrapper<>();
         settings.eq("id", vmhost.getId());
-        try {
-            if (vmParams.getFlowLimit() != null) settings.set("flow_limit", flowGiBToBytes(vmParams.getFlowLimit()));
-            // extraFlowLimit是本周期额外额度的总量，重复同步不会重复加额。
-            if (vmParams.getExtraFlowLimit() != null) settings.set("extra_flow_limit", flowGiBToBytes(vmParams.getExtraFlowLimit()));
-        } catch (IllegalArgumentException | ArithmeticException e) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "流量额度不能为负数或超出可存储范围");
-        }
+        if (vmParams.getFlowLimit() != null) settings.set("flow_limit", flowGiBToBytes(vmParams.getFlowLimit()));
+        if (vmParams.getExtraFlowLimit() != null) settings.set("extra_flow_limit", flowGiBToBytes(vmParams.getExtraFlowLimit()));
         if (vmParams.getNatnum() != null) settings.set("natnum", vmParams.getNatnum());
         if (vmParams.getResetFlowTime() != null) settings.set("reset_flow_time", vmParams.getResetFlowTime());
         if (vmParams.getOutFlow() != null) settings.set("out_flow", vmParams.getOutFlow());
         if (vmParams.getFlowType() != null) settings.set("flow_type", FlowTypeUtil.normalize(vmParams.getFlowType()));
-        if (settings.getSqlSet() != null && !this.update(settings)) {
-            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "保存虚拟机配置失败");
-        }
-        if (vmParams.getSockets() != null || vmParams.getCores() != null || vmParams.getThreads() != null
-        || vmParams.getMemory() != null || vmParams.getSystemDiskSize() != null || vmParams.getBandwidth() != null) {
+        Vmhost hardware = new Vmhost();
+        hardware.setId(vmhost.getId());
+        Task vmStartTask = null;
+        if (requiresVmHardwareUpdate(vmParams)) {
             // 判断状态，先关机
             boolean wasRunning = vmhost.getStatus() == 0;
             if (wasRunning){
-                this.power(vmhost.getId(), "shutdown",null);
+                HashMap<String, Object> shutdownResult = new TransactionTemplate(transactionManager).execute(
+                        status -> {
+                            assertUpdateVmTaskActive(operation.task);
+                            HashMap<String, Object> result = power(vmhost.getId(), "shutdown", null, operation.task);
+                            if (result == null || !Boolean.TRUE.equals(result.get("status"))) {
+                                status.setRollbackOnly();
+                            } else {
+                                Object shutdownTaskId = result.get("taskId");
+                                if (!(shutdownTaskId instanceof Number)) {
+                                    throw new IllegalStateException("关机任务缺少有效编号");
+                                }
+                                operation.shutdownTaskId = ((Number) shutdownTaskId).intValue();
+                            }
+                            return result;
+                        });
+                if (shutdownResult == null || !Boolean.TRUE.equals(shutdownResult.get("status"))) {
+                    String message = shutdownResult == null ? "创建虚拟机关机任务失败"
+                            : StringUtils.defaultIfBlank(String.valueOf(shutdownResult.get("msg")),
+                            "创建虚拟机关机任务失败");
+                    return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, message);
+                }
             }
             Master node = masterService.getById(vmhost.getNodeid());
             // 获取cookie
             HashMap<String, String> cookieMap = masterService.getMasterCookieMap(vmhost.getNodeid());
-            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            ProxmoxApiUtil proxmoxApiUtil = newProxmoxApi();
             if (wasRunning) {
                 waitPveVmStopped(proxmoxApiUtil, node, cookieMap, vmhost.getVmid());
             }
@@ -1432,8 +1540,6 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 vmhost.setBandwidth(vmParams.getBandwidth());
             }
             // 只保存本次修改的硬件字段，避免回写读取时的流量包和用量快照。
-            Vmhost hardware = new Vmhost();
-            hardware.setId(vmhost.getId());
             if (vmParams.getSockets() != null) hardware.setSockets(vmhost.getSockets());
             if (vmParams.getCores() != null) hardware.setCores(vmhost.getCores());
             if (vmParams.getThreads() != null) hardware.setThreads(vmhost.getThreads());
@@ -1444,24 +1550,108 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
                 hardware.setBandwidth(vmhost.getBandwidth());
                 hardware.setNet0(vmhost.getNet0());
             }
-            if (!this.updateById(hardware)) {
-                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "保存虚拟机配置失败");
-            }
-            Task vmStartTask = new Task();
+            vmStartTask = new Task();
             vmStartTask.setNodeid(vmhost.getNodeid());
             vmStartTask.setVmid(vmhost.getVmid());
             vmStartTask.setHostid(vmhost.getId());
             vmStartTask.setType(START_VM);
             vmStartTask.setStatus(0);
             vmStartTask.setCreateDate(System.currentTimeMillis() + UPDATE_VM_START_DELAY);
-            if (taskService.save(vmStartTask)) {
-                log.info("[Task-StartVm] 改配-开机任务创建成功: NodeId: " + vmhost.getNodeid() + ",VmId: " + vmhost.getVmid() + ",HostId: " + vmhost.getId());
+        }
+        final Task startTask = vmStartTask;
+        Boolean saved = new TransactionTemplate(transactionManager).execute(status -> {
+            assertUpdateVmTaskActive(operation.task);
+            // 配额与硬件字段同次提交，外部硬件操作失败时尚未修改本地配置。
+            if (settings.getSqlSet() != null && !this.update(settings)) {
+                status.setRollbackOnly();
+                return false;
             }
+            if (startTask != null && !this.updateById(hardware)) {
+                status.setRollbackOnly();
+                return false;
+            }
+            if (startTask != null && !taskService.save(startTask)) {
+                status.setRollbackOnly();
+                return false;
+            }
+            return true;
+        });
+        if (!Boolean.TRUE.equals(saved)) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_UNKNOWN, null, "保存虚拟机配置或开机任务失败");
+        }
+        if (startTask != null) {
+            log.info("[Task-StartVm] 改配-开机任务创建成功: NodeId={}, VmId={}, HostId={}",
+                    vmhost.getNodeid(), vmhost.getVmid(), vmhost.getId());
         }
         if (vmParams.getFlowLimit() != null || vmParams.getExtraFlowLimit() != null) {
-            recoverFlowLimitedVm(vmhost.getId());
+            recoverFlowLimitedVm(vmhost.getId(), operation.task);
         }
         return new UnifiedResultDto<>(UnifiedResultCode.SUCCESS, null);
+    }
+
+    private <T> T runUpdateVmShortTransaction(Supplier<T> action) {
+        return new TransactionTemplate(transactionManager).execute(status -> action.get());
+    }
+
+    private boolean requiresVmHardwareUpdate(VmParams params) {
+        return params.getSockets() != null || params.getCores() != null || params.getThreads() != null
+                || params.getMemory() != null || params.getSystemDiskSize() != null || params.getBandwidth() != null;
+    }
+
+    private void assertUpdateVmTaskActive(Task expected) {
+        Task task = taskService.getById(expected.getId());
+        if (task == null || !Objects.equals(task.getStatus(), 1) || !Objects.equals(task.getType(), UPDATE_VM)
+                || !Objects.equals(task.getHostid(), expected.getHostid())) {
+            throw new IllegalStateException("虚拟机改配任务占用已丢失，请核对任务状态后重试");
+        }
+    }
+
+    private void finishUpdateVm(UpdateVmOperation operation, boolean success, String message) {
+        Task task = operation.task;
+        runUpdateVmShortTransaction(() -> {
+            assertUpdateVmTaskActive(task);
+            task.setStatus(success ? 2 : 3);
+            task.setError(success ? null : StringUtils.left(message, 2000));
+            Map<Object, Object> params = new HashMap<>(task.getParams());
+            params.put("stage", success ? "DONE" : "FAILED");
+            params.put("updateTime", System.currentTimeMillis());
+            task.setParams(params);
+            if (!taskService.updateTask(task)) {
+                throw new IllegalStateException("保存虚拟机改配任务结果失败");
+            }
+            if (!success && operation.shutdownTaskId != null) {
+                // 仅取消尚未被调度器认领的本次关机任务，防止请求超时后再意外关机。
+                boolean cancelled = taskService.update(new UpdateWrapper<Task>()
+                        .eq("id", operation.shutdownTaskId).eq("type", STOP_VM_FORCE)
+                        .eq("hostid", task.getHostid()).eq("status", 0)
+                        .set("status", 3).set("error", "改配已失败，取消尚未执行的关机任务"));
+                if (cancelled) {
+                    this.update(new UpdateWrapper<Vmhost>().eq("id", task.getHostid())
+                            .eq("status", 9).set("status", 0));
+                }
+            }
+            return null;
+        });
+    }
+
+    protected ProxmoxApiUtil newProxmoxApi() {
+        return new ProxmoxApiUtil();
+    }
+
+    private static class UpdateVmOperation {
+        private Vmhost vmhost;
+        private Task task;
+        private Integer shutdownTaskId;
+        private UnifiedResultDto<Object> failure;
+
+        private UpdateVmOperation(UnifiedResultDto<Object> failure) {
+            this.failure = failure;
+        }
+
+        private UpdateVmOperation(Vmhost vmhost, Task task) {
+            this.vmhost = vmhost;
+            this.task = task;
+        }
     }
 
     private long flowGiBToBytes(long flow) {
@@ -1537,7 +1727,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+        if (lockAndIsVmBusy(vmIpParams.getHostId())) {
             return migrationBusyResult();
         }
         if (vmIpParams.getIpVersion() != null
@@ -1645,7 +1835,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+        if (lockAndIsVmBusy(vmIpParams.getHostId())) {
             return migrationBusyResult();
         }
         if (vmIpParams.getIpVersion() != null
@@ -1738,7 +1928,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (vmIpParams == null || vmIpParams.getHostId() == null) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null);
         }
-        if (vmIdReservationService.lockAndIsHostReserved(vmIpParams.getHostId())) {
+        if (lockAndIsVmBusy(vmIpParams.getHostId())) {
             return migrationBusyResult();
         }
         Vmhost vmhost = getVmhostForIpOperation(vmIpParams.getHostId());
@@ -3745,7 +3935,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         return taskService.getOne(queryWrapper);
     }
 
-    private void waitPveVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid) {
+    protected void waitPveVmStopped(ProxmoxApiUtil proxmoxApiUtil, Master node, HashMap<String, String> cookieMap, Integer vmid) {
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= IP_CHANGE_RESTART_TIMEOUT) {
             String status = getPveVmStatus(proxmoxApiUtil, node, cookieMap, vmid);
@@ -3866,7 +4056,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmPassword(Long vmHostId, String newPassword){
-        if (vmIdReservationService.lockAndIsHostReserved(vmHostId)) {
+        if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
         // 获取虚拟机信息
@@ -4081,7 +4271,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Transactional(rollbackFor = Exception.class)
     public NatOperationResult addVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
-        if (vmIdReservationService.lockAndIsHostReserved(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
+        if (lockAndIsVmBusy(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
             return NatOperationResult.failure(migrationBusyResult().getMessage());
         }
         synchronized (NatForwardSyncService.class) {
@@ -4235,7 +4425,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Transactional(rollbackFor = Exception.class)
     public NatOperationResult delVmhostNatWithResult(String source_ip, int source_port, String destination_ip,
                                                       int destination_port, String protocol, int vm) {
-        if (vmIdReservationService.lockAndIsHostReserved(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
+        if (lockAndIsVmBusy(vm) && !migrationExecutionLock.isHeldByCurrentThread()) {
             return NatOperationResult.failure(migrationBusyResult().getMessage());
         }
         synchronized (NatForwardSyncService.class) {
@@ -4332,7 +4522,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean addVmhostVpcIpForward(int hostId, String publicIp, String privateIp) {
-        if (vmIdReservationService.lockAndIsHostReserved(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
+        if (lockAndIsVmBusy(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
             return false;
         }
         synchronized (NatForwardSyncService.class) {
@@ -4437,7 +4627,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public NatOperationResult delVmhostVpcIpForwardWithResult(int hostId, String publicIp, String privateIp) {
-        if (vmIdReservationService.lockAndIsHostReserved(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
+        if (lockAndIsVmBusy(hostId) && !migrationExecutionLock.isHeldByCurrentThread()) {
             return NatOperationResult.failure(migrationBusyResult().getMessage());
         }
         synchronized (NatForwardSyncService.class) {
@@ -4856,7 +5046,11 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     }
 
     private void recoverFlowLimitedVm(int hostId) {
-        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+        recoverFlowLimitedVm(hostId, null);
+    }
+
+    private void recoverFlowLimitedVm(int hostId, Task allowedUpdateTask) {
+        if (runUpdateVmShortTransaction(() -> lockAndIsVmBusy(hostId, allowedUpdateTask))) {
             return;
         }
         final Vmhost vmhost;
@@ -4877,7 +5071,8 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         }
         try {
             if (vmhost.getOutFlow() == null || vmhost.getOutFlow() == 0) {
-                HashMap<String, Object> resumeResult = power(hostId, "unpause", null);
+                HashMap<String, Object> resumeResult = runUpdateVmShortTransaction(() -> allowedUpdateTask == null
+                        ? power(hostId, "unpause", null) : power(hostId, "unpause", null, allowedUpdateTask));
                 if (resumeResult != null && Boolean.TRUE.equals(resumeResult.get("status"))) {
                     if (!this.update(new UpdateWrapper<Vmhost>().eq("id", hostId).eq("status", 3).set("pause_info", null))) {
                         log.warn("流量额度已到账，但暂停原因未清除: hostId={}", hostId);
@@ -4956,7 +5151,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean addVmSnapShot(Vmhost vmhost, String snapName, Boolean vmstate, String description) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());
@@ -4978,7 +5173,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteVmSnapShot(Vmhost vmhost, String snapName) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());
@@ -4997,7 +5192,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean rollbackVmSnapShot(Vmhost vmhost, String snapName) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());
@@ -5014,7 +5209,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (hostId == null || size == null || size <= 0) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "hostId和size必须有效，size必须大于0");
         }
-        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+        if (lockAndIsVmBusy(hostId)) {
             return migrationBusyResult();
         }
         Vmhost vmhost = this.getById(hostId);
@@ -5094,7 +5289,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         if (hostId == null || StringUtils.isBlank(disk) || !disk.matches("(?i)^scsi[1-9][0-9]*$")) {
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, "disk必须是scsi1及以上的数据盘设备名");
         }
-        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+        if (lockAndIsVmBusy(hostId)) {
             return migrationBusyResult();
         }
         Vmhost vmhost = this.getById(hostId);
@@ -5145,7 +5340,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resizeVmDataDisk(Long hostId, String disk, Integer size) {
-        if (vmIdReservationService.lockAndIsHostReserved(hostId)) {
+        if (lockAndIsVmBusy(hostId)) {
             return migrationBusyResult();
         }
         if (hostId == null || size == null || size <= 0
@@ -5350,7 +5545,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public JSONObject addVmBackup(Vmhost vmhost, String mode, String compress, String notes) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());
@@ -5474,7 +5669,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public JSONObject deleteVmBackup(Vmhost vmhost, String volid) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());
@@ -5491,7 +5686,7 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public JSONObject rollbackVmBackup(Vmhost vmhost, String volid, Boolean force, Boolean start) {
-        if (vmIdReservationService.lockAndIsHostReserved(vmhost.getId())) {
+        if (lockAndIsVmBusy(vmhost.getId())) {
             throw new IllegalStateException(migrationBusyResult().getMessage());
         }
         Master node = masterService.getById(vmhost.getNodeid());

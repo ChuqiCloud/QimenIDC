@@ -10,6 +10,7 @@ import java.io.IOException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class ExceptionControllerTest {
     private final ExceptionController controller = new ExceptionController();
@@ -20,13 +21,14 @@ class ExceptionControllerTest {
         request.setAttribute("javax.servlet.error.status_code", 409);
         String leakedNodePassword = "node-ssh-password-secret";
 
-        ResponseResult<String> response = controller.globalException(request,
-                new IllegalStateException("MyBatis failed for password=" + leakedNodePassword));
+        IllegalStateException exception = new IllegalStateException("MyBatis failed for password=" + leakedNodePassword);
+        ResponseResult<String> response = controller.globalException(request, exception);
 
         assertEquals(409, response.getCode());
         assertEquals("请求处理失败，请稍后重试", response.getMessage());
         assertFalse(response.getMessage().contains(leakedNodePassword));
         assertNull(response.getData());
+        assertSame(exception, request.getAttribute(ExceptionController.AUDIT_EXCEPTION_ATTRIBUTE));
     }
 
     @Test
@@ -49,5 +51,6 @@ class ExceptionControllerTest {
                 new RuntimeException("write failed", new ClientAbortException("client disconnected"))));
         assertNull(controller.globalException(request,
                 new IOException("Broken pipe")));
+        assertNull(request.getAttribute(ExceptionController.AUDIT_EXCEPTION_ATTRIBUTE));
     }
 }

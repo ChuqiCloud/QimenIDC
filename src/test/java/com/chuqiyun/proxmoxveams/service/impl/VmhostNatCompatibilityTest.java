@@ -86,6 +86,7 @@ class VmhostNatCompatibilityTest {
         previousClientMasterService = ReflectionTestUtils.getField(ClientApiUtil.class, "masterService");
         service = spy(new VmhostServiceImpl());
         ReflectionTestUtils.setField(service, "vmIdReservationService", mock(com.chuqiyun.proxmoxveams.service.VmIdReservationService.class));
+        ReflectionTestUtils.setField(service, "taskService", mock(com.chuqiyun.proxmoxveams.service.TaskService.class));
         masterService = mock(MasterService.class);
         natForwardRuleService = mock(NatForwardRuleService.class);
         natForwardSyncService = mock(NatForwardSyncService.class);

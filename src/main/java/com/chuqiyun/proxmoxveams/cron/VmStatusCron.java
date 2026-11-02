@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.chuqiyun.proxmoxveams.constant.TaskType.*;
@@ -254,15 +255,25 @@ public class VmStatusCron {
         queryWrap.last("LIMIT 1");
         Task task = taskService.getOne(queryWrap);
         if (task != null){
-            // 设置任务状态为1 1为正在执行
+            // 只认领仍在排队的任务，避免读取后被改配失败流程取消的任务继续执行。
+            UpdateWrapper<Task> claim = new UpdateWrapper<>();
+            claim.eq("id", task.getId()).eq("status", 0).set("status", 1);
+            if (!taskService.update(claim)) {
+                return;
+            }
             task.setStatus(1);
-            taskService.updateById(task);
+            if (!hasActiveUpdateParent(task)) {
+                task.setStatus(3);
+                task.setError("所属虚拟机改配任务已结束或不存在，已取消关机任务");
+                taskService.updateById(task);
+                return;
+            }
             // 获取node信息
             Master node = masterService.getById(task.getNodeid());
             log.info("[Task-StopVmNow] 执行停止任务: NodeID:{} VM-ID:{}",node.getId(),task.getVmid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
-            ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+            ProxmoxApiUtil proxmoxApiUtil = newProxmoxApi();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
             HashMap<String,Object> params = new HashMap<>();
             // 强制停止
@@ -281,8 +292,8 @@ public class VmStatusCron {
             }
             // 设置数据库中的vm状态为1 1为关机 非重装任务13和暂停(4)才执行
             if (vmhost.getStatus() != 13 && vmhost.getStatus() != 4) {
-                vmhost.setStatus(1);
-                vmhostService.updateById(vmhost);
+                // PVE 返回前改配可能已保存新配置，只写状态，避免旧快照覆盖配额与硬件字段。
+                updateVmStatusOnly(vmhost, 1);
             }
             // 设置任务状态为2 2为执行完成
             task.setStatus(2);
@@ -894,6 +905,34 @@ public class VmStatusCron {
             throw new IllegalStateException("更新虚拟机状态失败: hostId=" + vmhost.getId() + ", status=" + status);
         }
         vmhost.setStatus(status);
+    }
+
+    protected ProxmoxApiUtil newProxmoxApi() {
+        return new ProxmoxApiUtil();
+    }
+
+    private boolean hasActiveUpdateParent(Task task) {
+        Map<Object, Object> params = task.getParams();
+        if (params == null || !params.containsKey("parentUpdateTaskId")) {
+            return true;
+        }
+        final Integer parentId;
+        try {
+            parentId = Integer.valueOf(String.valueOf(params.get("parentUpdateTaskId")));
+        } catch (NumberFormatException error) {
+            return false;
+        }
+        Task parent = taskService.getById(parentId);
+        boolean parentMatches = parent != null && Objects.equals(parent.getType(), UPDATE_VM)
+                && Objects.equals(parent.getHostid(), task.getHostid())
+                && Objects.equals(parent.getNodeid(), task.getNodeid())
+                && Objects.equals(parent.getVmid(), task.getVmid());
+        if (parentMatches && Objects.equals(parent.getStatus(), 3)) {
+            // 父任务在认领后失败，尚未发送关机命令，只清除此操作留下的强制关机中状态。
+            vmhostService.update(new UpdateWrapper<Vmhost>().eq("id", task.getHostid())
+                    .eq("status", 9).set("status", 0));
+        }
+        return parentMatches && Objects.equals(parent.getStatus(), 1);
     }
 
     private void createApplyWindowsVmIpTaskIfNeeded(Vmhost vmhost) {

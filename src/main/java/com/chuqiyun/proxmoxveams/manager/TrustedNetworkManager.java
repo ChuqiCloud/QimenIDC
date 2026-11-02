@@ -357,9 +357,6 @@ public class TrustedNetworkManager {
         if (result.isEmpty()) {
             UnifiedLogger.warn(UnifiedLogger.LogType.SYSTEM,
                     "[Whitelist] 公共IP探测源全部失败，退回本机网卡地址: " + result.getErrors());
-        } else if (!result.getErrors().isEmpty()) {
-            UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM,
-                    "[Whitelist] 部分公共IP探测源失败: " + result.getErrors() + ", 已获取: " + result.getAddresses());
         }
         return result;
     }

@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.filter;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.chuqiyun.proxmoxveams.common.ExceptionController;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.entity.SystemLog;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
@@ -111,6 +112,12 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
                                   Throwable throwable) {
         if (shouldSkipAuditLog(request)) {
             return;
+        }
+        if (throwable == null) {
+            Object handledException = request.getAttribute(ExceptionController.AUDIT_EXCEPTION_ATTRIBUTE);
+            if (handledException instanceof Throwable) {
+                throwable = (Throwable) handledException;
+            }
         }
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
         String rawRequestBody = Objects.nonNull(requestWrapper) ? requestWrapper.getBody() : "";
@@ -285,11 +292,18 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
         if (Objects.isNull(throwable)) {
             return "";
         }
-        String exceptionMessage = throwable.getClass().getSimpleName();
-        if (StringUtils.isNotBlank(throwable.getMessage())) {
-            exceptionMessage = exceptionMessage + ": " + throwable.getMessage();
+        StringBuilder exceptionMessage = new StringBuilder();
+        // 同时保留锁等待等底层原因；限制层数，避免异常 cause 链循环影响请求结束。
+        for (int depth = 0; throwable != null && depth < 8; depth++, throwable = throwable.getCause()) {
+            if (depth > 0) {
+                exceptionMessage.append("; caused by ");
+            }
+            exceptionMessage.append(throwable.getClass().getSimpleName());
+            if (StringUtils.isNotBlank(throwable.getMessage())) {
+                exceptionMessage.append(": ").append(StoredLogRedactor.redact(throwable.getMessage()));
+            }
         }
-        return StringUtils.abbreviate(exceptionMessage, 512);
+        return StringUtils.abbreviate(maskSpecialTokens(exceptionMessage.toString()), 512);
     }
 
     private String resolveLogLevel(int httpStatus, Integer businessCode, Throwable throwable) {
@@ -561,10 +575,11 @@ public class ReplaceRequestBodyFilter extends OncePerRequestFilter {
     }
 
     private String resolveAuditReason(String businessMessage, Throwable throwable) {
+        String reason = businessMessage;
         if (Objects.nonNull(throwable) && StringUtils.isNotBlank(throwable.getMessage())) {
-            return StringUtils.abbreviate(throwable.getMessage(), 200);
+            reason = throwable.getMessage();
         }
-        return StringUtils.abbreviate(StringUtils.defaultString(businessMessage), 200);
+        return StringUtils.abbreviate(maskSpecialTokens(StoredLogRedactor.redact(StringUtils.defaultString(reason))), 200);
     }
 
     private boolean isSuccessLevel(String level) {

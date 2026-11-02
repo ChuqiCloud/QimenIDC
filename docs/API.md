@@ -7526,7 +7526,7 @@ GET /{adminPath}/getAgentWhitelist
       "ipip": "159.75.12.57"
     },
     "probeErrors": {
-      "ipify": "Connection refused"
+      "ip.sb": "Connection refused"
     },
     "networks": ["111.230.93.5/32", "159.75.12.57/32", "198.51.100.7/32"],
     "lastFullSyncAt": 1760700000000,
@@ -7545,12 +7545,11 @@ GET /{adminPath}/getAgentWhitelist
 - `networks`：当前会被下发到节点的全部来源（主控自报 ∪ 节点实测）
 - `pendingNodes`：同步失败、等待心跳重试的节点（退避 5 分钟）
 
-主控出口探测走四个公共源，并发请求后合并去重：
+主控出口探测走三个公共源，并发请求后合并去重；部分源失败且已获得出口 IP 时不输出失败日志，失败原因保留在 `probeErrors` 中：
 
 |源|地址|解析方式|
 |---|---|---|
 |cloudflare|`https://www.cloudflare.com/cdn-cgi/trace`|键值行取 `ip=`|
-|ipify|`https://api.ipify.org/`|纯文本（兼容 JSON/HTML 返回）|
 |ip.sb|`https://api.ip.sb/ip`|纯文本|
 |ipip|`https://myip.ipip.net/`|中文句子中提取第一个 IPv4|
 

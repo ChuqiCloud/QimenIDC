@@ -20,6 +20,7 @@ import java.io.IOException;
 @Slf4j
 @RestControllerAdvice
 public class ExceptionController {
+    public static final String AUDIT_EXCEPTION_ATTRIBUTE = ExceptionController.class.getName() + ".auditException";
 
     // 捕捉shiro的异常
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
@@ -59,6 +60,8 @@ public class ExceptionController {
             log.debug("客户端已断开连接: {}", ex.getMessage());
             return null;
         }
+        // Advice 已处理的异常不会再穿透过滤器，保留到请求上下文供审计日志读取。
+        request.setAttribute(AUDIT_EXCEPTION_ATTRIBUTE, ex);
         return new ResponseResult<>(getStatus(request).value(), "请求处理失败，请稍后重试", null);
     }
 

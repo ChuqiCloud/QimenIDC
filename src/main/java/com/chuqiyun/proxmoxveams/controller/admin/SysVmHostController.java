@@ -335,9 +335,9 @@ public class SysVmHostController {
     public Object updateVm(@RequestBody VmParams vmParams) throws UnauthorizedException {
         UnifiedResultDto<Object> resultDto = vmhostService.updateVm(vmParams);
         if (resultDto.getResultCode().getCode() != UnifiedResultCode.SUCCESS.getCode()) {
-            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getResultCode().getMessage());
+            return ResponseResult.fail(resultDto.getResultCode().getCode(),resultDto.getMessage());
         }
-        return ResponseResult.ok(resultDto.getResultCode().getMessage());
+        return ResponseResult.ok(resultDto.getMessage());
     }
 
     /**

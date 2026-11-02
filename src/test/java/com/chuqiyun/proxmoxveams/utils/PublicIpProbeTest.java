@@ -61,21 +61,18 @@ class PublicIpProbeTest {
             switch (source) {
                 case CLOUDFLARE:
                     return "fl=1\nip=198.51.100.7\n";
-                case IPIFY:
+                case IPIP:
                     throw new IllegalStateException("Connection refused");
-                case IP_SB:
-                    return "203.0.113.9\n";
                 default:
-                    // 与 ip.sb 报同一个地址，合并后只留一份
-                    return "当前 IP：203.0.113.9 来自于：中国 北京 联通";
+                    return "203.0.113.9\n";
             }
         });
 
         assertEquals(List.of("198.51.100.7", "203.0.113.9"), result.getAddresses());
         assertEquals("198.51.100.7", result.getSources().get("cloudflare"));
-        assertEquals("203.0.113.9", result.getSources().get("ipip"));
-        assertEquals("Connection refused", result.getErrors().get("ipify"));
-        assertEquals(4, result.getSources().size() + result.getErrors().size());
+        assertEquals("203.0.113.9", result.getSources().get("ip.sb"));
+        assertEquals("Connection refused", result.getErrors().get("ipip"));
+        assertEquals(3, result.getSources().size() + result.getErrors().size());
         assertFalse(result.isEmpty());
     }
 
@@ -93,9 +90,8 @@ class PublicIpProbeTest {
     @Test
     void sourcesCoverTheRequiredEndpoints() {
         assertEquals("https://www.cloudflare.com/cdn-cgi/trace", PublicIpProbe.Source.CLOUDFLARE.getUrl());
-        assertEquals("https://api.ipify.org/", PublicIpProbe.Source.IPIFY.getUrl());
         assertEquals("https://api.ip.sb/ip", PublicIpProbe.Source.IP_SB.getUrl());
         assertEquals("https://myip.ipip.net/", PublicIpProbe.Source.IPIP.getUrl());
-        assertEquals(4, PublicIpProbe.Source.values().length);
+        assertEquals(3, PublicIpProbe.Source.values().length);
     }
 }

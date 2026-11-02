@@ -5,6 +5,8 @@ import com.chuqiyun.proxmoxveams.dto.VmIpParams;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.Vmhost;
 import com.chuqiyun.proxmoxveams.service.VmIdReservationService;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -19,6 +21,9 @@ class VmhostMigrationGuardTest {
         VmIdReservationService reservations = mock(VmIdReservationService.class);
         ReflectionTestUtils.setField(service, "vmIdReservationService", reservations);
         ReflectionTestUtils.setField(service, "migrationExecutionLock", mock(com.chuqiyun.proxmoxveams.service.MigrationExecutionLock.class));
+        PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+        when(transactions.getTransaction(any())).thenAnswer(invocation -> new SimpleTransactionStatus());
+        ReflectionTestUtils.setField(service, "transactionManager", transactions);
         when(reservations.lockAndIsHostReserved(any())).thenReturn(true);
 
         for (String action : new String[]{"start", "stop", "reboot", "resume", "unpause"}) {
@@ -53,4 +58,5 @@ class VmhostMigrationGuardTest {
         assertFalse(service.delVmhostVpcIpForwardWithResult(17, "203.0.113.1", "172.16.0.4").isSuccess());
         verify(service, never()).getById(any());
     }
+
 }
