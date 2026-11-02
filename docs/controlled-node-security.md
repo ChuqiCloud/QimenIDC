@@ -88,6 +88,10 @@ Run the stream once per node and then update the manager's shared token using it
 
 先升级相关被控至 **1.1.1**，再部署主控 **1.3.5_8**。在 `GET /{adminPath}/getAgentWhitelist` 查看 `vncNetworks`、`vncCollectionError`、`syncErrors` 和 `pendingNodes`；旧被控没有确认字段时，错误会提示升级。发布清单中的最新 QAgent 版本仍来自原有线上 `newversion` 数据源，本地构建不会自动修改线上清单。
 
+主控 **1.3.5_9** 修复启动时 `QAgent节点服务尚未初始化`：首次白名单同步在全部 Spring 单例完成初始化后执行，避免 `StartUp.@PostConstruct` 早于静态客户端的节点服务注入。该错误发生在本地请求准备阶段，不代表远端节点拒绝连接；周期任务仍会补偿失败节点。
+
+QAgent **1.1.2** 的菜单 11 同时显示主控 API 来源、实测来源、VNC 中转来源及托管状态。nginx 的 `geo` 只管理 API 访问，VNC 代理独立读取 `QAGENT_VNC_PROXY_IPS`；VNC IP 无需出现在该 `geo` 块。显示“安装配置（尚未由主控托管）”表示尚未接收有效 VNC 快照；“主控自动同步”且空名单表示拒绝所有 VNC 来源。可直接执行 `sudo bash /home/software/QAgent/python-runtime.sh exec /home/software/QAgent/service/SecurityConfig.py --show-trust /etc/qimenidc/security.conf` 查看相同诊断。
+
 中转的 `host` 应对应它连接 PVE 节点时的实际出口。若中转经过 SNAT 且出口与 `host` 的解析结果不同，现有节点记录无法推断该出口，应先修正中转地址或网络出口配置。例如 `cqszwy` 的实际公网出口为 `103.109.20.138`，不能只放行目标 PVE 自身的 `103.236.61.8`。应用白名单在 TCP 接收后检查；若 `nc` 建连仍超时，需要另外检查路由、安全组和宿主机防火墙。
 
 本次验证：主控 `clean test bootJar` 全量 362 项通过，输出 `build/libs/QimenIDC-Server.jar`；被控同步、代理和加密接口 43 项，更新预检 21 项，版本接口 5 项通过，生成 `build/distributions/QAgent-1.1.1.tar.gz`。被控测试在 Windows/Python 与 Git Bash 隔离目录执行，`fcntl`/`O_NOFOLLOW` 使用兼容桩；尚未验证 Linux 实际文件锁、PVE 控制台或现网端到端连接。请使用正常 `update.sh` 流程完成升级；仅覆盖源文件不能让旧代理进程加载新版代码。

@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.utils.FileUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -25,7 +26,7 @@ import java.util.Objects;
  */
 @Slf4j
 @Component
-public class StartUp {
+public class StartUp implements SmartInitializingSingleton {
     @Resource
     private ConfigService configService;
     @Resource
@@ -138,6 +139,12 @@ public class StartUp {
         masterService.updateAllNodeCookie();
         //log.info("[System] 集群预热结束");
         UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "集群预热结束");
+    }
+
+    @Override
+    public void afterSingletonsInstantiated() {
+        // 静态节点客户端由 Spring 实例注入，必须等所有单例完成初始化后才能调用。
+        // 此时数据库升级及节点预热也已完成，且定时任务尚未开始执行。
         // 被控端 nginx 按管理源白名单放行，启动时先把集群内所有主控出口下发一遍，
         // 否则换了出口IP的主控会一直卡在连接超时。失败不影响启动，由心跳周期补偿。
         try {

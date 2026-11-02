@@ -41,7 +41,7 @@ while true; do
     echo "8. 查看 QAgent port"
     echo "9. 重置 QAgent port"
     echo "10. 更新 QAgent 程序"
-    echo "11. 查看主控可信白名单"
+    echo "11. 查看主控及 VNC 可信白名单"
     echo "12. 输出 QAgent 公钥"
     echo "13. 更新 QAgent 证书"
     echo "q. 退出"
@@ -99,9 +99,9 @@ while true; do
             fi
             ;;
         11)
-            echo -e "\033[33m--->当前生效的主控来源白名单:\033[0m"
-            sudo sed -n 's/^QAGENT_MANAGER_IPS=//p;s/^QAGENT_MANAGER_PROBES=//p' /etc/qimenidc/security.conf
-            sudo sed -n '/qimenidc_qagent_allowed/,/^}/p' /etc/nginx/conf.d/qimenidc-qagent.conf
+            sudo bash /home/software/QAgent/python-runtime.sh exec /home/software/QAgent/service/SecurityConfig.py --show-trust /etc/qimenidc/security.conf
+            echo '--->nginx 主控 API 放行规则（VNC 来源由 TCP 代理独立校验）:'
+            sudo sed -n '/^geo.*qimenidc_qagent_allowed/,/^}/p' /etc/nginx/conf.d/qimenidc-qagent.conf
             ;;
         10)
             echo "---> 5秒后将更新最新版被控程序..."
