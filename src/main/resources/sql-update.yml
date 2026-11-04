@@ -619,3 +619,6 @@ build: # 内部构建版本信息
   1.3.5_3:
     1:
       - "alter table master add qagent_version varchar(64) null comment '最近一次成功获取的QAgent程序版本';"
+  1.3.5_10:
+    1:
+      - "alter table vncnode add proxy_source_ips text null comment 'VNC代理访问被控端的源IP/CIDR列表，空值回退host解析';"

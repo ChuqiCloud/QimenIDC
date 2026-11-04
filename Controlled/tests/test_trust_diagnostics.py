@@ -13,7 +13,8 @@ class TrustDiagnosticsTest(unittest.TestCase):
             if content is not None:
                 config.write_text(content, encoding='utf-8')
             script = Path(__file__).resolve().parents[1] / 'service' / 'SecurityConfig.py'
-            environment = dict(os.environ, PYTHONIOENCODING='utf-8')
+            # 复现某些节点 sudo 环境将 stdout 错设为 latin-1 的情况。
+            environment = dict(os.environ, PYTHONIOENCODING='latin-1')
             result = subprocess.run([sys.executable, str(script), '--show-trust', str(config)],
                                     capture_output=True, text=True, encoding='utf-8', env=environment)
             self.assertEqual(0, result.returncode, result.stderr)

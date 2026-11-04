@@ -42,11 +42,13 @@ public class SysVncController {
     public ResponseResult<Object> addVncNode(@RequestBody Vncnode vncnode) throws UnauthorizedException {
         long createTime = System.currentTimeMillis();
         vncnode.setCreateDate(createTime);
-        if (vncnodeService.addVncnode(vncnode)) {
-            return ResponseResult.ok("添加成功");
-        }
-        else {
+        try {
+            if (vncnodeService.addVncnode(vncnode)) {
+                return ResponseResult.ok("添加成功");
+            }
             return ResponseResult.fail("添加失败");
+        } catch (IllegalArgumentException e) {
+            return ResponseResult.fail(ResponseResult.RespCode.VALID_DATA_ERROR, e.getMessage());
         }
     }
 
@@ -74,11 +76,13 @@ public class SysVncController {
     @AdminApiCheck
     @RequestMapping(value = "/updateVncNode", method = {RequestMethod.POST, RequestMethod.PUT})
     public ResponseResult<Object> updateVncNode(@RequestBody Vncnode vncnode) throws UnauthorizedException {
-        if (vncnodeService.updateVncnode(vncnode)) {
-            return ResponseResult.ok("修改成功");
-        }
-        else {
+        try {
+            if (vncnodeService.updateVncnode(vncnode)) {
+                return ResponseResult.ok("修改成功");
+            }
             return ResponseResult.fail("修改失败");
+        } catch (IllegalArgumentException e) {
+            return ResponseResult.fail(ResponseResult.RespCode.VALID_DATA_ERROR, e.getMessage());
         }
     }
 

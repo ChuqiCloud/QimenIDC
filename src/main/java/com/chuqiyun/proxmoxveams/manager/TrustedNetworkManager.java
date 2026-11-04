@@ -12,6 +12,7 @@ import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import com.chuqiyun.proxmoxveams.config.RestTemplateConfig;
 import com.chuqiyun.proxmoxveams.utils.ClientApiUtil;
 import com.chuqiyun.proxmoxveams.utils.PublicIpProbe;
+import com.chuqiyun.proxmoxveams.utils.VncSourceNetworks;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
@@ -115,7 +116,7 @@ public class TrustedNetworkManager {
 
     private final Map<Integer, String> syncErrors = new ConcurrentHashMap<>();
 
-    /** 完整的启用 VNC 节点来源快照，包含域名的全部 A/AAAA 记录。 */
+    /** 完整的启用 VNC 节点来源快照；显式出口优先，空值回退 host 的全部 A/AAAA 记录。 */
     private volatile List<String> vncNetworks = Collections.emptyList();
     private volatile String vncCollectionError = "";
 
@@ -383,7 +384,8 @@ public class TrustedNetworkManager {
     }
 
     /**
-     * 从所有启用控制器读取来源，domain 只是浏览器访问域名，不能当作 TCP 代理的出口。
+     * 从所有启用控制器读取来源，显式出口与 7600 监听地址独立；未配置时兼容 host DNS。
+     * domain 只是浏览器访问域名，不能当作 TCP 代理的出口。
      * 任一记录解析失败都保留原有快照，避免误删其他仍然有效的来源。
      */
     public List<String> collectVncNetworks() {
@@ -392,6 +394,14 @@ public class TrustedNetworkManager {
         Set<String> networks = new LinkedHashSet<>();
         for (Vncnode node : vncnodeService.list(query)) {
             if (node == null || !Integer.valueOf(0).equals(node.getStatus())) {
+                continue;
+            }
+            if (node.getProxySourceIps() != null && !node.getProxySourceIps().trim().isEmpty()) {
+                try {
+                    networks.addAll(VncSourceNetworks.parse(node.getProxySourceIps()));
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalStateException("VNC 节点[" + node.getId() + "]的出口来源配置无效: " + e.getMessage(), e);
+                }
                 continue;
             }
             String host = normalizeVncHost(node);
@@ -465,18 +475,11 @@ public class TrustedNetworkManager {
     private Set<String> normalizeVncNetworks(List<String> networks) throws IOException {
         Set<String> normalized = new LinkedHashSet<>();
         for (String network : networks) {
-            String[] parts = network.split("/", -1);
-            // 回执必须是主机 CIDR，不能让非法回执触发 DNS 查询。
-            if (parts.length != 2 || !(parts[0].matches("\\d{1,3}(\\.\\d{1,3}){3}")
-                    || (parts[0].contains(":") && parts[0].matches("[0-9a-fA-F:.]+")))) {
+            try {
+                normalized.add(VncSourceNetworks.normalize(network));
+            } catch (IllegalArgumentException e) {
                 throw new IOException("被控端 VNC 白名单回执地址无效");
             }
-            InetAddress address = InetAddress.getByName(parts[0]);
-            String prefix = address instanceof Inet4Address ? "32" : "128";
-            if (!prefix.equals(parts[1])) {
-                throw new IOException("被控端 VNC 白名单回执掩码无效");
-            }
-            normalized.add(address.getHostAddress() + "/" + prefix);
         }
         return normalized;
     }

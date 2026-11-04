@@ -25,6 +25,8 @@ public class Vncnode extends Model<Vncnode> {
     private String name;
     
     private String host;
+    // VNC TCP 代理访问被控端时的实际源 IP/CIDR；空值沿用 host 的 DNS 地址
+    private String proxySourceIps;
     //控制器端口
     private Integer port;
     

@@ -28,6 +28,9 @@ def render_config(values):
 
 
 def show_trust(path):
+    # qa 菜单通过 sudo 启动时，单机的 PYTHONIOENCODING/locale 可能退化为 latin-1。
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
     values = read_config(path)
     print('--->主控 API 来源白名单（nginx）:')
     print(values.get('QAGENT_MANAGER_IPS') or '未配置')

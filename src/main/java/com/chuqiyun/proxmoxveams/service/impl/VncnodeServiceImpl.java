@@ -9,6 +9,7 @@ import com.chuqiyun.proxmoxveams.entity.Master;
 import com.chuqiyun.proxmoxveams.entity.Vncnode;
 import com.chuqiyun.proxmoxveams.service.VncnodeService;
 import com.chuqiyun.proxmoxveams.manager.VncNetworksChangedEvent;
+import com.chuqiyun.proxmoxveams.utils.VncSourceNetworks;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -37,6 +38,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
     */
     @Override
     public boolean addVncnode(Vncnode vncnode) {
+        normalizeProxySources(vncnode);
         return publishChangeIfSuccessful(this.save(vncnode));
     }
 
@@ -61,6 +63,7 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
     */
     @Override
     public boolean updateVncnode(Vncnode vncnode) {
+        normalizeProxySources(vncnode);
         return publishChangeIfSuccessful(this.updateById(vncnode));
     }
 
@@ -122,6 +125,13 @@ public class VncnodeServiceImpl extends ServiceImpl<VncnodeDao, Vncnode> impleme
         QueryWrapper<Vncnode> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("host", host);
         return this.getOne(queryWrapper);
+    }
+
+    private void normalizeProxySources(Vncnode node) {
+        // null 表示局部更新未传该字段；空串明确清空并恢复 host DNS 回退。
+        if (node.getProxySourceIps() != null) {
+            node.setProxySourceIps(String.join("\n", VncSourceNetworks.parse(node.getProxySourceIps())));
+        }
     }
 
     private boolean publishChangeIfSuccessful(boolean successful) {

@@ -62,6 +62,38 @@ class VncnodeTrustEventTest {
     }
 
     @Test
+    void invalidProxySourceIsRejectedBeforePersistenceOrTrustPublication() {
+        for (String invalid : new String[]{"0.0.0.0/0", "::/0", "relay.example", "192.0.2.5:7600",
+                "192.0.2.5/33", "2001:db8::/129", "192.0.2.5/24/32", ",,,"}) {
+            Vncnode node = new Vncnode();
+            node.setProxySourceIps(invalid);
+            assertThrows(IllegalArgumentException.class, () -> service.addVncnode(node));
+            assertThrows(IllegalArgumentException.class, () -> service.updateVncnode(node));
+        }
+        verify(service, never()).save(any(Vncnode.class));
+        verify(service, never()).updateById(any(Vncnode.class));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void canonicalizesExplicitSourcesAndPreservesOmittedOrClearedFieldMeaning() {
+        doReturn(true).when(service).save(any(Vncnode.class));
+        doReturn(true).when(service).updateById(any(Vncnode.class));
+        Vncnode explicit = new Vncnode();
+        explicit.setProxySourceIps("192.0.2.29/24,192.0.2.0/24 198.51.100.5");
+        assertTrue(service.addVncnode(explicit));
+        assertEquals("192.0.2.0/24\n198.51.100.5/32", explicit.getProxySourceIps());
+
+        Vncnode omitted = new Vncnode();
+        assertTrue(service.updateVncnode(omitted));
+        assertNull(omitted.getProxySourceIps());
+        Vncnode clear = new Vncnode();
+        clear.setProxySourceIps(" \n");
+        assertTrue(service.updateVncnode(clear));
+        assertEquals("", clear.getProxySourceIps());
+    }
+
+    @Test
     void publishesOnlyAfterTransactionCommits() {
         doReturn(true).when(service).save(any(Vncnode.class));
         TransactionSynchronizationManager.initSynchronization();

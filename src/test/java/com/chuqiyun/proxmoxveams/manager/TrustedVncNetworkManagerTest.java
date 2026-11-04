@@ -75,6 +75,53 @@ class TrustedVncNetworkManagerTest {
     }
 
     @Test
+    void explicitProxySourcesOverrideListeningHostAndNormalizeAllEgressAddresses() throws Exception {
+        Vncnode relay = node(1, "unresolved-listen-address.example", 0);
+        relay.setProxySourceIps("103.109.20.138, 103.109.20.139/32\n2001:db8::1234/64 103.109.20.138");
+        when(vncnodeService.list(any())).thenReturn(List.of(relay, node(2, "150.138.77.26", 0)));
+
+        assertEquals(Set.of("103.109.20.138/32", "103.109.20.139/32", "150.138.77.26/32",
+                InetAddress.getByName("2001:db8::").getHostAddress() + "/64"),
+                new LinkedHashSet<>(manager.collectVncNetworks()));
+    }
+
+    @Test
+    void blankExplicitProxySourcesRetainHistoricalHostFallback() {
+        Vncnode relay = node(1, "103.109.20.138", 0);
+        relay.setProxySourceIps(" \n ");
+        when(vncnodeService.list(any())).thenReturn(List.of(relay));
+
+        assertEquals(List.of("103.109.20.138/32"), manager.collectVncNetworks());
+    }
+
+    @Test
+    void cidrAcknowledgementAllowsCompressedIpv6AndHostBitsAreCanonicalized() {
+        Vncnode relay = node(1, "103.109.20.138", 0);
+        relay.setProxySourceIps("192.0.2.29/24 2001:db8::1234/64");
+        when(vncnodeService.list(any())).thenReturn(List.of(relay));
+        JSONObject data = new JSONObject();
+        data.put("cluster_vnc_addresses", new JSONArray(List.of("192.0.2.0/24", "2001:db8::/64")));
+        manager.response = report(data);
+
+        manager.onVncNetworksChanged(new VncNetworksChangedEvent());
+
+        assertTrue(synced().containsKey(13));
+    }
+
+    @Test
+    void invalidExplicitProxySourcePreservesInstalledPolicyInsteadOfFallingBack() {
+        Vncnode relay = node(1, "103.109.20.138", 0);
+        relay.setProxySourceIps("0.0.0.0/0");
+        when(vncnodeService.list(any())).thenReturn(List.of(relay));
+
+        manager.onVncNetworksChanged(new VncNetworksChangedEvent());
+
+        assertNull(manager.sent.get(0));
+        assertTrue(pending().containsKey(13));
+        assertTrue(errors().get(13).contains("出口来源配置无效"));
+    }
+
+    @Test
     void completeSnapshotRemovesDeletedSourceAndEmptySnapshotRevokesLastSource() {
         when(vncnodeService.list(any())).thenReturn(List.of(node(1, "103.109.20.138", 0),
                         node(2, "150.138.77.26", 0)),

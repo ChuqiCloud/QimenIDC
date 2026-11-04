@@ -68,7 +68,23 @@ Run the stream once per node and then update the manager's shared token using it
 
 ### VNC 中转来源自动同步（QAgent 1.1.1 / 主控 1.3.5_8）
 
-主控从 `vncnode` 查询**全部启用的 VNC 节点**（`status=0`），使用 `host` 字段解析来源地址，汇总全部 A/AAAA 记录并去重，以 `/32` 或 `/128` 下发到所有被控。不限于一台中转，也不受列表分页影响；浏览器访问用的 `domain` 不参与来源白名单。无需改数据库结构。
+主控从 `vncnode` 查询**全部启用的 VNC 节点**（`status=0`），汇总各控制器的来源地址并去重后下发到所有被控。主控 **1.3.5_10** 新增 `proxySourceIps`（数据库列 `proxy_source_ips`），用来填写该控制器连接被控端时实际使用的多个出口 IP/CIDR；非空时优先使用该字段，空白时兼容旧数据，解析 `host` 的全部 A/AAAA 记录并转为 `/32` 或 `/128`。不限于一台中转，也不受列表分页影响；浏览器访问用的 `domain` 不参与来源白名单。
+
+`host`/`port` 仍是主控连接控制器 API 的目标，`proxySourceIps` 则是被控 TCP 代理实际看到的连接来源。即使控制器 API 只在一个 IP 的 7600 端口监听，也可以填写多个不同的出口 IP。地址支持空格、逗号或换行分隔，支持 IPv4/IPv6 CIDR；提交时校验并规范化，拒绝域名、带端口地址、默认路由和多播地址。不能从一个监听地址自动推断所有 SNAT 出口；需要填入实际稳定的出口地址或可信网段。
+
+例如更新一个控制器（`id` 替换成实际 ID；使用现有管理员鉴权）：
+
+```http
+PUT /{adminPath}/updateVncNode
+Content-Type: application/json
+
+{
+  "id": 1,
+  "proxySourceIps": "103.109.20.138/32 103.109.20.139/32"
+}
+```
+
+新增接口 `POST /{adminPath}/addVncNode` 同样支持该字段，分页查询 `GET /{adminPath}/selectVncNodePage` 返回该字段。更新时省略字段保留原值，传空字符串清除显式出口配置并回退到 `host` 解析。全部启用控制器的列表合并成完整快照；修改、停用或删除记录时同步撤销旧来源。前端管理页需增加对应多行输入框；当前仓库只含后端代码，可先通过接口配置。新装 SQL 的两份副本和 `sql-update.yml` 已同步补列，主控构建号升级后启动时执行迁移，重复执行补列可安全跳过已存在字段。被控沿用 QAgent **1.1.1+** 的多来源协议，无需因该字段再次升级。
 
 首次启动、约每 5 分钟的心跳补偿，以及 VNC 节点新增、修改、停用、删除提交后，都会同步完整快照。某条记录无效或 DNS 解析失败时，本轮省略 VNC 快照、保留被控原有 VNC 白名单，管理源仍可同步；诊断接口返回具体错误，后续重试。不会把查询失败当成空列表清空所有来源。
 
@@ -92,7 +108,17 @@ Run the stream once per node and then update the manager's shared token using it
 
 QAgent **1.1.2** 的菜单 11 同时显示主控 API 来源、实测来源、VNC 中转来源及托管状态。nginx 的 `geo` 只管理 API 访问，VNC 代理独立读取 `QAGENT_VNC_PROXY_IPS`；VNC IP 无需出现在该 `geo` 块。显示“安装配置（尚未由主控托管）”表示尚未接收有效 VNC 快照；“主控自动同步”且空名单表示拒绝所有 VNC 来源。可直接执行 `sudo bash /home/software/QAgent/python-runtime.sh exec /home/software/QAgent/service/SecurityConfig.py --show-trust /etc/qimenidc/security.conf` 查看相同诊断。
 
-中转的 `host` 应对应它连接 PVE 节点时的实际出口。若中转经过 SNAT 且出口与 `host` 的解析结果不同，现有节点记录无法推断该出口，应先修正中转地址或网络出口配置。例如 `cqszwy` 的实际公网出口为 `103.109.20.138`，不能只放行目标 PVE 自身的 `103.236.61.8`。应用白名单在 TCP 接收后检查；若 `nc` 建连仍超时，需要另外检查路由、安全组和宿主机防火墙。
+QAgent **1.1.3** 固定菜单 11 诊断输出为 UTF-8，避免个别节点从 sudo 环境继承 `PYTHONIOENCODING=latin-1` 时，显示中文失败并中断后续 VNC 名单输出。这个编码错误只影响菜单显示，不修改 nginx 或 VNC 白名单。
+
+旧版本可以临时执行下面的只读命令查看完整名单，无需重启服务：
+
+```bash
+sudo env PYTHONIOENCODING=utf-8 bash /home/software/QAgent/python-runtime.sh exec /home/software/QAgent/service/SecurityConfig.py --show-trust /etc/qimenidc/security.conf
+```
+
+1.1.3 的诊断回归使用 `PYTHONIOENCODING=latin-1` 的真实 Python 子进程验证中文、多地址、托管空名单及缺配置显示，4 项通过；更新预检 21 项和版本接口 5 项也通过。发布包为 `build/distributions/QAgent-1.1.3.tar.gz`。
+
+若中转经过 SNAT 且出口与 `host` 的解析结果不同，应配置 `proxySourceIps` 为实际出口，而非修改 API 连接目标。例如 `cqszwy` 的实际公网出口为 `103.109.20.138`，不能只放行目标 PVE 自身的 `103.236.61.8`。被控多地址白名单只负责应用内来源检查，宿主机防火墙和安全组也须允许这些出口访问 VNC TCP 代理端口。应用白名单在 TCP 接收后检查；若 `nc` 建连仍超时，需要另外检查路由、安全组和宿主机防火墙。
 
 本次验证：主控 `clean test bootJar` 全量 362 项通过，输出 `build/libs/QimenIDC-Server.jar`；被控同步、代理和加密接口 43 项，更新预检 21 项，版本接口 5 项通过，生成 `build/distributions/QAgent-1.1.1.tar.gz`。被控测试在 Windows/Python 与 Git Bash 隔离目录执行，`fcntl`/`O_NOFOLLOW` 使用兼容桩；尚未验证 Linux 实际文件锁、PVE 控制台或现网端到端连接。请使用正常 `update.sh` 流程完成升级；仅覆盖源文件不能让旧代理进程加载新版代码。
 

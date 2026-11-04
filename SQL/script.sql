@@ -636,6 +636,7 @@ create table vncnode
         primary key,
     name        varchar(255)     not null comment '别称',
     host        varchar(255)     null,
+    proxy_source_ips text        null comment 'VNC代理访问被控端的源IP/CIDR列表，空值回退host解析',
     port        int default 7600 not null comment '控制器端口',
     domain      varchar(255)     null,
     protocol    int default 0    not null comment '0=false;1=true',
