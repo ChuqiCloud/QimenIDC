@@ -20,6 +20,7 @@ import com.chuqiyun.proxmoxveams.utils.CloudInitNetworkUtil;
 import com.chuqiyun.proxmoxveams.utils.DataDiskUtil;
 import com.chuqiyun.proxmoxveams.utils.OsTypeUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
+import com.chuqiyun.proxmoxveams.utils.ReinstallProxmoxApiUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -129,7 +130,7 @@ public class ResetSystemCron {
 //        vmhostService.updateVmhostOsData(task.getHostid(), os);
 
         Vmhost vmhost = vmhostService.getById(task.getHostid());
-        ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
+        ProxmoxApiUtil proxmoxApiUtil = new ReinstallProxmoxApiUtil();
         
         //修改username
         proxmoxApiUtil.resetVmUsername(node,authentications,vmhost.getVmid(),vmhost.getUsername());
