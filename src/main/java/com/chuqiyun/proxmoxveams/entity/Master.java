@@ -46,6 +46,13 @@ public class Master extends Model<Master> {
     @ToString.Exclude
     @TableField(typeHandler = EncryptedPasswordTypeHandler.class)
     private String password;
+
+    /** 节点 SSH 凭据仅供服务内部使用，入库加密且不得由任何接口序列化返回。 */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @JSONField(serialize = false)
+    @ToString.Exclude
+    @TableField(value = "ssh_password", typeHandler = EncryptedPasswordTypeHandler.class)
+    private String sshPassword;
     
     private String realm;
     //0正常1异常2停止

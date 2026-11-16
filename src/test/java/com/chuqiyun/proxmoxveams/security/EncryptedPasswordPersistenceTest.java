@@ -61,22 +61,26 @@ class EncryptedPasswordPersistenceTest {
         Master node = new Master();
         node.setName("node");
         node.setPassword("node-password");
+        node.setSshPassword("ssh-password");
         node.setCsrfToken("csrf-secret");
         node.setTicket("ticket-secret");
 
         assertEquals(1, mapper.insert(node));
         String passwordBefore = assertEncrypted("master", "password", node.getId(), "node-password");
+        assertEncrypted("master", "ssh_password", node.getId(), "ssh-password");
         assertEncrypted("master", "csrf_token", node.getId(), "csrf-secret");
         assertEncrypted("master", "ticket", node.getId(), "ticket-secret");
 
         Master loaded = mapper.selectById(node.getId());
         assertEquals("node-password", loaded.getPassword());
+        assertEquals("ssh-password", loaded.getSshPassword());
         assertEquals("csrf-secret", loaded.getCsrfToken());
         assertEquals("ticket-secret", loaded.getTicket());
         loaded.setName("renamed");
         assertEquals(1, mapper.updateById(loaded));
         assertNotEquals(passwordBefore, assertEncrypted("master", "password", node.getId(), "node-password"));
         assertEquals("node-password", mapper.selectById(node.getId()).getPassword());
+        assertEquals("ssh-password", mapper.selectById(node.getId()).getSshPassword());
     }
 
     @Test

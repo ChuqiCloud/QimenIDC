@@ -64,4 +64,11 @@ class SqlUpdateLoaderTest {
         assertTrue(sqlList.get(1).contains("nat_sync_state"));
         assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.1_3", "1.3.1_2") > 0);
     }
+
+    @Test
+    void comparesBuildVersionsAcrossPatchAndMinorBoundaries() {
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.6_1", "1.3.5_9") > 0);
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.4.0_1", "1.3.9_9") > 0);
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.6_1", "1.3.6_9") < 0);
+    }
 }

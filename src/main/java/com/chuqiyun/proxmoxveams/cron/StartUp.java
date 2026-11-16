@@ -96,6 +96,15 @@ public class StartUp implements SmartInitializingSingleton {
             FileUtil.createInstallLock(); // 创建文件锁
         }
 
+        // 旧版本会在 schema migration 中删除 SSH 专用列，先加密仍存在的历史明文。
+        try {
+            storedCredentialMigration.migrateLegacyMasterSshPasswordBeforeSchemaUpdate();
+        } catch (RuntimeException e) {
+            UnifiedLogger.error(UnifiedLogger.LogType.SYSTEM, "历史 SSH 凭据迁移失败，停止启动");
+            System.exit(0);
+            return;
+        }
+
         // 检测并更新数据库
         UnifiedLogger.log(UnifiedLogger.LogType.SYSTEM, "正在检测数据库是否需要更新");
         if (!sqlService.checkAndUpdateDatabase()){

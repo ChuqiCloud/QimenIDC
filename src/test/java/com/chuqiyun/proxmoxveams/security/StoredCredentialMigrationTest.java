@@ -262,6 +262,35 @@ class StoredCredentialMigrationTest {
         assertEquals("must-rollback-204", jdbc.queryForObject("select password from master where id = 204", String.class));
     }
 
+    @Test
+    void migratesLegacySshPasswordBeforeSchemaUpgradeAndIsIdempotent() {
+        String legacyPassword = "s".repeat(200);
+        jdbc.update("insert into master (id, ssh_password) values (?, ?)", 1, legacyPassword);
+
+        migration.migrateLegacyMasterSshPasswordBeforeSchemaUpdate();
+
+        String encrypted = jdbc.queryForObject("select ssh_password from master where id = 1", String.class);
+        assertTrue(StoredPasswordCipher.isEncrypted(encrypted));
+        assertTrue(encrypted.length() > 255);
+        assertEquals(legacyPassword, StoredPasswordCipher.decrypt(encrypted));
+
+        migration.migrateLegacyMasterSshPasswordBeforeSchemaUpdate();
+        assertEquals(encrypted, jdbc.queryForObject("select ssh_password from master where id = 1", String.class));
+    }
+
+    @Test
+    void invalidLegacySshCiphertextStopsMigrationWithoutExposingValue() {
+        jdbc.update("insert into master (id, ssh_password) values (?, ?)", 1, "QIDENC:1:corrupted-ssh-secret");
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                migration::migrateLegacyMasterSshPasswordBeforeSchemaUpdate);
+
+        assertEquals("历史 SSH 凭据迁移失败，已回滚；请检查数据库结构及密文完整性", exception.getMessage());
+        assertNull(exception.getCause());
+        assertEquals("QIDENC:1:corrupted-ssh-secret",
+                jdbc.queryForObject("select ssh_password from master where id = 1", String.class));
+    }
+
     private void assertSanitizedFailure(IllegalStateException exception) {
         assertEquals("历史凭据迁移失败，已回滚；请检查数据库结构及密文完整性", exception.getMessage());
         assertFalse(exception.getMessage().contains("must-rollback"));
@@ -292,7 +321,7 @@ class StoredCredentialMigrationTest {
     }
 
     private void createSchema() {
-        jdbc.execute("create table master (id int primary key, password varchar(1024), csrf_token varchar(1024), ticket varchar(1024))");
+        jdbc.execute("create table master (id int primary key, password varchar(1024), ssh_password varchar(255), csrf_token varchar(1024), ticket varchar(1024))");
         jdbc.execute("create table vmhost (id int primary key, password varchar(1024))");
         jdbc.execute("create table vncinfo (id int primary key, password varchar(1024))");
         jdbc.execute("create table task (id int primary key, type int, status int, params varchar(16384))");

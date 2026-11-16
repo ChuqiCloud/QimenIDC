@@ -157,6 +157,7 @@ create table master
     port              int          default 8006  not null,
     username          varchar(255)               not null,
     password          text                       not null,
+    ssh_password      text                       null comment '加密存储的节点SSH凭据，仅供服务内部使用',
     realm             varchar(50)  default 'pam' not null,
     status            int          default 0     not null comment '0正常1停止',
     csrf_token        text                       null,

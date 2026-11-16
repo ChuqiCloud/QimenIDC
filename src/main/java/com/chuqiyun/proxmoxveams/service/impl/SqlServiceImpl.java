@@ -27,6 +27,7 @@ public class SqlServiceImpl implements SqlService {
     private static final String SCHEMA_REPAIR_BUILD = "1.3.4_9";
     private static final String NODE_AGENT_VERSION_BUILD = "1.3.5_3";
     private static final String VNC_PROXY_SOURCE_BUILD = "1.3.5_10";
+    private static final String SSH_PASSWORD_BUILD = "1.3.5_11";
     private static final Pattern SINGLE_COLUMN_ADD = Pattern.compile(
             "(?is)^alter\\s+table\\s+([a-z0-9_]+)\\s+add\\s+([a-z0-9_]+)\\s+(.+)$");
     @Value("${info.application.version}")
@@ -140,7 +141,8 @@ public class SqlServiceImpl implements SqlService {
                 // 加列成功后仍可能在凭据迁移或版本写回时中断，重启必须允许安全重试。
                 boolean migrationSucceeded = (SCHEMA_REPAIR_BUILD.equals(stepBuildVersion)
                         || NODE_AGENT_VERSION_BUILD.equals(stepBuildVersion)
-                        || VNC_PROXY_SOURCE_BUILD.equals(stepBuildVersion))
+                        || VNC_PROXY_SOURCE_BUILD.equals(stepBuildVersion)
+                        || SSH_PASSWORD_BUILD.equals(stepBuildVersion))
                         ? executeSchemaRepairSqlList(buildSqlStep.getSqlList())
                         : executeSqlList(buildSqlStep.getSqlList());
                 if (!migrationSucceeded) {
@@ -172,7 +174,9 @@ public class SqlServiceImpl implements SqlService {
     private boolean applySchemaRepairMigration() {
         return applySchemaRepairMigration(SCHEMA_REPAIR_BUILD)
                 && (SqlUpdateLoader.compareBuildVersion(nowBuildVersion, VNC_PROXY_SOURCE_BUILD) < 0
-                || applySchemaRepairMigration(VNC_PROXY_SOURCE_BUILD));
+                || applySchemaRepairMigration(VNC_PROXY_SOURCE_BUILD))
+                && (SqlUpdateLoader.compareBuildVersion(nowBuildVersion, SSH_PASSWORD_BUILD) < 0
+                || applySchemaRepairMigration(SSH_PASSWORD_BUILD));
     }
 
     private boolean applySchemaRepairMigration(String buildVersion) {

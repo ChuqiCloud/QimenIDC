@@ -33,6 +33,7 @@ class MasterSerializationTest {
         assertCredentialsAbsent(response);
         assertTrue(response.contains("node-one"));
         assertEquals("pve-secret", master.getPassword());
+        assertEquals("ssh-secret", master.getSshPassword());
         assertEquals("csrf-secret", master.getCsrfToken());
         assertEquals("ticket-secret", master.getTicket());
     }
@@ -55,8 +56,15 @@ class MasterSerializationTest {
 
         assertEquals("new-secret", jacksonMaster.getPassword());
         assertEquals("new-secret", fastjsonMaster.getPassword());
+        Master jacksonSshMaster = objectMapper.readValue(
+                "{\"name\":\"node-one\",\"sshPassword\":\"new-ssh-secret\"}", Master.class);
+        Master fastjsonSshMaster = JSON.parseObject(
+                "{\"name\":\"node-one\",\"sshPassword\":\"new-ssh-secret\"}", Master.class);
+        assertEquals("new-ssh-secret", jacksonSshMaster.getSshPassword());
+        assertEquals("new-ssh-secret", fastjsonSshMaster.getSshPassword());
         JsonNode response = objectMapper.readTree(objectMapper.writeValueAsString(jacksonMaster));
         assertFalse(response.has("password"));
+        assertFalse(response.has("sshPassword"));
     }
 
     @Test
@@ -69,6 +77,7 @@ class MasterSerializationTest {
         master.setId(1);
         master.setName("node-one");
         master.setPassword("pve-secret");
+        master.setSshPassword("ssh-secret");
         master.setCsrfToken("csrf-secret");
         master.setTicket("ticket-secret");
         return master;
@@ -76,9 +85,12 @@ class MasterSerializationTest {
 
     private void assertCredentialsAbsent(String output) {
         assertFalse(output.contains("pve-secret"));
+        assertFalse(output.contains("ssh-secret"));
         assertFalse(output.contains("csrf-secret"));
         assertFalse(output.contains("ticket-secret"));
         assertFalse(output.contains("\"password\""));
+        assertFalse(output.contains("sshPassword"));
+        assertFalse(output.contains("ssh_password"));
         assertFalse(output.contains("\"csrfToken\""));
         assertFalse(output.contains("\"ticket\""));
     }

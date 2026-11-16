@@ -503,8 +503,6 @@ build: # 内部构建版本信息
                    add index idx_vmhost_disk_reconcile (delete_state, last_disk_reconcile_time);"
     4:
       - "alter table master
-                   drop column ssh_password;"
-      - "alter table master
                    drop column ssh_username;"
       - "alter table master
                    drop column ssh_port;"
@@ -622,3 +620,6 @@ build: # 内部构建版本信息
   1.3.5_10:
     1:
       - "alter table vncnode add proxy_source_ips text null comment 'VNC代理访问被控端的源IP/CIDR列表，空值回退host解析';"
+  1.3.5_11:
+    1:
+      - "alter table master add ssh_password text null comment '加密存储的节点SSH凭据，仅供服务内部使用';"

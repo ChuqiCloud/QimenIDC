@@ -69,6 +69,22 @@ class SqlServiceImplSchemaRepairTest {
     }
 
     @Test
+    void currentBuildReappliesSshPasswordColumnRepair() {
+        SqlServiceImpl checked = spy(service);
+        ConfigServiceImpl configService = mock(ConfigServiceImpl.class);
+        when(configService.getBuild()).thenReturn("1.3.5_11");
+        ReflectionTestUtils.setField(checked, "configService", configService);
+        ReflectionTestUtils.setField(checked, "securitySchemaMigration", mock(SecuritySchemaMigration.class));
+        ReflectionTestUtils.setField(checked, "nowBuildVersion", "1.3.5_11");
+        doReturn(true).when(checked).ensureColumn(anyString(), anyString(), anyString());
+
+        assertTrue(checked.checkAndUpdateDatabase());
+
+        verify(checked).ensureColumn("master", "ssh_password",
+                "text null comment '加密存储的节点SSH凭据，仅供服务内部使用'");
+    }
+
+    @Test
     void queriesRowsAndRepairsMissingColumnsIdempotently() throws Exception {
         Object previousFactory = ReflectionTestUtils.getField(SqlRunner.DEFAULT, "sqlSessionFactory");
         var previousGlobalFactory = SqlHelper.FACTORY;
@@ -127,5 +143,14 @@ class SqlServiceImplSchemaRepairTest {
         assertTrue(repairSql.contains("add last_check_time bigint null"));
         assertTrue(repairSql.contains("add last_error varchar(1024) null"));
         assertTrue(repairSql.contains("add vga varchar(20) null"));
+    }
+
+    @Test
+    void sshPasswordUpgradeAddsPersistentEncryptedColumnWithoutDroppingLegacyColumn() throws IOException {
+        List<String> sshUpdates = new SqlUpdateLoader().getSqlUpdates("build", "1.3.5_11", 1);
+        assertTrue(String.join("\n", sshUpdates).contains("add ssh_password text null"));
+
+        String legacySshStep = String.join("\n", new SqlUpdateLoader().getSqlUpdates("build", "1.3.3", 4));
+        assertFalse(legacySshStep.toLowerCase().contains("drop column ssh_password"));
     }
 }

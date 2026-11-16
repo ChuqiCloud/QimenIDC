@@ -3,6 +3,7 @@ package com.chuqiyun.proxmoxveams.security;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +12,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
+import java.sql.ResultSet;
+import java.sql.DatabaseMetaData;
+import java.util.Locale;
 
 /**
  * @author 星禾
@@ -33,6 +37,7 @@ public class StoredCredentialMigration {
     @Transactional
     public void migrate() {
         try {
+            migrateLegacyMasterSshPasswordIfPresent();
             migrateTable("master", List.of("password", "csrf_token", "ticket"),
                     StoredCredentialMigration::encryptLegacy);
             migrateTable("vmhost", List.of("password"), StoredCredentialMigration::encryptLegacy);
@@ -45,6 +50,66 @@ public class StoredCredentialMigration {
             // SQL 错误和 JSON 解析错误可能包含原文，不向日志或启动异常附加 cause。
             throw new IllegalStateException("历史凭据迁移失败，已回滚；请检查数据库结构及密文完整性");
         }
+    }
+
+    /**
+     * 旧版本曾在 master.ssh_password 保存 SSH 凭据。必须在 schema migration 前调用，
+     * 这样历史明文在字段映射生效前就会加密，且后续升级会保留该列。
+     */
+    @Transactional
+    public void migrateLegacyMasterSshPasswordBeforeSchemaUpdate() {
+        try {
+            String columnType = columnType("master", "ssh_password");
+            if (columnType != null) {
+                // 旧列通常是 varchar(255)，密文会更长；先扩容，避免严格模式启动失败或宽松模式截断。
+                if (!isLargeTextType(columnType)) {
+                    jdbc.execute("alter table master modify ssh_password text null");
+                }
+                migrateLegacyMasterSshPasswordIfPresent();
+            }
+        } catch (RuntimeException e) {
+            // 数据库异常可能包含 SQL 参数，不向启动日志传递原始凭据。
+            throw new IllegalStateException("历史 SSH 凭据迁移失败，已回滚；请检查数据库结构及密文完整性");
+        }
+    }
+
+    private void migrateLegacyMasterSshPasswordIfPresent() {
+        if (!columnExists("master", "ssh_password")) {
+            return;
+        }
+        migrateTable("master", List.of("ssh_password"), StoredCredentialMigration::encryptLegacy);
+    }
+
+    private boolean columnExists(String table, String column) {
+        return columnType(table, column) != null;
+    }
+
+    private String columnType(String table, String column) {
+        String typeName = jdbc.execute((ConnectionCallback<String>) connection -> {
+            DatabaseMetaData metadata = connection.getMetaData();
+            String tableName = normalizeIdentifier(table, metadata);
+            String columnName = normalizeIdentifier(column, metadata);
+            try (ResultSet columns = metadata.getColumns(connection.getCatalog(), null, tableName, columnName)) {
+                return columns.next() ? columns.getString("TYPE_NAME") : null;
+            }
+        });
+        return typeName;
+    }
+
+    private boolean isLargeTextType(String typeName) {
+        String normalized = typeName.toLowerCase(Locale.ROOT);
+        return normalized.equals("text") || normalized.equals("mediumtext") || normalized.equals("longtext")
+                || normalized.contains("clob") || normalized.contains("character large object");
+    }
+
+    private String normalizeIdentifier(String identifier, DatabaseMetaData metadata) throws java.sql.SQLException {
+        if (metadata.storesUpperCaseIdentifiers()) {
+            return identifier.toUpperCase(Locale.ROOT);
+        }
+        if (metadata.storesLowerCaseIdentifiers()) {
+            return identifier.toLowerCase(Locale.ROOT);
+        }
+        return identifier;
     }
 
     private void migrateTable(String table, List<String> columns, UnaryOperator<String> transform) {
