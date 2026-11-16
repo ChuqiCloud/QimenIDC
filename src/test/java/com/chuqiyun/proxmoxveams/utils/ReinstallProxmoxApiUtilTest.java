@@ -180,6 +180,19 @@ class ReinstallProxmoxApiUtilTest {
     }
 
     @Test
+    void digestConflictRecoveryPreservesConcurrentBootOrder() {
+        api.power = "stopped";
+        api.conflictBeforeDetach = true;
+        api.changeBootBeforeDetach = true;
+
+        expectFailure("digest conflict", this::deleteDisk);
+
+        assertEquals("order=virtio0;net0", api.config.getString("boot"));
+        assertTrue(api.events.contains("revert"));
+        assertFalse(api.events.contains("restore"));
+    }
+
+    @Test
     void interruptedWaitPreservesDiskAndInterruptFlag() {
         api.interruptWait = true;
         try {
@@ -253,6 +266,7 @@ class ReinstallProxmoxApiUtilTest {
         boolean replaceDuringRemove;
         boolean replaceDuringStop;
         boolean conflictBeforeDetach;
+        boolean changeBootBeforeDetach;
         boolean pendingDelete;
         boolean interruptWait;
         boolean unreadableTask;
@@ -335,6 +349,9 @@ class ReinstallProxmoxApiUtilTest {
             writes++;
             if (conflictBeforeDetach && "scsi0".equals(params.get("delete"))) {
                 conflictBeforeDetach = false;
+                if (changeBootBeforeDetach) {
+                    config.put("boot", "order=virtio0;net0");
+                }
                 bumpVersion();
             }
             if (params.containsKey("digest")) {

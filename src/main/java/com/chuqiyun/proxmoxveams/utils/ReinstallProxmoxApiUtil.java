@@ -190,6 +190,13 @@ public class ReinstallProxmoxApiUtil extends ProxmoxApiUtil {
         if (attached != null && !sameVolume(attached, originalDisk)) {
             throw new IllegalStateException("Disk attachment changed during recovery for VM " + vmid);
         }
+        if (attached != null) {
+            // The original disk is still attached. Reverting this disk clears a possible pending delete;
+            // keep the current boot order because a digest conflict may have come from another valid edit.
+            LOG.warn("[ReinstallDiskGuard] Cleared pending disk deletion; kept current VM boot order: node={} vmid={} disk={}",
+                    node.getNodeName(), vmid, disk);
+            return;
+        }
         if (attached == null) {
             boolean originalExists = false;
             for (String option : current.keySet()) {
