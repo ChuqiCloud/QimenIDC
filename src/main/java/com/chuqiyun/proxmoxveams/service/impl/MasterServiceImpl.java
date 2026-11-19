@@ -138,11 +138,19 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     */
     @Override
     public JSONObject getVmInfo(Integer nodeId, Integer vmid) {
+        if (nodeId == null || vmid == null) {
+            return null;
+        }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = this.getById(nodeId);
+        if (node == null || node.getNodeName() == null || node.getNodeName().isBlank()) {
+            return null;
+        }
         // 获取cookie
         HashMap<String, String> authentications = getMasterCookieMap(nodeId);
-        return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/config", new HashMap<>()).getJSONObject("data");
+        JSONObject response = proxmoxApiUtil.getNodeApi(node, authentications,
+                "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/config", new HashMap<>());
+        return response == null ? null : response.getJSONObject("data");
     }
     /**
     * @Author: mryunqi
@@ -153,11 +161,19 @@ public class MasterServiceImpl extends ServiceImpl<MasterDao, Master> implements
     */
     @Override
     public JSONObject getVmStatusCurrent(Integer nodeId, Integer vmid) {
+        if (nodeId == null || vmid == null) {
+            return null;
+        }
         ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
         Master node = this.getById(nodeId);
+        if (node == null || node.getNodeName() == null || node.getNodeName().isBlank()) {
+            return null;
+        }
         // 获取cookie
         HashMap<String, String> authentications = getMasterCookieMap(nodeId);
-        return proxmoxApiUtil.getNodeApi(node,authentications, "/nodes/"+node.getNodeName()+"/qemu/"+vmid+"/status/current", new HashMap<>()).getJSONObject("data");
+        JSONObject response = proxmoxApiUtil.getNodeApi(node, authentications,
+                "/nodes/" + node.getNodeName() + "/qemu/" + vmid + "/status/current", new HashMap<>());
+        return response == null ? null : response.getJSONObject("data");
     }
 
     /**

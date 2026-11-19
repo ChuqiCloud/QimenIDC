@@ -245,11 +245,31 @@ public class DiskCron {
             }
             // 获取node信息
             Master node = masterService.getById(task.getNodeid());
+            if (node == null || node.getNodeName() == null || node.getNodeName().isBlank()) {
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,
+                        "导入系统盘任务: NodeID:{} VM-ID:{} 节点不存在，保留任务等待下次检查",
+                        task.getNodeid(), task.getVmid());
+                continue;
+            }
             // 获取vm信息
             //Vmhost vmhost = vmhostService.getById(task.getHostid());
             ProxmoxApiUtil proxmoxApiUtil = new ProxmoxApiUtil();
             HashMap<String, String> authentications = masterService.getMasterCookieMap(node.getId());
-            JSONObject vmInfo = masterService.getVmInfo(node.getId(),task.getVmid());
+            JSONObject vmInfo;
+            try {
+                vmInfo = masterService.getVmInfo(node.getId(), task.getVmid());
+            } catch (Exception e) {
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,
+                        "导入系统盘任务: NodeID:{} VM-ID:{} 查询PVE配置失败，保留任务等待重试: {}",
+                        task.getNodeid(), task.getVmid(), e.getMessage());
+                continue;
+            }
+            if (vmInfo == null) {
+                UnifiedLogger.warn(UnifiedLogger.LogType.TASK_IMPORT_SYSTEM_DISK,
+                        "导入系统盘任务: NodeID:{} VM-ID:{} 查询PVE配置超时，保留任务等待重试",
+                        task.getNodeid(), task.getVmid());
+                continue;
+            }
             // 如果存在unused0则表示导入成功
             if (vmInfo.getString("unused0")!=null){
                 // 修改任务状态为进行中
@@ -451,8 +471,29 @@ public class DiskCron {
             Master node = masterService.getById(task.getNodeid());
             // 获取vm信息
             Vmhost vmhost = vmhostService.getById(task.getHostid());
+            if (node == null || node.getNodeName() == null || node.getNodeName().isBlank()
+                    || vmhost == null || vmhost.getVmid() == null) {
+                task.setStatus(3);
+                task.setError("节点或虚拟机不存在");
+                taskService.updateById(task);
+                continue;
+            }
 
-            JSONObject vmInfo = masterService.getVmInfo(node.getId(),vmhost.getVmid()); // 获取vm信息
+            JSONObject vmInfo;
+            try {
+                vmInfo = masterService.getVmInfo(node.getId(), vmhost.getVmid()); // 获取vm信息
+            } catch (Exception e) {
+                UnifiedLogger.warn(UnifiedLogger.LogType.UpdateSystemDiskIOLimit,
+                        "查询系统盘配置失败，保留任务等待重试: NodeID:{} VM-ID:{} Error:{}",
+                        node.getId(), vmhost.getVmid(), e.getMessage());
+                continue;
+            }
+            if (vmInfo == null) {
+                UnifiedLogger.warn(UnifiedLogger.LogType.UpdateSystemDiskIOLimit,
+                        "查询系统盘配置超时，保留任务等待重试: NodeID:{} VM-ID:{}",
+                        node.getId(), vmhost.getVmid());
+                continue;
+            }
 
             // 判断是否存在'scsi0'磁盘
             if (!vmInfo.containsKey("scsi0")){
