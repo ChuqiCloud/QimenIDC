@@ -84,7 +84,6 @@ public class RescueServiceImpl implements RescueService {
             state.setImageUrl(image.url());
             state.setFileName(image.fileName());
             state.setStorage(blankToNull(storage));
-            state.setOriginalIde2(null);
             state.setOriginalBoot(null);
             state.setOriginalRunning(null);
             state.setIsoVolume(null);
@@ -176,8 +175,18 @@ public class RescueServiceImpl implements RescueService {
                 JSONObject currentStatus = api.getVmStatus(node, cookie, vmhost.getVmid());
                 String powerStatus = getStatus(currentStatus);
                 String storage = resolveStorage(state.getStorage(), config, node);
+                String rescueDevice = chooseRescueDevice(config);
                 state.setStorage(storage);
-                state.setOriginalIde2(config.getString("ide2"));
+                String currentIde2 = config.getString("ide2");
+                // A previous rescue run may have detached a cloud-init volume
+                // before this fix was deployed. Keep the recorded original so
+                // the next exit can recreate it instead of losing the identity.
+                if (isEmptyDriveSlot(currentIde2) && cloudInitStorage(state.getOriginalIde2()) != null) {
+                    log.warn("[Rescue] preserving recorded cloud-init volume for recovery: hostId={}, vmid={}",
+                            hostId, vmhost.getVmid());
+                } else {
+                    state.setOriginalIde2(currentIde2);
+                }
                 state.setOriginalBoot(config.getString("boot"));
                 state.setOriginalRunning("running".equals(powerStatus) ? 1 : 0);
                 configCaptured = true;
@@ -189,10 +198,13 @@ public class RescueServiceImpl implements RescueService {
                 }
                 ensureIso(api, node, cookie, storage, state.getFileName(), state.getImageUrl());
                 String isoVolume = storage + ":iso/" + state.getFileName();
-                api.resetVmConfig(node, cookie, vmhost.getVmid(), "ide2", isoVolume + ",media=cdrom");
-                api.resetVmConfig(node, cookie, vmhost.getVmid(), "boot", rescueBoot(state.getOriginalBoot()));
-                startVm(api, node, cookie, vmhost.getVmid());
                 state.setIsoVolume(isoVolume);
+                state.setUpdateTime(System.currentTimeMillis());
+                rescueVmStateDao.updateById(state);
+                api.resetVmConfig(node, cookie, vmhost.getVmid(), rescueDevice, isoVolume + ",media=cdrom");
+                api.resetVmConfig(node, cookie, vmhost.getVmid(), "boot",
+                        rescueBoot(state.getOriginalBoot(), rescueDevice));
+                startVm(api, node, cookie, vmhost.getVmid());
                 state.setStatus("ACTIVE");
                 state.setError(null);
                 state.setUpdateTime(System.currentTimeMillis());
@@ -363,11 +375,12 @@ public class RescueServiceImpl implements RescueService {
 
     /**
      * Restores the VM config without resurrecting a volume that PVE has already removed.
-     * A missing original cloud-init volume is recoverable: detach the stale ide2 entry and
-     * remove ide2 from the boot order, then let the caller finish the rescue exit workflow.
+     * A missing original cloud-init volume is recoverable: recreate it on the original
+     * storage and regenerate its contents before finishing the rescue exit workflow.
      */
     private String restoreConfig(ProxmoxApiUtil api, Master node, HashMap<String, String> cookie,
                                 Integer vmid, RescueVmState state) throws Exception {
+        detachRescueIso(api, node, cookie, vmid, state);
         boolean missingIde2Volume = false;
         String warning = null;
         if (state.getOriginalIde2() == null || state.getOriginalIde2().isBlank()) {
@@ -379,11 +392,24 @@ public class RescueServiceImpl implements RescueService {
                 if (!isMissingLogicalVolume(e)) {
                     throw e;
                 }
-                api.deleteVmConfig(node, cookie, vmid, "ide2");
-                missingIde2Volume = true;
-                warning = "原 ide2 卷不存在，已删除失效挂载配置: " + state.getOriginalIde2();
-                log.warn("[Rescue] original ide2 volume is missing, stale config removed: vmid={}, volume={}",
-                        vmid, state.getOriginalIde2());
+                String cloudInitStorage = cloudInitStorage(state.getOriginalIde2());
+                if (cloudInitStorage != null) {
+                    // PVE may remove the temporary cloud-init volume when ide2 is
+                    // replaced by the rescue ISO. Recreate it on the original
+                    // storage instead of deleting ide2 and losing cloud-init.
+                    String recreated = cloudInitStorage + ":cloudinit,media=cdrom";
+                    api.resetVmConfig(node, cookie, vmid, "ide2", recreated);
+                    api.resetVmCloudinit(node, cookie, vmid);
+                    warning = "原 cloud-init 卷不存在，已在存储 " + cloudInitStorage + " 重新创建";
+                    log.warn("[Rescue] original cloud-init volume was missing and recreated: vmid={}, storage={}",
+                            vmid, cloudInitStorage);
+                } else {
+                    api.deleteVmConfig(node, cookie, vmid, "ide2");
+                    missingIde2Volume = true;
+                    warning = "原 ide2 卷不存在，已删除失效挂载配置: " + state.getOriginalIde2();
+                    log.warn("[Rescue] original ide2 volume is missing, stale config removed: vmid={}, volume={}",
+                            vmid, state.getOriginalIde2());
+                }
             }
         }
         String originalBoot = state.getOriginalBoot();
@@ -396,6 +422,73 @@ public class RescueServiceImpl implements RescueService {
             api.resetVmConfig(node, cookie, vmid, "boot", originalBoot);
         }
         return warning;
+    }
+
+    private void detachRescueIso(ProxmoxApiUtil api, Master node, HashMap<String, String> cookie,
+                                 Integer vmid, RescueVmState state) throws Exception {
+        String rescueVolume = state.getIsoVolume();
+        if (rescueVolume == null || rescueVolume.isBlank()) {
+            String storage = blankToNull(state.getStorage());
+            String fileName = blankToNull(state.getFileName());
+            if (storage != null && fileName != null) {
+                rescueVolume = storage + ":iso/" + fileName;
+            }
+        }
+        if (rescueVolume == null || rescueVolume.isBlank()) {
+            return;
+        }
+        JSONObject config = api.getVmConfig(node, cookie, vmid);
+        if (config == null) {
+            throw new IllegalStateException("读取救援 ISO 挂载配置失败，暂不恢复虚拟机");
+        }
+        String rescueDevice = findRescueDevice(config, rescueVolume);
+        if (rescueDevice != null) {
+            api.deleteVmConfig(node, cookie, vmid, rescueDevice);
+        }
+    }
+
+    private String findRescueDevice(JSONObject config, String rescueVolume) {
+        if (config == null || rescueVolume == null || rescueVolume.isBlank()) {
+            return null;
+        }
+        String expected = rescueVolume.split(",", 2)[0].trim();
+        for (String key : config.keySet()) {
+            if (!key.matches("(?:ide|sata)\\d+")) {
+                continue;
+            }
+            String configured = config.getString(key);
+            if (configured != null && expected.equals(configured.split(",", 2)[0].trim())) {
+                return key;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the storage name for a PVE cloud-init volume id, or null for a
+     * normal ISO/disk. PVE commonly reports values such as
+     * {@code nvmedisk:vm-463-cloudinit,media=cdrom}.
+     */
+    static String cloudInitStorage(String originalIde2) {
+        if (originalIde2 == null || originalIde2.isBlank()) {
+            return null;
+        }
+        String volumeId = originalIde2.split(",", 2)[0].trim();
+        int separator = volumeId.indexOf(':');
+        if (separator <= 0 || separator == volumeId.length() - 1) {
+            return null;
+        }
+        String storage = volumeId.substring(0, separator).trim();
+        String volume = volumeId.substring(separator + 1).trim();
+        int slash = volume.lastIndexOf('/');
+        String volumeName = slash >= 0 ? volume.substring(slash + 1) : volume;
+        String normalized = volumeName.toLowerCase(Locale.ROOT);
+        boolean cloudInit = "cloudinit".equals(normalized)
+                || normalized.matches("vm-\\d+-cloudinit(?:\\.[a-z0-9]+)?");
+        if (!cloudInit || !storage.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")) {
+            return null;
+        }
+        return storage;
     }
 
     private boolean isMissingLogicalVolume(Throwable error) {
@@ -429,20 +522,25 @@ public class RescueServiceImpl implements RescueService {
     }
 
     static String rescueBoot(String originalBoot) {
+        return rescueBoot(originalBoot, "ide2");
+    }
+
+    static String rescueBoot(String originalBoot, String rescueDevice) {
         String order = originalBoot == null ? "" : originalBoot.trim();
         if (order.startsWith("order=")) {
             order = order.substring("order=".length());
         }
+        String bootDevice = rescueDevice == null || rescueDevice.isBlank() ? "ide2" : rescueDevice;
         List<String> devices = new ArrayList<>();
         for (String device : order.split(";")) {
-            if (!device.isBlank() && !"ide2".equals(device)) {
+            if (!device.isBlank() && !bootDevice.equals(device.trim())) {
                 devices.add(device.trim());
             }
         }
         if (devices.isEmpty()) {
             devices.add("net0");
         }
-        return "order=ide2;" + String.join(";", devices);
+        return "order=" + bootDevice + ";" + String.join(";", devices);
     }
 
     private String resolveStorage(String requested, JSONObject config, Master node) {
@@ -463,6 +561,24 @@ public class RescueServiceImpl implements RescueService {
             throw new IllegalArgumentException("无法确定可存放 ISO 的 PVE 存储，请传入合法 storage");
         }
         return storage;
+    }
+
+    private String chooseRescueDevice(JSONObject config) {
+        // Keep an existing cloud-init drive (normally ide2) untouched. Prefer
+        // the highest empty IDE slot, then fall back to an empty SATA slot.
+        String[] candidates = {"ide3", "ide2", "ide1", "ide0",
+                "sata5", "sata4", "sata3", "sata2", "sata1", "sata0"};
+        for (String candidate : candidates) {
+            String value = config == null ? null : config.getString(candidate);
+            if (isEmptyDriveSlot(value)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("没有可用的磁盘槽位挂载救援 ISO，请先释放一个 IDE/SATA 槽位");
+    }
+
+    private boolean isEmptyDriveSlot(String value) {
+        return value == null || value.isBlank() || "none".equalsIgnoreCase(value.trim());
     }
 
     private String getStatus(JSONObject response) {
