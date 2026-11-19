@@ -122,9 +122,13 @@ public class RestTemplateConfig {
 
     public static RestTemplate createQAgentRestTemplate(int readTimeoutMillis, String nodePublicKey) {
         int socketTimeout = Math.max(1_000, readTimeoutMillis);
+        // Short-lived optional calls (for example disk usage) should not keep a
+        // request thread waiting on a dead node longer than their read timeout.
+        int connectTimeout = Math.min(15_000, socketTimeout);
+        int connectionRequestTimeout = Math.min(10_000, socketTimeout);
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectTimeout(15_000)
-                .setConnectionRequestTimeout(10_000)
+                .setConnectTimeout(connectTimeout)
+                .setConnectionRequestTimeout(connectionRequestTimeout)
                 .setSocketTimeout(socketTimeout)
                 .build();
         try {

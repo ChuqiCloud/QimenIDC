@@ -33,6 +33,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 /**
  * @author mryunqi
@@ -51,6 +53,17 @@ public class ClientApiUtil {
      * 默认读超时，与历史实现保持一致
      */
     private static final int DEFAULT_TIMEOUT_MILLIS = 30_000;
+
+    /** 磁盘用量是详情页的可选信息，不能占用请求线程 30 秒。 */
+    private static final int DISK_USAGE_TIMEOUT_MILLIS = 5_000;
+    private static final long DISK_USAGE_FAILURE_COOLDOWN_MILLIS = 15_000L;
+    private static final Set<String> DISK_USAGE_IN_FLIGHT = ConcurrentHashMap.newKeySet();
+    private static final Map<String, Long> DISK_USAGE_UNAVAILABLE_UNTIL = new ConcurrentHashMap<>();
+    /**
+     * 磁盘统计会在被控端执行外部命令；即使每个节点都有不同 VM，也不能让详情页
+     * 一次性把主控线程和被控端线程池全部占满。
+     */
+    private static final Semaphore DISK_USAGE_PERMITS = new Semaphore(8);
 
     /**
      * 迁移阶段接口是同步执行后返回，vzdump/qmrestore 可能跑很久，单独放宽超时
@@ -131,7 +144,12 @@ public class ClientApiUtil {
     }
 
     public static JSONObject postControllerApi(String url, Map<String, Object> params, String token, int timeoutMillis){
-        return request("POST", url, params, token, true, timeoutMillis);
+        return request("POST", url, params, token, true, timeoutMillis, true);
+    }
+
+    private static JSONObject postControllerApi(String url, Map<String, Object> params, String token,
+                                                int timeoutMillis, boolean logFailures) {
+        return request("POST", url, params, token, true, timeoutMillis, logFailures);
     }
 
     /**
@@ -148,6 +166,11 @@ public class ClientApiUtil {
     */
     private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token,
                                      boolean encryptBody, int timeoutMillis){
+        return request(method, rawUrl, params, token, encryptBody, timeoutMillis, true);
+    }
+
+    private static JSONObject request(String method, String rawUrl, Map<String, Object> params, String token,
+                                     boolean encryptBody, int timeoutMillis, boolean logFailures){
         if (ClientPayloadUtil.isFieldWhitelistEnabled()) {
             filterJsonFields(params, rawUrl);
         }
@@ -195,12 +218,21 @@ public class ClientApiUtil {
             return parseResponse(response.getBody(), token, method, path, timestamp, nonce);
         } catch (RestClientResponseException e) {
             JSONObject failure = httpErrorResponse(e, token, method, path, timestamp, nonce, params);
-            log.error("调用被控端接口失败: url={}, code={}, error={}", logEndpoint,
-                    failure.getInteger("code"), failure.getString("message"));
+            if (logFailures) {
+                log.error("调用被控端接口失败: url={}, code={}, error={}", logEndpoint,
+                        failure.getInteger("code"), failure.getString("message"));
+            } else {
+                log.warn("调用被控端可选接口失败: url={}, code={}", logEndpoint, failure.getInteger("code"));
+            }
             return failure;
         } catch (RestClientException e) {
-            log.error("调用被控端接口失败: url={}, error={}", logEndpoint,
-                    sanitizeAgentErrorMessage(e.getMessage(), token, params));
+            if (logFailures) {
+                log.error("调用被控端接口失败: url={}, error={}", logEndpoint,
+                        sanitizeAgentErrorMessage(e.getMessage(), token, params));
+            } else {
+                log.warn("调用被控端可选接口失败: url={}, error={}", logEndpoint,
+                        sanitizeAgentErrorMessage(e.getMessage(), token, params));
+            }
             return null;
         }
     }
@@ -639,13 +671,45 @@ public class ClientApiUtil {
      * 获取被控节点上虚拟机磁盘的实际分配容量。
      */
     public static JSONObject getVmDiskUsage(String ip, String token, Integer controllerPort, JSONObject request) {
-        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/disk/usage";
-        Map<String, Object> params = new HashMap<>(request);
-        JSONObject result = postControllerApi(url, params, token);
-        if (result == null || result.getInteger("code") != 200) {
+        if (StringUtils.isBlank(ip) || controllerPort == null || controllerPort < 1
+                || controllerPort > 65535 || request == null) {
             return null;
         }
-        return result.getJSONObject("data");
+        String nodeKey = ip + ":" + controllerPort;
+        long now = System.currentTimeMillis();
+        Long unavailableUntil = DISK_USAGE_UNAVAILABLE_UNTIL.get(nodeKey);
+        if (unavailableUntil != null) {
+            if (unavailableUntil > now) {
+                return null;
+            }
+            DISK_USAGE_UNAVAILABLE_UNTIL.remove(nodeKey, unavailableUntil);
+        }
+        Map<String, Object> params = new HashMap<>(request);
+        // Suppress duplicate detail requests without hiding measurements for
+        // different VMs on the same agent.
+        String requestKey = nodeKey + ":" + new JSONObject(params).toJSONString();
+        if (!DISK_USAGE_IN_FLIGHT.add(requestKey)) {
+            return null;
+        }
+        if (!DISK_USAGE_PERMITS.tryAcquire()) {
+            DISK_USAGE_IN_FLIGHT.remove(requestKey);
+            return null;
+        }
+        String url = AGENT_SCHEME + ip + ":" + controllerPort + "/disk/usage";
+        try {
+            JSONObject result = postControllerApi(url, params, token, DISK_USAGE_TIMEOUT_MILLIS, false);
+            JSONObject data = result == null ? null : result.getJSONObject("data");
+            if (result == null || result.getInteger("code") != 200 || data == null) {
+                DISK_USAGE_UNAVAILABLE_UNTIL.put(nodeKey,
+                        System.currentTimeMillis() + DISK_USAGE_FAILURE_COOLDOWN_MILLIS);
+                return null;
+            }
+            DISK_USAGE_UNAVAILABLE_UNTIL.remove(nodeKey);
+            return data;
+        } finally {
+            DISK_USAGE_IN_FLIGHT.remove(requestKey);
+            DISK_USAGE_PERMITS.release();
+        }
     }
 
     public static JSONObject startMigrationBackup(String ip, String token, Integer controllerPort, String taskId, Integer vmid, String backupDir) {
