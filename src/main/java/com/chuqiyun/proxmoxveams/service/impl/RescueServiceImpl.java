@@ -21,6 +21,7 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -238,7 +239,7 @@ public class RescueServiceImpl implements RescueService {
                 if (!"stopped".equals(currentStatus)) {
                     stopVm(api, node, cookie, vmhost.getVmid());
                 }
-                restoreConfig(api, node, cookie, vmhost.getVmid(), state);
+                String restoreWarning = restoreConfig(api, node, cookie, vmhost.getVmid(), state);
                 boolean start = requestedStart != null
                         ? requestedStart
                         : Integer.valueOf(1).equals(state.getOriginalRunning());
@@ -246,7 +247,7 @@ public class RescueServiceImpl implements RescueService {
                     startVm(api, node, cookie, vmhost.getVmid());
                 }
                 state.setStatus("DISABLED");
-                state.setError(null);
+                state.setError(restoreWarning);
                 state.setUpdateTime(System.currentTimeMillis());
                 rescueVmStateDao.updateById(state);
                 log.info("[Rescue] rescue system disabled: hostId={}, vmid={}", hostId, vmhost.getVmid());
@@ -360,18 +361,71 @@ public class RescueServiceImpl implements RescueService {
         return response;
     }
 
-    private void restoreConfig(ProxmoxApiUtil api, Master node, HashMap<String, String> cookie,
-                               Integer vmid, RescueVmState state) throws Exception {
+    /**
+     * Restores the VM config without resurrecting a volume that PVE has already removed.
+     * A missing original cloud-init volume is recoverable: detach the stale ide2 entry and
+     * remove ide2 from the boot order, then let the caller finish the rescue exit workflow.
+     */
+    private String restoreConfig(ProxmoxApiUtil api, Master node, HashMap<String, String> cookie,
+                                Integer vmid, RescueVmState state) throws Exception {
+        boolean missingIde2Volume = false;
+        String warning = null;
         if (state.getOriginalIde2() == null || state.getOriginalIde2().isBlank()) {
             api.deleteVmConfig(node, cookie, vmid, "ide2");
         } else {
-            api.resetVmConfig(node, cookie, vmid, "ide2", state.getOriginalIde2());
+            try {
+                api.resetVmConfig(node, cookie, vmid, "ide2", state.getOriginalIde2());
+            } catch (Exception e) {
+                if (!isMissingLogicalVolume(e)) {
+                    throw e;
+                }
+                api.deleteVmConfig(node, cookie, vmid, "ide2");
+                missingIde2Volume = true;
+                warning = "原 ide2 卷不存在，已删除失效挂载配置: " + state.getOriginalIde2();
+                log.warn("[Rescue] original ide2 volume is missing, stale config removed: vmid={}, volume={}",
+                        vmid, state.getOriginalIde2());
+            }
         }
-        if (state.getOriginalBoot() == null || state.getOriginalBoot().isBlank()) {
+        String originalBoot = state.getOriginalBoot();
+        if (missingIde2Volume) {
+            originalBoot = removeBootDevice(originalBoot, "ide2");
+        }
+        if (originalBoot == null || originalBoot.isBlank()) {
             api.deleteVmConfig(node, cookie, vmid, "boot");
         } else {
-            api.resetVmConfig(node, cookie, vmid, "boot", state.getOriginalBoot());
+            api.resetVmConfig(node, cookie, vmid, "boot", originalBoot);
         }
+        return warning;
+    }
+
+    private boolean isMissingLogicalVolume(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains("no such logical volume")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    static String removeBootDevice(String originalBoot, String device) {
+        if (originalBoot == null || originalBoot.isBlank()) {
+            return null;
+        }
+        String order = originalBoot.trim();
+        if (order.startsWith("order=")) {
+            order = order.substring("order=".length());
+        }
+        List<String> devices = new ArrayList<>();
+        for (String item : order.split(";")) {
+            String trimmed = item.trim();
+            if (!trimmed.isBlank() && !device.equals(trimmed)) {
+                devices.add(trimmed);
+            }
+        }
+        return devices.isEmpty() ? null : "order=" + String.join(";", devices);
     }
 
     static String rescueBoot(String originalBoot) {
