@@ -71,11 +71,11 @@ public class RescueServiceImpl implements RescueService {
             if (state != null && isBusy(state.getStatus())) {
                 throw new IllegalStateException("该虚拟机已有救援任务正在执行: " + state.getStatus());
             }
+            boolean created = state == null;
             if (state == null) {
                 state = new RescueVmState();
                 state.setHostId(hostId);
                 state.setCreateTime(System.currentTimeMillis());
-                rescueVmStateDao.insert(state);
             }
             state.setNodeId(node.getId());
             state.setVmid(vmhost.getVmid());
@@ -90,7 +90,11 @@ public class RescueServiceImpl implements RescueService {
             state.setError(null);
             state.setStatus("ENABLING");
             state.setUpdateTime(System.currentTimeMillis());
-            rescueVmStateDao.updateById(state);
+            if (created) {
+                rescueVmStateDao.insert(state);
+            } else {
+                rescueVmStateDao.updateById(state);
+            }
         }
         final Long stateId = state.getId();
         final Integer nodeId = node.getId();

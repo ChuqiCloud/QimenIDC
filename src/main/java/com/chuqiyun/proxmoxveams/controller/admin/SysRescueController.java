@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.RescueVmState;
 import com.chuqiyun.proxmoxveams.service.RescueService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,6 +19,7 @@ import javax.annotation.Resource;
 /** 管理员救援系统操作。 */
 @RestController
 @RequestMapping("/{adminPath}/rescue")
+@Slf4j
 public class SysRescueController {
     @Resource
     private RescueService rescueService;
@@ -50,6 +52,9 @@ public class SysRescueController {
             return ResponseResult.ok(state);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseResult.fail(e.getMessage());
+        } catch (RuntimeException e) {
+            log.error("[Rescue] enable request failed: hostId={}", params.getInteger("hostId"), e);
+            return ResponseResult.fail("救援任务初始化失败，请检查数据库迁移状态和节点配置");
         }
     }
 
@@ -65,6 +70,9 @@ public class SysRescueController {
             return ResponseResult.ok(state);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseResult.fail(e.getMessage());
+        } catch (RuntimeException e) {
+            log.error("[Rescue] disable request failed: hostId={}", params.getInteger("hostId"), e);
+            return ResponseResult.fail("救援任务初始化失败，请检查数据库迁移状态和节点配置");
         }
     }
 }
