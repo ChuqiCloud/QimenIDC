@@ -7,8 +7,9 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chuqiyun.proxmoxveams.dao.SysuserDao;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
+import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
-import com.chuqiyun.proxmoxveams.utils.ModUtil;
+import com.chuqiyun.proxmoxveams.utils.VmUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -88,7 +89,7 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
     public Sysuser insertInitSysuser() {
         Sysuser user = new Sysuser();
         String uuid = UUIDUtil.getUUIDByThreadString();
-        String randomPassword = ModUtil.randomPassword();
+        String randomPassword = VmUtil.generatePassword();
         user.setUuid(uuid);
         // 设置账号为admin
         user.setUsername("admin");
@@ -139,8 +140,9 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         if (StringUtils.isAnyBlank(oldPassword, newPassword)) {
             return "原密码和新密码不能为空";
         }
-        if (newPassword.length() < 8 || newPassword.length() > 64) {
-            return "新密码长度需为 8-64 位";
+        String passwordError = PasswordPolicy.validate(newPassword);
+        if (passwordError != null) {
+            return passwordError;
         }
         if (oldPassword.equals(newPassword)) {
             return "新密码不能与原密码相同";
@@ -259,11 +261,10 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
     }
 
     @Override
-    public boolean confirmTotpBinding(Integer userId, String encryptedSecret, long step) {
+    public boolean confirmTotpBinding(Integer userId, String encryptedSecret) {
         UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", userId).eq("totp_secret", encryptedSecret).isNull("totp_confirmed_time")
-                .and(w -> w.isNull("totp_last_step").or().lt("totp_last_step", step))
-                .set("totp_confirmed_time", System.currentTimeMillis()).set("totp_last_step", step);
+                .set("totp_confirmed_time", System.currentTimeMillis());
         return this.update(wrapper);
     }
 

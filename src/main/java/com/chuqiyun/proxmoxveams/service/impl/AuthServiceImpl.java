@@ -7,6 +7,7 @@ import com.chuqiyun.proxmoxveams.dto.LoginResult;
 import com.chuqiyun.proxmoxveams.dto.MfaChallenge;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.security.MfaTicketService;
+import com.chuqiyun.proxmoxveams.security.LoginAttemptGuard;
 import com.chuqiyun.proxmoxveams.security.TotpSecretCipher;
 import com.chuqiyun.proxmoxveams.service.AuthService;
 import com.chuqiyun.proxmoxveams.service.PasskeyService;
@@ -54,22 +55,36 @@ public class AuthServiceImpl implements AuthService {
     private PasskeyService passkeyService;
     @Resource
     private MfaTicketService mfaTicketService;
+    @Resource
+    private LoginAttemptGuard loginAttemptGuard;
+
+    private static final String DUMMY_PASSWORD_HASH = EncryptUtil.md5("qimenidc-invalid-password-dummy");
 
     @Override
     public LoginResult loginWithPassword(String username, String password) throws AuthException {
-        if (StringUtils.isBlank(username)) {
-            throw new AuthException(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
-        }
-        if (StringUtils.isBlank(password)) {
-            throw new AuthException(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
-        }
-        Sysuser sysuser = sysuserService.getSysuserByUsername(username);
-        if (Objects.isNull(sysuser)) {
-            throw new AuthException(ResponseResult.RespCode.LOGIN_NO_ACCOUNT);
-        }
-        if (!EncryptUtil.verifyPassword(password, sysuser.getPassword())) {
+        return loginWithPassword(username, password, "unknown");
+    }
+
+    @Override
+    public LoginResult loginWithPassword(String username, String password, String clientIp) throws AuthException {
+        String normalizedUsername = StringUtils.trimToEmpty(username);
+        Sysuser sysuser = StringUtils.isBlank(normalizedUsername)
+                ? null : sysuserService.getSysuserByUsername(normalizedUsername);
+        boolean knownAccount = sysuser != null;
+        String normalizedIp = StringUtils.defaultIfBlank(clientIp, "unknown");
+        if (loginAttemptGuard.isLocked(normalizedUsername, normalizedIp, knownAccount)) {
             throw new AuthException(ResponseResult.RespCode.LOGIN_FAIL);
         }
+        // Unknown usernames still run a real hash verification against a fixed
+        // hash, so account discovery cannot rely on timing differences.
+        String storedHash = knownAccount && StringUtils.isNotBlank(sysuser.getPassword())
+                ? sysuser.getPassword() : DUMMY_PASSWORD_HASH;
+        boolean passwordValid = EncryptUtil.verifyPassword(StringUtils.defaultString(password), storedHash);
+        if (!passwordValid || !knownAccount) {
+            loginAttemptGuard.recordFailure(normalizedUsername, normalizedIp, knownAccount);
+            throw new AuthException(ResponseResult.RespCode.LOGIN_FAIL);
+        }
+        loginAttemptGuard.recordSuccess(normalizedUsername, normalizedIp, true);
         String mfaType = resolveMfaType(sysuser);
         if (MFA_NONE.equals(mfaType)) {
             return LoginResult.done(issueLoginToken(sysuser));

@@ -6,6 +6,7 @@ import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
+import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
@@ -33,9 +34,14 @@ public class SysAccountController {
         if (!Objects.isNull(sysuser)) {
             return ResponseResult.fail(ResponseResult.RespCode.REG_EXISTING_USER);
         }
+        String password = param.getString("password");
+        String passwordError = PasswordPolicy.validate(password);
+        if (passwordError != null) {
+            return ResponseResult.fail(ResponseResult.RespCode.VALID_DATA_ERROR, passwordError);
+        }
         Sysuser sysUser = new Sysuser();
         sysUser.setUsername(param.getString("username"));
-        sysUser.setPassword(EncryptUtil.md5(param.getString("password")));
+        sysUser.setPassword(EncryptUtil.md5(password));
         sysUser.setEmail(param.getString("email"));
         sysUser.setPhone(param.getString("phone"));
         sysUser.setName(param.getString("name"));
@@ -72,8 +78,15 @@ public class SysAccountController {
         }
         Sysuser updates = new Sysuser();
         updates.setId(sysuser.getId());
-        String encodedPassword = StringUtils.isNotBlank(param.getString("password"))
-                ? EncryptUtil.md5(param.getString("password")) : null;
+        String rawPassword = param.getString("password");
+        if (StringUtils.isNotBlank(rawPassword)) {
+            String passwordError = PasswordPolicy.validate(rawPassword);
+            if (passwordError != null) {
+                return ResponseResult.fail(ResponseResult.RespCode.VALID_DATA_ERROR, passwordError);
+            }
+        }
+        String encodedPassword = StringUtils.isNotBlank(rawPassword)
+                ? EncryptUtil.md5(rawPassword) : null;
         updates.setUsername(param.getString("username"));
         updates.setEmail(param.getString("email"));
         updates.setPhone(param.getString("phone"));

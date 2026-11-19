@@ -13,6 +13,7 @@ import com.chuqiyun.proxmoxveams.constant.VgaType;
 import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.*;
+import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
 import com.chuqiyun.proxmoxveams.utils.*;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -334,6 +335,11 @@ public class CreateVmServiceImpl implements CreateVmService {
         if (vmParams.getPassword() == null) {
             // 生成随机密码
             vmParams.setPassword(VmUtil.generatePassword());
+        } else {
+            String passwordError = PasswordPolicy.validate(vmParams.getPassword());
+            if (passwordError != null) {
+                return invalidParam(passwordError);
+            }
         }
         List<Integer> initScriptIds = vmInitScriptBusinessService.normalizeScriptIds(vmParams.getInitScriptId(), vmParams.getInitScriptIds());
         UnifiedResultDto<Object> initScriptCheck = vmInitScriptBusinessService.validateScripts(initScriptIds);

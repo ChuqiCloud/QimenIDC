@@ -33,6 +33,7 @@ import com.chuqiyun.proxmoxveams.utils.IpUtil;
 import com.chuqiyun.proxmoxveams.utils.ProxmoxApiUtil;
 import com.chuqiyun.proxmoxveams.utils.TimeUtil;
 import com.chuqiyun.proxmoxveams.utils.VmUtil;
+import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.task.TaskExecutor;
@@ -994,6 +995,12 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UnifiedResultDto<Object> resetVmOs(Long vmHostId, String osName, String newPassword, Boolean resetDataDisk, List<Integer> initScriptIds){
+        if (StringUtils.isNotBlank(newPassword)) {
+            String passwordError = PasswordPolicy.validate(newPassword);
+            if (passwordError != null) {
+                return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, passwordError);
+            }
+        }
         if (lockAndIsVmBusy(vmHostId)) {
             return migrationBusyResult();
         }
@@ -4074,6 +4081,10 @@ public class VmhostServiceImpl extends ServiceImpl<VmhostDao, Vmhost> implements
         // 判断新密码是否为空
         if (StringUtils.isEmpty(newPassword)){
             return new UnifiedResultDto<>(UnifiedResultCode.ERROR_NEW_PASSWORD_NOT_NULL, null);
+        }
+        String passwordError = PasswordPolicy.validate(newPassword);
+        if (passwordError != null) {
+            return new UnifiedResultDto<>(UnifiedResultCode.ERROR_INVALID_PARAM, null, passwordError);
         }
 
         // 判断虚拟机是否为禁用状态

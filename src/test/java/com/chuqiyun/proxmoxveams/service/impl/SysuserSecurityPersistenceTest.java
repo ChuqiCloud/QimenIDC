@@ -66,19 +66,20 @@ class SysuserSecurityPersistenceTest {
     }
 
     @Test
-    void confirmationConsumesStepAtomicallyAndSettingsCannotOverwriteIt() {
+    void confirmationDoesNotConsumeLoginStepAndSettingsCannotOverwriteIt() {
         assertTrue(service.startTotpBinding(userId, "encrypted-secret"));
         Sysuser stale = mapper.selectById(userId);
 
-        assertFalse(service.confirmTotpBinding(userId, "another-secret", 100));
-        assertTrue(service.confirmTotpBinding(userId, "encrypted-secret", 100));
-        assertFalse(service.confirmTotpBinding(userId, "encrypted-secret", 100));
+        assertFalse(service.confirmTotpBinding(userId, "another-secret"));
+        assertTrue(service.confirmTotpBinding(userId, "encrypted-secret"));
+        assertFalse(service.confirmTotpBinding(userId, "encrypted-secret"));
         stale.setMfaType("totp");
         assertTrue(service.updateMfaSettings(stale));
 
         Sysuser confirmed = mapper.selectById(userId);
-        assertEquals(100L, confirmed.getTotpLastStep());
+        assertNull(confirmed.getTotpLastStep());
         assertTrue(confirmed.getTotpConfirmedTime() > 0);
+        assertTrue(service.consumeTotpStep(userId, 100));
         assertFalse(service.consumeTotpStep(userId, 100));
         assertFalse(service.startTotpBinding(userId, "replacement-secret"));
         assertEquals("encrypted-secret", mapper.selectById(userId).getTotpSecret());
@@ -87,7 +88,7 @@ class SysuserSecurityPersistenceTest {
     @Test
     void unbindingClearsActivePolicyAndAllowsNewSecret() {
         service.startTotpBinding(userId, "encrypted-secret");
-        service.confirmTotpBinding(userId, "encrypted-secret", 100);
+        service.confirmTotpBinding(userId, "encrypted-secret");
         Sysuser user = mapper.selectById(userId);
         user.setMfaType("totp");
         service.updateMfaSettings(user);
@@ -121,7 +122,7 @@ class SysuserSecurityPersistenceTest {
     void staleProfileUpdatesCannotRestoreConsumedStepsSecretsOrSessions() {
         assertTrue(service.startTotpBinding(userId, "encrypted-secret"));
         Sysuser stale = mapper.selectById(userId);
-        assertTrue(service.confirmTotpBinding(userId, "encrypted-secret", 100));
+        assertTrue(service.confirmTotpBinding(userId, "encrypted-secret"));
         Long activeSession = service.rotateLoginSession(userId);
         stale.setName("Updated name");
 
@@ -130,8 +131,9 @@ class SysuserSecurityPersistenceTest {
         Sysuser saved = mapper.selectById(userId);
         assertEquals("Updated name", saved.getName());
         assertEquals(activeSession, saved.getLogindate());
-        assertEquals(100L, saved.getTotpLastStep());
+        assertNull(saved.getTotpLastStep());
         assertTrue(saved.getTotpConfirmedTime() > 0);
+        assertTrue(service.consumeTotpStep(userId, 100));
         assertFalse(service.consumeTotpStep(userId, 100));
     }
 

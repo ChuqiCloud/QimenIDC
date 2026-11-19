@@ -43,7 +43,10 @@ public class SysLoginController {
                                           HttpServletResponse response) {
         String username = param.getString("username");
         try {
-            LoginResult result = authService.loginWithPassword(username, param.getString("password"));
+            // Use the socket peer address for security throttling. Forwarded
+            // headers are user-controlled unless a trusted proxy is configured.
+            LoginResult result = authService.loginWithPassword(username, param.getString("password"),
+                    request.getRemoteAddr());
             if (!result.isCompleted()) {
                 writeLoginLog(request, username, true, "password ok, mfa required: " + result.getMethod(), "MFA_CHALLENGE");
                 return ResponseResult.ok(buildChallengeBody(result));

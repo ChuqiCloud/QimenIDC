@@ -9,6 +9,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -175,7 +176,8 @@ public class SqlUpdateLoader {
         try (InputStream inputStream = classLoader.getResourceAsStream("script.sql")) {
             if (inputStream != null) {
                 // 使用BufferedReader逐行读取SQL语句
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         sqlScript.append(line).append("\n");

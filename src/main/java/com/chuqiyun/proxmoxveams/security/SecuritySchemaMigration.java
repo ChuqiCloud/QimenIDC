@@ -57,6 +57,14 @@ public class SecuritySchemaMigration {
                             + "challenge varchar(64) character set ascii collate ascii_bin primary key, type varchar(24) not null, "
                             + "user_uuid varchar(64) null, expires_at bigint not null, "
                             + "index idx_passkey_challenge_expiry (expires_at))");
+                    statement.execute("create table if not exists login_attempt_guard ("
+                            + "guard_key varchar(512) primary key, guard_type varchar(16) not null, "
+                            + "username_key varchar(255) null, client_ip varchar(128) not null, "
+                            + "failure_count int not null default 0, window_started bigint not null, "
+                            + "locked_until bigint not null default 0, update_time bigint not null, "
+                            + "index idx_login_guard_locked_until (locked_until), "
+                            + "index idx_login_guard_ip (client_ip)"
+                            + ") engine=InnoDB comment='登录失败计数与锁定'");
                 }
             } catch (java.io.IOException e) {
                 throw new IllegalStateException("读取安全数据库升级配置失败", e);

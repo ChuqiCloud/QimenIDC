@@ -52,8 +52,8 @@ public interface SysuserService extends IService<Sysuser> {
     /** 开始绑定 TOTP，仅允许替换尚未确认的密钥。 */
     boolean startTotpBinding(Integer userId, String encryptedSecret);
 
-    /** 原子确认指定密钥并消费其验证码时间片。 */
-    boolean confirmTotpBinding(Integer userId, String encryptedSecret, long step);
+    /** 原子确认指定密钥；绑定确认码不计入登录动态码的重放状态。 */
+    boolean confirmTotpBinding(Integer userId, String encryptedSecret);
 
     /** 清除 TOTP 密钥及重放状态。 */
     boolean clearTotpBinding(Integer userId);

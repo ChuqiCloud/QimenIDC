@@ -160,7 +160,7 @@ public class SysProfileController {
         if (step < 0) {
             return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL);
         }
-        if (!sysuserService.confirmTotpBinding(sysuser.getId(), sysuser.getTotpSecret(), step)) {
+        if (!sysuserService.confirmTotpBinding(sysuser.getId(), sysuser.getTotpSecret())) {
             return ResponseResult.fail(ResponseResult.RespCode.MFA_FAIL.getCode(),
                     "密钥已变更、已确认或动态码已使用，请重新获取密钥和验证码");
         }

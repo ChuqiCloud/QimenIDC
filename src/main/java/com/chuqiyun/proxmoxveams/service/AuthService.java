@@ -18,6 +18,12 @@ public interface AuthService {
      */
     LoginResult loginWithPassword(String username, String password) throws UnauthorizedException;
 
+    /** Password login with the connection address used by the failure guard. */
+    default LoginResult loginWithPassword(String username, String password, String clientIp)
+            throws UnauthorizedException {
+        return loginWithPassword(username, password);
+    }
+
     /**
      * 第二步：用 TOTP 完成登录
      */

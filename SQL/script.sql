@@ -350,6 +350,42 @@ create table if not exists sys_passkey_challenge
     index idx_passkey_challenge_expiry (expires_at)
 );
 
+create table if not exists login_attempt_guard
+(
+    guard_key      varchar(512) primary key,
+    guard_type     varchar(16)  not null comment 'IP 或 ACCOUNT_IP',
+    username_key   varchar(255) null,
+    client_ip      varchar(128) not null,
+    failure_count  int          not null default 0,
+    window_started bigint       not null,
+    locked_until   bigint       not null default 0,
+    update_time    bigint       not null,
+    index idx_login_guard_locked_until (locked_until),
+    index idx_login_guard_ip (client_ip)
+) engine=InnoDB comment '登录失败计数与锁定';
+
+create table if not exists rescue_vm_state
+(
+    id               bigint auto_increment primary key,
+    host_id          int          not null,
+    node_id          int          not null,
+    vmid             int          not null,
+    image_id         varchar(64)  not null,
+    image_url        varchar(512) not null,
+    file_name        varchar(255) not null,
+    storage          varchar(64)  null,
+    original_ide2    text         null,
+    original_boot    varchar(255) null,
+    original_running int          null,
+    iso_volume       varchar(512) null,
+    status           varchar(20)  not null,
+    error            varchar(1024) null,
+    create_time      bigint       not null,
+    update_time      bigint       not null,
+    unique index uk_rescue_vm_state_host (host_id),
+    index idx_rescue_vm_state_status (status)
+) engine=InnoDB comment '虚拟机救援系统状态';
+
 create table task
 (
     id          int auto_increment

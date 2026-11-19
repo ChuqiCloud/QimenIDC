@@ -6,9 +6,10 @@ import com.chuqiyun.proxmoxveams.dto.VmParams;
 import com.chuqiyun.proxmoxveams.entity.*;
 import com.chuqiyun.proxmoxveams.service.CpuinfoService;
 import com.chuqiyun.proxmoxveams.service.SmbiosService;
-import org.apache.commons.lang3.RandomStringUtils;
+import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
 
 import java.util.*;
+import java.security.SecureRandom;
 
 /**
  * @author mryunqi
@@ -506,14 +507,28 @@ public class VmUtil {
     * @DateTime: 2023/9/25 16:11
     */
     public static String generatePassword() {
-        // 生成12位随机密码
-        String password = RandomStringUtils.randomAlphanumeric(12);
-        // 判断密码是否符合规则
-        if (password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)[a-zA-Z\\d]{12,}$")) {
-            return password;
-        } else {
-            return generatePassword();
+        final String upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        final String lower = "abcdefghijkmnopqrstuvwxyz";
+        final String digits = "23456789";
+        final String special = "!@#$%^&*_-+=";
+        final String all = upper + lower + digits + special;
+        SecureRandom random = new SecureRandom();
+        char[] password = new char[12];
+        password[0] = upper.charAt(random.nextInt(upper.length()));
+        password[1] = lower.charAt(random.nextInt(lower.length()));
+        password[2] = digits.charAt(random.nextInt(digits.length()));
+        password[3] = special.charAt(random.nextInt(special.length()));
+        for (int i = 4; i < password.length; i++) {
+            password[i] = all.charAt(random.nextInt(all.length()));
         }
+        for (int i = password.length - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            char temp = password[i];
+            password[i] = password[j];
+            password[j] = temp;
+        }
+        String result = new String(password);
+        return PasswordPolicy.isValid(result) ? result : generatePassword();
     }
 
     /**

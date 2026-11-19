@@ -71,4 +71,23 @@ class SqlUpdateLoaderTest {
         assertTrue(SqlUpdateLoader.compareBuildVersion("1.4.0_1", "1.3.9_9") > 0);
         assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.6_1", "1.3.6_9") < 0);
     }
+
+    @Test
+    void loadsLoginAttemptGuardMigration() throws IOException {
+        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.6_1", 1);
+
+        assertEquals(1, sqlList.size());
+        assertTrue(sqlList.get(0).contains("create table if not exists login_attempt_guard"));
+        assertTrue(sqlList.get(0).contains("locked_until"));
+    }
+
+    @Test
+    void loadsRescueVmStateMigrationAfterLoginGuard() throws IOException {
+        List<String> sqlList = new SqlUpdateLoader().getSqlUpdates("build", "1.3.6_2", 1);
+
+        assertEquals(1, sqlList.size());
+        assertTrue(sqlList.get(0).contains("create table if not exists rescue_vm_state"));
+        assertTrue(sqlList.get(0).contains("uk_rescue_vm_state_host"));
+        assertTrue(SqlUpdateLoader.compareBuildVersion("1.3.6_2", "1.3.6_1") > 0);
+    }
 }
