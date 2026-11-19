@@ -119,7 +119,7 @@ public class AuthServiceImpl implements AuthService {
             throw new AuthException(ResponseResult.RespCode.MFA_FAIL);
         }
         // 同一时间片只允许使用一次，防止动态码被重放
-        if (!sysuserService.consumeTotpStep(sysuser.getId(), step)) {
+        if (!sysuserService.consumeTotpStepIfCurrent(sysuser.getId(), step, sysuser.getTotpSecret())) {
             throw new AuthException(ResponseResult.RespCode.MFA_FAIL);
         }
         return issueLoginToken(sysuser);
@@ -173,7 +173,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public String issueLoginToken(Sysuser sysuser) {
-        Long session = sysuserService.rotateLoginSession(sysuser.getId());
+        Long session = sysuserService.rotateLoginSessionIfCurrent(sysuser.getId(), sysuser.getLogindate());
         if (session == null) {
             throw new AuthException(ResponseResult.RespCode.LOGIN_FAIL);
         }

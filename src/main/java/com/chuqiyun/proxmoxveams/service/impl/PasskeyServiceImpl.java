@@ -1,6 +1,7 @@
 package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONException;
 import com.chuqiyun.proxmoxveams.common.AuthException;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.entity.SysPasskey;
@@ -15,12 +16,16 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import javax.annotation.PostConstruct;
+import java.net.URI;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -54,6 +59,62 @@ public class PasskeyServiceImpl implements PasskeyService {
     private String rpName;
     @Value("${config.passkey.origin:}")
     private String origin;
+    /** 管理员 Passkey 默认要求设备完成 PIN、生物识别或解锁验证。 */
+    @Value("${config.passkey.require_user_verification:true}")
+    private boolean requireUserVerification = true;
+
+    /**
+     * Fail fast on values that browsers will reject anyway.  The RP ID is a
+     * domain only; the Origin is the exact browser origin and may include a
+     * non-default HTTPS port.
+     */
+    @PostConstruct
+    void validateConfiguration() {
+        rpId = StringUtils.trimToEmpty(rpId).toLowerCase(Locale.ROOT);
+        if (StringUtils.isBlank(rpId) || rpId.contains("://") || rpId.contains("/")
+                || rpId.contains(":") || rpId.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalStateException("config.passkey.rp_id must be a domain without scheme, port or path");
+        }
+        origin = normalizeOrigins(origin);
+        if (StringUtils.isBlank(origin)) {
+            log.warn("Passkey Origin 校验未启用；生产环境请设置 config.passkey.origin 或 PASSKEY_ORIGIN");
+            return;
+        }
+        for (String value : StringUtils.split(origin, ',')) {
+            validateOrigin(value);
+        }
+    }
+
+    private String normalizeOrigins(String configured) {
+        String[] values = StringUtils.split(StringUtils.defaultString(configured), ',');
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        return java.util.Arrays.stream(values)
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+    }
+
+    private void validateOrigin(String value) {
+        try {
+            URI uri = URI.create(value);
+            String scheme = StringUtils.defaultString(uri.getScheme()).toLowerCase(Locale.ROOT);
+            boolean localHttp = "http".equals(scheme)
+                    && ("localhost".equalsIgnoreCase(uri.getHost())
+                    || "127.0.0.1".equals(uri.getHost())
+                    || "[::1]".equals(uri.getHost()));
+            if (!("https".equals(scheme) || localHttp) || StringUtils.isBlank(uri.getHost())
+                    || uri.getUserInfo() != null || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null || StringUtils.isNotBlank(uri.getRawPath())) {
+                throw new IllegalArgumentException();
+            }
+        } catch (IllegalArgumentException | JSONException e) {
+            throw new IllegalStateException("config.passkey.origin must be an HTTPS origin without path/query: " + value);
+        }
+    }
 
     /**
      * 注册或认证挑战的上下文
@@ -83,26 +144,47 @@ public class PasskeyServiceImpl implements PasskeyService {
         options.put("excludeCredentials", buildExcludeCredentials(sysuser.getId()));
         Map<String, Object> selection = new LinkedHashMap<>();
         selection.put("residentKey", "preferred");
-        selection.put("userVerification", "preferred");
+        selection.put("userVerification", requireUserVerification ? "required" : "preferred");
         options.put("authenticatorSelection", selection);
         return options;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public SysPasskey finishRegistration(Sysuser sysuser, JSONObject credential, String deviceName) throws AuthException {
+        try {
+            return finishRegistrationInternal(sysuser, credential, deviceName);
+        } catch (AuthException e) {
+            throw e;
+        } catch (IllegalArgumentException | JSONException e) {
+            // Malformed WebAuthn/CBOR/base64 input is an authentication failure,
+            // not an internal server error.
+            log.debug("Passkey 注册数据校验失败", e);
+            throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
+        }
+    }
+
+    private SysPasskey finishRegistrationInternal(Sysuser sysuser, JSONObject credential, String deviceName) throws AuthException {
         if (Objects.isNull(sysuser)) {
             throw new AuthException(ResponseResult.RespCode.UNAUTHORIZED);
         }
-        byte[] attestationObject = readField(credential, "attestationObject");
-        byte[] clientDataJson = readField(credential, "clientDataJSON");
+        // navigator.credentials.create() puts binary fields under response;
+        // accept that standard shape and the historical flattened payload.
+        byte[] attestationObject = readCredentialField(credential, "attestationObject");
+        byte[] clientDataJson = readCredentialField(credential, "clientDataJSON");
         checkOrigin(clientDataJson);
         WebAuthnUtil.ClientData clientData = WebAuthnUtil.parseClientData(clientDataJson, CLIENT_DATA_CREATE);
-        PendingChallenge pending = consumeChallenge("registration", clientData.getChallenge(), sysuser.getUuid());
+        // 与管理员重置共用账号行锁，保证消费挑战和写入凭据不会跨过一次重置。
+        if (jdbc.queryForList("select id from sysuser where id = ? for update", Integer.class, sysuser.getId()).isEmpty()) {
+            throw new AuthException(ResponseResult.RespCode.UNAUTHORIZED);
+        }
+        consumeChallenge("registration", clientData.getChallenge(), sysuser.getUuid());
 
         byte[] authData = WebAuthnUtil.extractAuthData(attestationObject);
         WebAuthnUtil.AuthData parsed = WebAuthnUtil.parseAuthData(authData);
         WebAuthnUtil.verifyRpId(parsed.getRpIdHash(), rpId);
-        if (!parsed.isUserPresent() || !parsed.hasAttestedCredentialData()) {
+        if (!parsed.isUserPresent() || (requireUserVerification && !parsed.isUserVerified())
+                || !parsed.hasAttestedCredentialData()) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         if (parsed.getCredentialId().length == 0 || parsed.getCredentialPublicKey().length == 0) {
@@ -129,10 +211,8 @@ public class PasskeyServiceImpl implements PasskeyService {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
 
-        if (!isPasskeyEnabled(sysuser)) {
-            sysuser.setPasskeyEnabled(1);
-            sysuserService.updateMfaSettings(sysuser);
-        }
+        // 只更新 Passkey 状态，避免并发策略修改被请求开始时的旧值覆盖。
+        jdbc.update("update sysuser set passkey_enabled = 1 where id = ?", sysuser.getId());
         log.info("管理员 {} 绑定 Passkey 成功, credentialId={}", sysuser.getUsername(), credentialId);
         return passkey;
     }
@@ -145,7 +225,7 @@ public class PasskeyServiceImpl implements PasskeyService {
         options.put("challenge", challenge);
         options.put("rpId", rpId);
         options.put("timeout", CHALLENGE_TTL_MILLIS);
-        options.put("userVerification", "preferred");
+        options.put("userVerification", requireUserVerification ? "required" : "preferred");
         if (!Objects.isNull(sysuser)) {
             options.put("allowCredentials", buildExcludeCredentials(sysuser.getId()));
         }
@@ -154,10 +234,24 @@ public class PasskeyServiceImpl implements PasskeyService {
 
     @Override
     public Sysuser finishAuthentication(JSONObject credential, String expectedUserUuid) throws AuthException {
-        byte[] authenticatorData = readField(credential, "authenticatorData");
-        byte[] clientDataJson = readField(credential, "clientDataJSON");
-        byte[] signature = readField(credential, "signature");
-        byte[] userHandle = readOptionalField(credential, "userHandle");
+        try {
+            return finishAuthenticationInternal(credential, expectedUserUuid);
+        } catch (AuthException e) {
+            throw e;
+        } catch (IllegalArgumentException | JSONException e) {
+            // Malformed WebAuthn input must not become a 500 response.
+            log.debug("Passkey 认证数据校验失败", e);
+            throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
+        }
+    }
+
+    private Sysuser finishAuthenticationInternal(JSONObject credential, String expectedUserUuid) throws AuthException {
+        // navigator.credentials.get() returns response.authenticatorData,
+        // response.clientDataJSON, response.signature and response.userHandle.
+        byte[] authenticatorData = readCredentialField(credential, "authenticatorData");
+        byte[] clientDataJson = readCredentialField(credential, "clientDataJSON");
+        byte[] signature = readCredentialField(credential, "signature");
+        byte[] userHandle = readOptionalCredentialField(credential, "userHandle");
         String rawId = credential.getString("rawId");
         if (StringUtils.isBlank(rawId)) {
             rawId = credential.getString("id");
@@ -182,6 +276,10 @@ public class PasskeyServiceImpl implements PasskeyService {
         if (Objects.isNull(sysuser)) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
+        // 账号读取前可能刚完成重置，再确认凭据仍存在；之后的重置由登录会话比较写入拦截。
+        if (sysPasskeyService.getByCredentialId(passkey.getCredentialId()) == null) {
+            throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
+        }
         // 挑战绑定账号时校验一致性，避免跨账号重放
         String challengeUserUuid = StringUtils.defaultIfBlank(pending.userUuid(), expectedUserUuid);
         if (StringUtils.isNotBlank(challengeUserUuid) && !challengeUserUuid.equals(sysuser.getUuid())) {
@@ -194,7 +292,7 @@ public class PasskeyServiceImpl implements PasskeyService {
 
         WebAuthnUtil.AuthData parsed = WebAuthnUtil.parseAuthData(authenticatorData);
         WebAuthnUtil.verifyRpId(parsed.getRpIdHash(), rpId);
-        if (!parsed.isUserPresent()) {
+        if (!parsed.isUserPresent() || (requireUserVerification && !parsed.isUserVerified())) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         boolean verified = WebAuthnUtil.verifySignature(passkey.getAlgorithm(),
@@ -223,10 +321,6 @@ public class PasskeyServiceImpl implements PasskeyService {
     @Override
     public boolean removePasskey(Long id, Integer userId) {
         return sysPasskeyService.removePasskey(id, userId);
-    }
-
-    private boolean isPasskeyEnabled(Sysuser sysuser) {
-        return Objects.equals(sysuser.getPasskeyEnabled(), 1);
     }
 
     private List<Map<String, Object>> buildExcludeCredentials(Integer userId) {
@@ -283,25 +377,42 @@ public class PasskeyServiceImpl implements PasskeyService {
     }
 
     /**
-     * 配置了 origin 时校验来源，未配置则跳过（兼容反向代理部署）
+     * Passkey 必须绑定到浏览器真实来源。未配置 origin 时拒绝认证，
+     * 避免生产环境因漏配而跳过 Origin 校验。
      */
     private void checkOrigin(byte[] clientDataJson) {
         if (StringUtils.isBlank(origin)) {
-            return;
+            throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         JSONObject clientData = JSONObject.parseObject(new String(clientDataJson, java.nio.charset.StandardCharsets.UTF_8));
         String clientOrigin = clientData.getString("origin");
-        if (!StringUtils.equalsAny(clientOrigin, StringUtils.split(origin, ','))) {
+        String[] allowedOrigins = StringUtils.split(origin, ',');
+        if (allowedOrigins == null || allowedOrigins.length == 0
+                || StringUtils.isBlank(clientOrigin)
+                || !java.util.Arrays.stream(allowedOrigins)
+                .map(String::trim)
+                .anyMatch(clientOrigin::equals)) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
     }
 
-    private byte[] readField(JSONObject credential, String field) throws AuthException {
-        byte[] value = readOptionalField(credential, field);
+    private byte[] readCredentialField(JSONObject credential, String field) throws AuthException {
+        byte[] value = readOptionalCredentialField(credential, field);
         if (value == null || value.length == 0) {
             throw new AuthException(ResponseResult.RespCode.PASSKEY_FAIL);
         }
         return value;
+    }
+
+    private byte[] readOptionalCredentialField(JSONObject credential, String field) {
+        if (credential == null) {
+            return null;
+        }
+        byte[] value = readOptionalField(credential, field);
+        if (value != null && value.length > 0) {
+            return value;
+        }
+        return readOptionalField(credential.getJSONObject("response"), field);
     }
 
     private byte[] readOptionalField(JSONObject credential, String field) {

@@ -156,4 +156,30 @@ class SysuserSecurityPersistenceTest {
         assertTrue(service.verifyPassword(userId, "admin-reset-password"));
         assertFalse(service.verifyPassword(userId, "old-password"));
     }
+
+    @Test
+    void staleAuthenticationCannotReplaceSessionAfterSecurityReset() {
+        assertTrue(service.rotateLoginSessionIfCurrent(userId, null) > 0);
+        Long previous = mapper.selectById(userId).getLogindate();
+        Long revoked = service.rotateLoginSession(userId);
+
+        assertNull(service.rotateLoginSessionIfCurrent(userId, previous));
+        assertEquals(revoked, mapper.selectById(userId).getLogindate());
+        assertTrue(service.rotateLoginSessionIfCurrent(userId, revoked) > revoked);
+    }
+
+    @Test
+    void resetTotpSecretCannotBeUsedByAnAlreadyRunningLogin() {
+        assertTrue(service.startTotpBinding(userId, "old-secret"));
+        assertTrue(service.confirmTotpBinding(userId, "old-secret"));
+        assertTrue(service.consumeTotpStepIfCurrent(userId, 99, "old-secret"));
+        assertTrue(service.clearTotpBinding(userId));
+
+        assertFalse(service.consumeTotpStepIfCurrent(userId, 100, "old-secret"));
+        assertNull(mapper.selectById(userId).getTotpLastStep());
+        assertTrue(service.startTotpBinding(userId, "new-secret"));
+        assertTrue(service.confirmTotpBinding(userId, "new-secret"));
+        assertFalse(service.consumeTotpStepIfCurrent(userId, 100, "old-secret"));
+        assertTrue(service.consumeTotpStepIfCurrent(userId, 100, "new-secret"));
+    }
 }

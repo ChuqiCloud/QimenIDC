@@ -12,11 +12,13 @@ config:
   # Passkey(WebAuthn) 配置
   passkey:
     # RP ID 必须是管理后台对外域名（不带协议与端口）
-    rp_id: localhost
+    rp_id: ${PASSKEY_RP_ID:localhost}
     # RP 展示名称，显示在系统认证器弹窗中
     rp_name: QimenIDC
-    # 允许的来源，多个用逗号分隔，例如 https://idc.example.com；留空则不校验
-    origin: ""
+    # 允许的来源，多个用逗号分隔，例如 https://idc.example.com；留空会拒绝 Passkey
+    origin: ${PASSKEY_ORIGIN:}
+    # 生产必须改成管理后台实际 Origin，建议用环境变量注入
+    require_user_verification: true
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:

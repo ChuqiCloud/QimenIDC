@@ -305,6 +305,14 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         return wrapper;
     }
 
+    @Override
+    public Long rotateLoginSessionIfCurrent(Integer userId, Long expectedSession) {
+        long next = nextLoginDate(expectedSession);
+        UpdateWrapper<Sysuser> wrapper = sessionUpdate(userId, expectedSession);
+        wrapper.set("logindate", next);
+        return this.update(wrapper) ? next : null;
+    }
+
     private long nextLoginDate(Long previous) {
         return Math.max(System.currentTimeMillis(), previous == null ? 0L : Math.addExact(previous, 1L));
     }
@@ -321,6 +329,18 @@ public class SysuserServiceImpl extends ServiceImpl<SysuserDao, Sysuser> impleme
         UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", userId)
                 .and(wrapper1 -> wrapper1.isNull("totp_last_step").or().lt("totp_last_step", step))
+                .set("totp_last_step", step);
+        return this.update(wrapper);
+    }
+
+    @Override
+    public boolean consumeTotpStepIfCurrent(Integer userId, long step, String expectedSecret) {
+        if (StringUtils.isBlank(expectedSecret)) {
+            return false;
+        }
+        UpdateWrapper<Sysuser> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", userId).eq("totp_secret", expectedSecret).isNotNull("totp_confirmed_time")
+                .and(condition -> condition.isNull("totp_last_step").or().lt("totp_last_step", step))
                 .set("totp_last_step", step);
         return this.update(wrapper);
     }

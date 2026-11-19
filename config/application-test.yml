@@ -15,8 +15,10 @@ config:
     rp_id: localhost
     # RP 展示名称，显示在系统认证器弹窗中
     rp_name: QimenIDC
-    # 允许的来源，多个用逗号分隔，例如 https://idc.example.com；留空则不校验
+    # 允许的来源，多个用逗号分隔，例如 https://idc.example.com；留空会拒绝 Passkey
     origin: ""
+    # 管理员 Passkey 是否必须完成设备用户验证（PIN/生物识别/设备解锁）
+    require_user_verification: true
   os_url: https://gitee.com/chuqicloud/soft-ware/raw/master/Cloud/os.json
 
 MySQL:

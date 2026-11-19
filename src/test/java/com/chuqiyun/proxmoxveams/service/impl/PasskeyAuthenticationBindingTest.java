@@ -84,6 +84,9 @@ class PasskeyAuthenticationBindingTest {
         ReflectionTestUtils.setField(service, "sysuserService", users);
         ReflectionTestUtils.setField(service, "rpId", RP_ID);
         ReflectionTestUtils.setField(service, "origin", "https://" + RP_ID);
+        // These binding tests use a synthetic UP-only authenticator. Production
+        // defaults to UV=true; keep this fixture explicit about its compatibility mode.
+        ReflectionTestUtils.setField(service, "requireUserVerification", false);
         accountA = account(1, "account-a");
         accountB = account(2, "account-b");
         when(users.getById(1)).thenReturn(accountA);
@@ -122,6 +125,42 @@ class PasskeyAuthenticationBindingTest {
         String challenge = (String) service.createAuthenticationOptions(null).get("challenge");
 
         assertSame(accountB, service.finishAuthentication(assertion(challenge, accountB), null));
+    }
+
+    @Test
+    void acceptsStandardNestedWebAuthnResponsePayload() throws Exception {
+        String challenge = (String) service.createAuthenticationOptions(accountA).get("challenge");
+        JSONObject flat = assertion(challenge, accountA);
+        JSONObject nested = new JSONObject(flat);
+        JSONObject response = new JSONObject();
+        for (String field : List.of("authenticatorData", "clientDataJSON", "signature")) {
+            response.put(field, nested.remove(field));
+        }
+        nested.put("response", response);
+
+        assertSame(accountA, service.finishAuthentication(nested, null));
+    }
+
+    @Test
+    void credentialRevokedWhileResolvingItsOwnerCannotAuthenticate() throws Exception {
+        String id = credentialId(accountA);
+        SysPasskey original = credentials.getByCredentialId(id);
+        when(credentials.getByCredentialId(id)).thenReturn(original).thenReturn(null);
+        String challenge = (String) service.createAuthenticationOptions(accountA).get("challenge");
+
+        AuthException error = assertThrows(AuthException.class,
+                () -> service.finishAuthentication(assertion(challenge, accountA), null));
+
+        assertEquals(ResponseResult.RespCode.PASSKEY_FAIL, error.getRespCode());
+        verify(credentials, never()).touchLastUsed(any(), anyLong(), anyLong());
+    }
+
+    @Test
+    void rejectsTouchOnlyAuthenticatorWhenUserVerificationIsRequired() throws Exception {
+        ReflectionTestUtils.setField(service, "requireUserVerification", true);
+        String challenge = (String) service.createAuthenticationOptions(accountA).get("challenge");
+
+        assertThrows(AuthException.class, () -> service.finishAuthentication(assertion(challenge, accountA), null));
     }
 
     @Test

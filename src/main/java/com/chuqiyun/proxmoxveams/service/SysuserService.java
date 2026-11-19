@@ -61,9 +61,15 @@ public interface SysuserService extends IService<Sysuser> {
     /** 原子轮换会话标记，即使同一毫秒登录也能吊销旧 Token。 */
     Long rotateLoginSession(Integer userId);
 
+    /** 仅当账号会话未被重置时签发登录会话，阻止重置前已开始的认证继续登录。 */
+    Long rotateLoginSessionIfCurrent(Integer userId, Long expectedSession);
+
     /**
      * 消费一个 TOTP 时间片，返回 false 表示该时间片已被使用（重放）
      */
     boolean consumeTotpStep(Integer userId, long step);
+
+    /** 登录时还需匹配当前密钥，防止已重置的动态码写回重放状态。 */
+    boolean consumeTotpStepIfCurrent(Integer userId, long step, String expectedSecret);
 }
 

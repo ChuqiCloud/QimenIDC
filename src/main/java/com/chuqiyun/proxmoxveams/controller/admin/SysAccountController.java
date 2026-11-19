@@ -3,17 +3,22 @@ package com.chuqiyun.proxmoxveams.controller.admin;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chuqiyun.proxmoxveams.annotation.AdminApiCheck;
+import com.chuqiyun.proxmoxveams.common.AuthException;
 import com.chuqiyun.proxmoxveams.common.ResponseResult;
 import com.chuqiyun.proxmoxveams.common.exception.UnauthorizedException;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.security.PasswordPolicy;
+import com.chuqiyun.proxmoxveams.service.SysuserMfaService;
 import com.chuqiyun.proxmoxveams.service.SysuserService;
 import com.chuqiyun.proxmoxveams.utils.EncryptUtil;
+import com.chuqiyun.proxmoxveams.utils.ServletUtil;
 import com.chuqiyun.proxmoxveams.utils.UUIDUtil;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
 import java.util.Objects;
 
 /**
@@ -23,8 +28,12 @@ import java.util.Objects;
 @RestController
 @RequestMapping("/{adminPath}")
 public class SysAccountController {
+    @Value("${config.secret}")
+    private String secret;
     @Resource
     private SysuserService sysuserService;
+    @Resource
+    private SysuserMfaService sysuserMfaService;
 
     @AdminApiCheck
     @PostMapping("/registerDo")
@@ -106,6 +115,59 @@ public class SysAccountController {
             return ResponseResult.ok("删除管理员账户成功！");
         } else {
             return ResponseResult.fail("删除管理员账户失败！");
+        }
+    }
+
+    /** 管理员清除指定账号的 TOTP 绑定，账号需要重新绑定。 */
+    @AdminApiCheck
+    @PostMapping("/resetSysuserTotp")
+    public ResponseResult<String> resetSysuserTotp(@RequestBody JSONObject param, HttpServletRequest request) {
+        Integer userId = resetUserId(param);
+        if (userId == null) {
+            return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR, "id 必须为正整数用户 ID");
+        }
+        if (!verifyResetOperator(request, param)) {
+            return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL, "当前管理员密码错误，无法重置");
+        }
+        return sysuserMfaService.resetTotp(userId)
+                ? ResponseResult.ok("TOTP 已重置，该用户需重新登录并绑定")
+                : ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR, "用户不存在");
+    }
+
+    /** 管理员清除指定账号的全部 Passkey，不影响其它账号的凭据。 */
+    @AdminApiCheck
+    @PostMapping("/resetSysuserPasskey")
+    public ResponseResult<String> resetSysuserPasskey(@RequestBody JSONObject param, HttpServletRequest request) {
+        Integer userId = resetUserId(param);
+        if (userId == null) {
+            return ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR, "id 必须为正整数用户 ID");
+        }
+        if (!verifyResetOperator(request, param)) {
+            return ResponseResult.fail(ResponseResult.RespCode.OAUTH_PASSWORD_FAIL, "当前管理员密码错误，无法重置");
+        }
+        return sysuserMfaService.resetPasskey(userId)
+                ? ResponseResult.ok("Passkey 已重置，该用户需重新登录并绑定")
+                : ResponseResult.fail(ResponseResult.RespCode.DATA_ERROR, "用户不存在");
+    }
+
+    private boolean verifyResetOperator(HttpServletRequest request, JSONObject param) {
+        Sysuser member = ServletUtil.getSysLoginMember(request, secret);
+        Sysuser operator = member == null ? null : sysuserService.getSysuserByUuid(member.getUuid());
+        if (operator == null) {
+            throw new AuthException(ResponseResult.RespCode.UNAUTHORIZED);
+        }
+        return sysuserService.verifyPassword(operator.getId(), param.getString("password"));
+    }
+
+    private Integer resetUserId(JSONObject param) {
+        String id = param == null ? null : param.getString("id");
+        if (id == null || !id.matches("[1-9][0-9]*")) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(id);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

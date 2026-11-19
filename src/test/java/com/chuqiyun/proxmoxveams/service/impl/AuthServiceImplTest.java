@@ -2,6 +2,7 @@ package com.chuqiyun.proxmoxveams.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.chuqiyun.proxmoxveams.dto.MfaChallenge;
+import com.chuqiyun.proxmoxveams.common.AuthException;
 import com.chuqiyun.proxmoxveams.entity.Sysuser;
 import com.chuqiyun.proxmoxveams.security.MfaTicketService;
 import com.chuqiyun.proxmoxveams.service.PasskeyService;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -65,12 +67,24 @@ class AuthServiceImplTest {
         user.setUuid("user-uuid");
         user.setMfaType("none");
         when(passkeyService.finishAuthentication(new JSONObject(), null)).thenReturn(user);
-        when(sysuserService.rotateLoginSession(42)).thenReturn(1_800_000_000_123L);
+        when(sysuserService.rotateLoginSessionIfCurrent(42, null)).thenReturn(1_800_000_000_123L);
 
         String token = service.loginWithPasskeyDirect(null, new JSONObject()).getToken();
 
         assertEquals(1_800_000_000_123L, JWTUtil.getTokenData(token, SECRET));
         verify(passkeyService).finishAuthentication(org.mockito.ArgumentMatchers.any(), isNull());
+    }
+
+    @Test
+    void authenticationStartedBeforeSecurityResetCannotIssueNewToken() {
+        Sysuser user = new Sysuser();
+        user.setId(42);
+        user.setUuid("user-uuid");
+        user.setLogindate(123L);
+        when(sysuserService.rotateLoginSessionIfCurrent(42, 123L)).thenReturn(null);
+
+        assertThrows(AuthException.class, () -> service.issueLoginToken(user));
+        verify(sysuserService).rotateLoginSessionIfCurrent(42, 123L);
     }
 
     @Test

@@ -3704,6 +3704,50 @@ POST /{adminPath}/updateSysuser
 
 ### 返回数据结构
 
+## POST 重置管理员用户 TOTP / Passkey
+
+这两个接口均需有效管理员登录 Token（`Authorization` 请求头），以及当前操作管理员的密码。
+
+| 方法 | 路径 | 行为 |
+|---|---|---|
+| POST | `/{adminPath}/resetSysuserTotp` | 清除目标 TOTP 密钥、确认时间和重放状态 |
+| POST | `/{adminPath}/resetSysuserPasskey` | 删除目标全部 Passkey，清除 Passkey 启用标记 |
+
+请求体相同，`id` 是目标 `sysuser.id`，必须为正整数；`password` 是操作人的当前密码：
+
+```json
+{
+  "id": 123,
+  "password": "当前操作管理员的密码"
+}
+```
+
+TOTP 重置成功示例：
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": "TOTP 已重置，该用户需重新登录并绑定"
+}
+```
+
+Passkey 重置成功示例：
+
+```json
+{
+  "code": 20000,
+  "message": "请求成功",
+  "data": "Passkey 已重置，该用户需重新登录并绑定"
+}
+```
+
+仅关闭被重置因子的 MFA 策略，保留另一种因子。重置后目标已有登录 Token 失效，
+未消费的账号 Passkey 挑战被撤销；重置自己的账号时也需重新登录。重复重置返回成功。
+参数错误或用户不存在返回 `4000001`，操作人密码错误返回 `20416`，鉴权失败返回 `501002`。
+Passkey 的设备本地条目需用户自行删除；服务端已撤销其登录能力。
+完整行为见 [二步验证与 Passkey 登录](mfa-passkey.md#管理员重置用户安全因子)。
+
 # 后台/实例管理
 
 ## POST 创建虚拟机
